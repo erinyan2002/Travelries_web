@@ -1,29 +1,27 @@
-type MapPhoto = {
-  id: string;
-  fileName: string;
-  imageUrl: string;
-  lat: number;
-  lng: number;
-  location?: string;
-  captureDate?: string;
-  captureTime?: string;
-  uploadedAt?: string;
-  faceCount?: number;
-};
+import { supabase } from "./supabase";
 
-export const SAVED_KEY = "savedPhotos";
-
-export function toggleSaved(photo: MapPhoto): boolean {
-  const raw = localStorage.getItem(SAVED_KEY);
-  const list: MapPhoto[] = raw ? JSON.parse(raw) : [];
-  const exists = list.some((p) => p.id === photo.id);
-  const next = exists ? list.filter((p) => p.id !== photo.id) : [photo, ...list];
-  localStorage.setItem(SAVED_KEY, JSON.stringify(next));
-  return !exists;
+async function getUserKey(): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser();
+  return `saved-${user?.id ?? "guest"}`;
 }
 
-export function isSaved(id: string): boolean {
-  const raw = localStorage.getItem(SAVED_KEY);
-  if (!raw) return false;
-  return (JSON.parse(raw) as MapPhoto[]).some((p) => p.id === id);
+export async function toggleSaved(photoId: string): Promise<boolean> {
+  const key = await getUserKey();
+  const saved: string[] = JSON.parse(localStorage.getItem(key) ?? "[]");
+  const idx = saved.indexOf(photoId);
+  if (idx >= 0) {
+    saved.splice(idx, 1);
+    localStorage.setItem(key, JSON.stringify(saved));
+    return false;
+  } else {
+    saved.push(photoId);
+    localStorage.setItem(key, JSON.stringify(saved));
+    return true;
+  }
+}
+
+export async function getSavedIds(): Promise<Set<string>> {
+  const key = await getUserKey();
+  const saved: string[] = JSON.parse(localStorage.getItem(key) ?? "[]");
+  return new Set(saved);
 }

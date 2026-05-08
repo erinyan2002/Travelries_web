@@ -4,6 +4,8 @@ import { ChangeEvent, useState, useEffect } from "react";
 import * as exifr from "exifr";
 import * as faceapi from "face-api.js";
 import BottomNav from "@/components/BottomNav";
+import { supabase } from "@/lib/supabase";
+import { MapPhoto } from "@/lib/types";
 import {
   Camera, Upload, MapPin, Users, CalendarDays, Clock,
   FileImage, Ruler, CheckCircle2, Loader2, Cpu, AlertTriangle,
@@ -12,6 +14,20 @@ import {
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────
+export type FacePhoto = {
+  id: string;
+  fileName: string;
+  imageUrl: string;
+  faceCount: number;
+  uploadedAt: string;
+  boxes?: Array<{ x: number; y: number; width: number; height: number }>;
+  descriptors?: number[][];
+  lat?: number;
+  lng?: number;
+  location?: string;
+  image_path?: string;
+};
+
 type NearbyPlace = {
   name: string;
   type: "restaurant" | "cafe" | "bar" | string;
@@ -33,35 +49,7 @@ type PhotoInfo = {
   category: string;
 };
 
-type MapPhoto = {
-  id: string;
-  fileName: string;
-  imageUrl: string;
-  lat: number;
-  lng: number;
-  location?: string;
-  captureDate?: string;
-  captureTime?: string;
-  uploadedAt?: string;
-  faceCount?: number;
-};
-
-export type FacePhoto = {
-  id: string;
-  fileName: string;
-  imageUrl: string;
-  faceCount: number;
-  uploadedAt: string;
-  boxes?: Array<{ x: number; y: number; width: number; height: number }>;
-  descriptors?: number[][];
-  lat?: number;
-  lng?: number;
-  location?: string;
-};
-
-const MAP_STORAGE_KEY   = "photoMapPhotos";
-const FACES_STORAGE_KEY = "facesPhotos";
-const BACKEND_URL       = "http://localhost:8000";
+const BACKEND_URL = "http://localhost:8000";
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -72,7 +60,7 @@ function formatBytes(bytes: number): string {
 }
 
 async function createThumbnailDataUrl(file: File, maxSize: number, quality: number): Promise<string> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
     img.onload = () => {
@@ -84,6 +72,7 @@ async function createThumbnailDataUrl(file: File, maxSize: number, quality: numb
       URL.revokeObjectURL(url);
       resolve(canvas.toDataURL("image/jpeg", quality));
     };
+    img.onerror = reject;
     img.src = url;
   });
 }
@@ -178,6 +167,7 @@ export default function HomePage() {
   const [nearbyPlaces,     setNearbyPlaces]     = useState<NearbyPlace[]>([]);
   const [placesLoading,    setPlacesLoading]    = useState(false);
   const [placesFetched,    setPlacesFetched]    = useState(false);
+  const [userId,           setUserId]           = useState<string | null>(null);
 
   useEffect(() => {
     const MODEL_URL = "/models";
@@ -309,21 +299,33 @@ export default function HomePage() {
       }
 
       if (detectedFaceCount > 0) {
-        const thumbnail = await createThumbnailDataUrl(file, 420, 0.75);
-        const facePhotoId = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
-        const facePhoto: FacePhoto = {
-          id: facePhotoId, fileName: file.name, imageUrl: thumbnail,
-          faceCount: detectedFaceCount, uploadedAt: new Date().toLocaleString(),
-          boxes: faceBoxes,
-          ...(faceDescriptors.length > 0 && { descriptors: faceDescriptors }),
-          ...(lat !== null && lng !== null && { lat, lng }),
-          ...(lat !== null && location !== "No GPS data" && { location }),
-        };
-        const raw  = localStorage.getItem(FACES_STORAGE_KEY);
-        const prev: FacePhoto[] = raw ? JSON.parse(raw) : [];
-        localStorage.setItem(FACES_STORAGE_KEY, JSON.stringify([facePhoto, ...prev]));
-        setLastFacePhotoId(facePhotoId);
-        setFaceMessage(`얼굴 ${detectedFaceCount}명 감지! Faces 앨범에 자동 저장되었습니다.`);
+        setFaceMessage(`얼굴 ${detectedFaceCount}명 감지! 저장 중...`);
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          const uid = user?.id ?? "guest";
+          const dataUrl = await createThumbnailDataUrl(file, 420, 0.75);
+          const facePhotoId = crypto.randomUUID();
+          const facePhoto: FacePhoto = {
+            id: facePhotoId,
+            fileName: file.name,
+            imageUrl: dataUrl,
+            faceCount: detectedFaceCount,
+            uploadedAt: new Date().toISOString(),
+            ...(faceBoxes.length > 0       && { boxes: faceBoxes }),
+            ...(faceDescriptors.length > 0 && { descriptors: faceDescriptors }),
+            ...(lat !== null               && { lat }),
+            ...(lng !== null               && { lng }),
+            ...(location !== "No GPS data" && { location }),
+          };
+          const facesKey = `faces-${uid}`;
+          const existing: FacePhoto[] = JSON.parse(localStorage.getItem(facesKey) ?? "[]");
+          localStorage.setItem(facesKey, JSON.stringify([facePhoto, ...existing]));
+          setLastFacePhotoId(facePhotoId);
+          setFaceMessage(`얼굴 ${detectedFaceCount}명 감지! Faces 앨범에 자동 저장되었습니다.`);
+        } catch (saveErr) {
+          console.error("Face photo save failed:", saveErr);
+          setFaceMessage(`얼굴 ${detectedFaceCount}명 감지! (저장 실패)`);
+        }
       }
     } catch (err) {
       console.error(err);
@@ -380,16 +382,19 @@ export default function HomePage() {
   }
 
   function startEditName() { setDraftFileName(customFileName); setIsEditingName(true); }
-  function saveEditedName() {
+  async function saveEditedName() {
     const newName = draftFileName.trim();
     if (newName) {
       setCustomFileName(newName);
       if (lastFacePhotoId) {
-        const raw = localStorage.getItem(FACES_STORAGE_KEY);
-        if (raw) {
-          const photos: FacePhoto[] = JSON.parse(raw);
-          const updated = photos.map((p) => p.id === lastFacePhotoId ? { ...p, fileName: newName } : p);
-          localStorage.setItem(FACES_STORAGE_KEY, JSON.stringify(updated));
+        const { data: { user } } = await supabase.auth.getUser();
+        const uid = user?.id ?? "guest";
+        const facesKey = `faces-${uid}`;
+        const photos: FacePhoto[] = JSON.parse(localStorage.getItem(facesKey) ?? "[]");
+        const idx = photos.findIndex((p) => p.id === lastFacePhotoId);
+        if (idx >= 0) {
+          photos[idx].fileName = newName;
+          localStorage.setItem(facesKey, JSON.stringify(photos));
         }
       }
     }
@@ -404,18 +409,31 @@ export default function HomePage() {
       alert("위치 정보가 없습니다. 아래 위치 입력란에서 장소를 검색하거나 현재 위치를 사용하세요.");
       return;
     }
-    const smallPreview = await createThumbnailDataUrl(selectedFile, 420, 0.6);
-    const photo: MapPhoto = {
-      id: Date.now().toString(), fileName: customFileName.trim() || selectedFile.name,
-      imageUrl: smallPreview, lat: effectiveLat, lng: effectiveLng,
-      location: manualCoords?.name ?? photoInfo.location,
-      captureDate: photoInfo.captureDate, captureTime: photoInfo.captureTime,
-      uploadedAt: photoInfo.uploadedAt, faceCount: photoInfo.faceCount,
-    };
-    const raw  = localStorage.getItem(MAP_STORAGE_KEY);
-    const prev = raw ? JSON.parse(raw) : [];
-    localStorage.setItem(MAP_STORAGE_KEY, JSON.stringify([...prev, photo]));
-    setSavedMessage("지도 및 앨범에 저장되었습니다!");
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const uid = user?.id ?? "guest";
+      const dataUrl = await createThumbnailDataUrl(selectedFile, 420, 0.6);
+      const photoId = crypto.randomUUID();
+      const photo: MapPhoto = {
+        id: photoId,
+        fileName: customFileName.trim() || selectedFile.name,
+        imageUrl: dataUrl,
+        lat: effectiveLat,
+        lng: effectiveLng,
+        location: manualCoords?.name ?? photoInfo.location,
+        captureDate: photoInfo.captureDate !== "Not available" ? photoInfo.captureDate : undefined,
+        captureTime: photoInfo.captureTime !== "Not available" ? photoInfo.captureTime : undefined,
+        uploadedAt: new Date().toISOString(),
+        faceCount: photoInfo.faceCount,
+      };
+      const mapKey = `map-${uid}`;
+      const existing: MapPhoto[] = JSON.parse(localStorage.getItem(mapKey) ?? "[]");
+      localStorage.setItem(mapKey, JSON.stringify([photo, ...existing]));
+      setSavedMessage("지도 및 앨범에 저장되었습니다!");
+    } catch (err) {
+      console.error("Save to map failed:", err);
+      setSavedMessage(`저장 실패: ${err instanceof Error ? err.message : "다시 시도해주세요."}`);
+    }
   }
 
   return (

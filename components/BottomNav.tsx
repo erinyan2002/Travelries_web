@@ -2,22 +2,24 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, Map, Image, Users, Star, LogOut } from "lucide-react";
+import { Home, Map, Image, Users, Star, LogOut, UserCircle } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 const navItems = [
-  { href: "/",       icon: Home,   label: "Home"   },
-  { href: "/map",    icon: Map,    label: "Map"    },
-  { href: "/albums", icon: Image,  label: "Albums" },
-  { href: "/faces",  icon: Users,  label: "Faces"  },
-  { href: "/saved",  icon: Star,   label: "Saved"  },
+  { href: "/",        icon: Home,       label: "Home"    },
+  { href: "/map",     icon: Map,        label: "Map"     },
+  { href: "/albums",  icon: Image,      label: "Albums"  },
+  { href: "/faces",   icon: Users,      label: "Faces"   },
+  { href: "/saved",   icon: Star,       label: "Saved"   },
+  { href: "/profile", icon: UserCircle, label: "Profile" },
 ];
 
 export default function BottomNav() {
   const pathname = usePathname();
   const router   = useRouter();
 
-  function handleLogout() {
-    localStorage.removeItem("tl_auth");
+  async function handleLogout() {
+    await supabase.auth.signOut();
     router.push("/login");
   }
 

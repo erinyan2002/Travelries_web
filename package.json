@@ -10,6 +10,7 @@
     "deploy": "bash _scripts/deploy.sh"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.105.3",
     "exifr": "^7.1.3",
     "face-api.js": "^0.22.2",
     "framer-motion": "^12.38.0",

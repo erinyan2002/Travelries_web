@@ -1,29 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import BottomNav from "@/components/BottomNav";
-import { toggleSaved } from "@/lib/savedUtils";
+import { toggleSaved, getSavedIds } from "@/lib/savedUtils";
+import { supabase } from "@/lib/supabase";
+import { MapPhoto } from "@/lib/types";
 import {
   Images, MapPin, Users, Image, Star, Download, Trash2,
-  X, CalendarDays, Clock, SlidersHorizontal,
+  X, CalendarDays, SlidersHorizontal,
 } from "lucide-react";
-
-type MapPhoto = {
-  id: string;
-  fileName: string;
-  imageUrl: string;
-  lat: number;
-  lng: number;
-  location?: string;
-  captureDate?: string;
-  captureTime?: string;
-  uploadedAt?: string;
-  faceCount?: number;
-};
 
 type Filter = "전체" | "인물 사진" | "일반 사진";
 const FILTERS: Filter[] = ["전체", "인물 사진", "일반 사진"];
-const STORAGE_KEY = "photoMapPhotos";
 
 function InfoChip({ label, value }: { label: string; value: string }) {
   return (
@@ -43,15 +31,8 @@ function PhotoModal({
   onDownload: (photo: MapPhoto) => void;
 }) {
   return (
-    <div
-      className="fixed inset-0 bg-black/85 z-[2000] flex items-center justify-center p-5"
-      onClick={onClose}
-    >
-      <div
-        className="max-w-[520px] w-full bg-white rounded-2xl overflow-hidden shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
+    <div className="fixed inset-0 bg-black/85 z-[2000] flex items-center justify-center p-5" onClick={onClose}>
+      <div className="max-w-[520px] w-full bg-white rounded-2xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
           <div className="min-w-0">
             <p className="font-bold text-slate-900 text-sm truncate">{photo.fileName}</p>
@@ -63,40 +44,20 @@ function PhotoModal({
             <X size={20} />
           </button>
         </div>
-
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={photo.imageUrl} alt={photo.fileName}
-          className="w-full max-h-[420px] object-contain bg-slate-100" />
-
+        <img src={photo.imageUrl} alt={photo.fileName} className="w-full max-h-[420px] object-contain bg-slate-100" />
         <div className="p-4 grid grid-cols-2 gap-2">
-          {photo.captureDate && photo.captureDate !== "Not available" && (
-            <InfoChip label="촬영일" value={photo.captureDate} />
-          )}
-          {photo.captureTime && photo.captureTime !== "Not available" && (
-            <InfoChip label="촬영 시간" value={photo.captureTime} />
-          )}
-          {photo.location && (
-            <div className="col-span-2">
-              <InfoChip label="위치" value={photo.location} />
-            </div>
-          )}
-          <InfoChip
-            label="AI 분류"
-            value={(photo.faceCount ?? 0) > 0 ? `인물 사진 (${photo.faceCount}명)` : "일반 사진"}
-          />
+          {photo.captureDate && photo.captureDate !== "Not available" && <InfoChip label="촬영일" value={photo.captureDate} />}
+          {photo.location && <div className="col-span-2"><InfoChip label="위치" value={photo.location} /></div>}
+          <InfoChip label="AI 분류" value={(photo.faceCount ?? 0) > 0 ? `인물 사진 (${photo.faceCount}명)` : "일반 사진"} />
         </div>
-
         <div className="flex gap-2 px-4 py-3 border-t border-slate-100">
-          <button
-            onClick={() => onDownload(photo)}
-            className="flex-1 flex items-center justify-center gap-2 bg-slate-900 text-white py-2.5 rounded-xl text-sm font-bold hover:bg-slate-700 transition-colors"
-          >
+          <button onClick={() => onDownload(photo)}
+            className="flex-1 flex items-center justify-center gap-2 bg-slate-900 text-white py-2.5 rounded-xl text-sm font-bold hover:bg-slate-700 transition-colors">
             <Download size={15} /> 다운로드
           </button>
-          <button
-            onClick={() => { onDelete(photo.id); onClose(); }}
-            className="flex-1 flex items-center justify-center gap-2 bg-red-500 text-white py-2.5 rounded-xl text-sm font-bold hover:bg-red-600 transition-colors"
-          >
+          <button onClick={() => { onDelete(photo.id); onClose(); }}
+            className="flex-1 flex items-center justify-center gap-2 bg-red-500 text-white py-2.5 rounded-xl text-sm font-bold hover:bg-red-600 transition-colors">
             <Trash2 size={15} /> 삭제
           </button>
         </div>
@@ -106,29 +67,29 @@ function PhotoModal({
 }
 
 const filterIcons: Record<Filter, React.ElementType> = {
-  "전체":    SlidersHorizontal,
-  "인물 사진": Users,
-  "일반 사진": Image,
+  "전체": SlidersHorizontal, "인물 사진": Users, "일반 사진": Image,
 };
 
 export default function AlbumsPage() {
-  const [photos, setPhotos] = useState<MapPhoto[]>(() => {
-    if (typeof window === "undefined") return [];
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  });
+  const [photos,        setPhotos]        = useState<MapPhoto[]>([]);
   const [filter,        setFilter]        = useState<Filter>("전체");
   const [selectedPhoto, setSelectedPhoto] = useState<MapPhoto | null>(null);
-  const [savedIds,      setSavedIds]      = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set();
-    const raw = localStorage.getItem("savedPhotos");
-    const list = raw ? JSON.parse(raw) : [];
-    return new Set(list.map((p: MapPhoto) => p.id));
-  });
+  const [savedIds,      setSavedIds]      = useState<Set<string>>(new Set());
 
-  function handleToggleSaved(e: React.MouseEvent, photo: MapPhoto) {
+  useEffect(() => {
+    async function load() {
+      const { data: { user } } = await supabase.auth.getUser();
+      const uid = user?.id ?? "guest";
+      const stored: MapPhoto[] = JSON.parse(localStorage.getItem(`map-${uid}`) ?? "[]");
+      setPhotos(stored);
+      setSavedIds(await getSavedIds());
+    }
+    load();
+  }, []);
+
+  async function handleToggleSaved(e: React.MouseEvent, photo: MapPhoto) {
     e.stopPropagation();
-    const nowSaved = toggleSaved(photo);
+    const nowSaved = await toggleSaved(photo.id);
     setSavedIds((prev) => {
       const next = new Set(prev);
       if (nowSaved) next.add(photo.id); else next.delete(photo.id);
@@ -136,10 +97,13 @@ export default function AlbumsPage() {
     });
   }
 
-  function handleDelete(id: string) {
-    const next = photos.filter((p) => p.id !== id);
-    setPhotos(next);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  async function handleDelete(id: string) {
+    const { data: { user } } = await supabase.auth.getUser();
+    const uid = user?.id ?? "guest";
+    const mapKey = `map-${uid}`;
+    const stored: MapPhoto[] = JSON.parse(localStorage.getItem(mapKey) ?? "[]");
+    localStorage.setItem(mapKey, JSON.stringify(stored.filter((p) => p.id !== id)));
+    setPhotos((prev) => prev.filter((p) => p.id !== id));
     if (selectedPhoto?.id === id) setSelectedPhoto(null);
   }
 
@@ -176,7 +140,6 @@ export default function AlbumsPage() {
     <main className="min-h-screen bg-slate-50 px-6 py-8 pb-28">
       <div className="max-w-5xl mx-auto">
 
-        {/* Header */}
         <div className="flex items-center gap-3 mb-2">
           <div className="w-10 h-10 bg-violet-600 rounded-xl flex items-center justify-center shadow-md shadow-violet-200">
             <Images size={22} className="text-white" />
@@ -187,32 +150,23 @@ export default function AlbumsPage() {
           </div>
         </div>
 
-        {/* Filter tabs */}
         <div className="flex gap-2 mt-6 mb-6 flex-wrap">
           {FILTERS.map((f) => {
             const active = filter === f;
             const Icon = filterIcons[f];
             return (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
+              <button key={f} onClick={() => setFilter(f)}
                 className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold transition-all ${
-                  active
-                    ? "bg-blue-600 text-white shadow-lg shadow-blue-200"
-                    : "bg-white text-slate-600 border border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                }`}
-              >
+                  active ? "bg-blue-600 text-white shadow-lg shadow-blue-200" : "bg-white text-slate-600 border border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                }`}>
                 <Icon size={14} />
                 {f}
-                <span className={`ml-0.5 text-xs ${active ? "text-blue-100" : "text-slate-400"}`}>
-                  {counts[f]}
-                </span>
+                <span className={`ml-0.5 text-xs ${active ? "text-blue-100" : "text-slate-400"}`}>{counts[f]}</span>
               </button>
             );
           })}
         </div>
 
-        {/* Empty state */}
         {grouped.length === 0 ? (
           <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-16 text-center">
             <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -227,29 +181,19 @@ export default function AlbumsPage() {
           <div className="space-y-5">
             {grouped.map(([groupName, items]) => (
               <section key={groupName} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                {/* Group header */}
                 <div className="flex items-center gap-2 px-5 py-3.5 border-b border-slate-100 bg-slate-50">
                   <MapPin size={16} className="text-blue-500 flex-shrink-0" />
                   <h2 className="font-bold text-slate-800 text-base flex-1">{groupName}</h2>
                   <span className="text-xs text-slate-400 bg-slate-200 px-2 py-0.5 rounded-full">{items.length}장</span>
                 </div>
-
-                {/* Photo grid */}
                 <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                   {items.map((photo) => {
                     const isPortrait = (photo.faceCount ?? 0) > 0;
                     return (
-                      <div
-                        key={photo.id}
-                        onClick={() => setSelectedPhoto(photo)}
-                        className="photo-card rounded-xl overflow-hidden border border-slate-200 bg-slate-50 cursor-pointer"
-                      >
+                      <div key={photo.id} onClick={() => setSelectedPhoto(photo)}
+                        className="photo-card rounded-xl overflow-hidden border border-slate-200 bg-slate-50 cursor-pointer">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={photo.imageUrl}
-                          alt={photo.fileName}
-                          className="w-full h-36 object-contain bg-slate-100"
-                        />
+                        <img src={photo.imageUrl} alt={photo.fileName} className="w-full h-36 object-contain bg-slate-100" />
                         <div className="p-2.5">
                           <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full mb-1.5 ${
                             isPortrait ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"
@@ -263,26 +207,18 @@ export default function AlbumsPage() {
                             {photo.captureDate || "날짜 없음"}
                           </p>
                           <div className="flex gap-1.5 mt-2">
-                            <button
-                              onClick={(e) => handleToggleSaved(e, photo)}
+                            <button onClick={(e) => handleToggleSaved(e, photo)}
                               className={`flex-1 flex items-center justify-center py-1.5 rounded-lg text-[10px] font-bold transition-colors ${
-                                savedIds.has(photo.id)
-                                  ? "bg-amber-100 text-amber-700"
-                                  : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                              }`}
-                            >
+                                savedIds.has(photo.id) ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                              }`}>
                               <Star size={11} className={savedIds.has(photo.id) ? "fill-amber-500" : ""} />
                             </button>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleDownload(photo); }}
-                              className="flex-1 flex items-center justify-center py-1.5 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
-                            >
+                            <button onClick={(e) => { e.stopPropagation(); handleDownload(photo); }}
+                              className="flex-1 flex items-center justify-center py-1.5 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">
                               <Download size={11} />
                             </button>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleDelete(photo.id); }}
-                              className="flex-1 flex items-center justify-center py-1.5 rounded-lg text-[10px] font-bold bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
-                            >
+                            <button onClick={(e) => { e.stopPropagation(); handleDelete(photo.id); }}
+                              className="flex-1 flex items-center justify-center py-1.5 rounded-lg text-[10px] font-bold bg-red-50 text-red-500 hover:bg-red-100 transition-colors">
                               <Trash2 size={11} />
                             </button>
                           </div>
@@ -298,12 +234,7 @@ export default function AlbumsPage() {
       </div>
 
       {selectedPhoto && (
-        <PhotoModal
-          photo={selectedPhoto}
-          onClose={() => setSelectedPhoto(null)}
-          onDelete={handleDelete}
-          onDownload={handleDownload}
-        />
+        <PhotoModal photo={selectedPhoto} onClose={() => setSelectedPhoto(null)} onDelete={handleDelete} onDownload={handleDownload} />
       )}
       <BottomNav />
     </main>

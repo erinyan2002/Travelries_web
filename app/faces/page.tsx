@@ -2,13 +2,12 @@
 
 import { useState, useRef, useEffect, useMemo } from "react";
 import BottomNav from "@/components/BottomNav";
-import type { FacePhoto } from "@/app/page";
+import { supabase } from "@/lib/supabase";
+import { FacePhoto } from "@/lib/types";
 import {
   Users, ImageIcon, MapPin, CalendarDays, Trash2, X,
   SlidersHorizontal, Terminal, AlertTriangle,
 } from "lucide-react";
-
-const FACES_STORAGE_KEY = "facesPhotos";
 
 type FaceEntry = { photo: FacePhoto; boxIndex: number };
 type PersonCluster = { id: string; label: string; faces: FaceEntry[]; centroid: number[] };
@@ -64,8 +63,7 @@ function PhotoWithBoxes({ photo }: { photo: FacePhoto }) {
       photo.boxes.forEach((box, i) => {
         const x = box.x * img.width, y = box.y * img.height;
         const w = box.width * img.width, h = box.height * img.height;
-        ctx.strokeStyle = "#2563eb";
-        ctx.lineWidth = lineW;
+        ctx.strokeStyle = "#2563eb"; ctx.lineWidth = lineW;
         ctx.strokeRect(x, y, w, h);
         const lh = Math.min(labelH, h * 0.35);
         ctx.fillStyle = "rgba(37,99,235,0.85)";
@@ -81,10 +79,7 @@ function PhotoWithBoxes({ photo }: { photo: FacePhoto }) {
 }
 
 function FaceChip({ imageUrl, box, index, size = 58 }: {
-  imageUrl: string;
-  box: { x: number; y: number; width: number; height: number };
-  index: number;
-  size?: number;
+  imageUrl: string; box: { x: number; y: number; width: number; height: number }; index: number; size?: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -101,26 +96,19 @@ function FaceChip({ imageUrl, box, index, size = 58 }: {
       const sx = Math.max(0, px - pad), sy = Math.max(0, py - pad);
       const sw = Math.min(img.width - sx, pw + pad * 2);
       const sh = Math.min(img.height - sy, ph + pad * 2);
-      canvas.width = size;
-      canvas.height = size;
+      canvas.width = size; canvas.height = size;
       ctx.drawImage(img, sx, sy, sw, sh, 0, 0, size, size);
     };
   }, [imageUrl, box, size]);
   return (
     <div className="text-center">
-      <canvas
-        ref={canvasRef}
-        style={{ width: `${size}px`, height: `${size}px` }}
-        className="rounded-full border-2 border-blue-500 block"
-      />
+      <canvas ref={canvasRef} style={{ width: `${size}px`, height: `${size}px` }} className="rounded-full border-2 border-blue-500 block" />
       <span className="text-[10px] text-slate-400 mt-1 block">#{index + 1}</span>
     </div>
   );
 }
 
-function PhotoModal({ photo, onClose, onDelete }: {
-  photo: FacePhoto; onClose: () => void; onDelete: (id: string) => void;
-}) {
+function PhotoModal({ photo, onClose, onDelete }: { photo: FacePhoto; onClose: () => void; onDelete: (id: string) => void }) {
   return (
     <div className="fixed inset-0 bg-black/85 z-[2000] flex items-center justify-center p-5 overflow-y-auto" onClick={onClose}>
       <div className="max-w-[600px] w-full bg-white rounded-2xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -132,31 +120,20 @@ function PhotoModal({ photo, onClose, onDelete }: {
               {photo.location && ` · ${photo.location.split(",")[0]}`}
             </p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 transition-colors p-1">
-            <X size={20} />
-          </button>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 transition-colors p-1"><X size={20} /></button>
         </div>
-
-        <div className="bg-slate-100">
-          <PhotoWithBoxes photo={photo} />
-        </div>
-
+        <div className="bg-slate-100"><PhotoWithBoxes photo={photo} /></div>
         {photo.boxes && photo.boxes.length > 0 && (
           <div className="px-5 py-4 border-b border-slate-100">
             <p className="text-xs text-slate-400 mb-3">감지된 얼굴 ({photo.faceCount}명)</p>
             <div className="flex gap-2.5 flex-wrap">
-              {photo.boxes.map((box, i) => (
-                <FaceChip key={i} imageUrl={photo.imageUrl} box={box} index={i} />
-              ))}
+              {photo.boxes.map((box, i) => <FaceChip key={i} imageUrl={photo.imageUrl} box={box} index={i} />)}
             </div>
           </div>
         )}
-
         <div className="px-5 py-4">
-          <button
-            onClick={() => { onDelete(photo.id); onClose(); }}
-            className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-600 text-white py-3 rounded-xl font-bold text-sm transition-colors"
-          >
+          <button onClick={() => { onDelete(photo.id); onClose(); }}
+            className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-600 text-white py-3 rounded-xl font-bold text-sm transition-colors">
             <Trash2 size={15} /> 삭제
           </button>
         </div>
@@ -176,21 +153,16 @@ function PersonModal({ cluster, onClose }: { cluster: PersonCluster; onClose: ()
               {cluster.faces.length}번 등장 · {new Set(cluster.faces.map(f => f.photo.id)).size}장의 사진
             </p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 transition-colors p-1">
-            <X size={20} />
-          </button>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 transition-colors p-1"><X size={20} /></button>
         </div>
-
         <div className="p-5 overflow-y-auto">
           <div className="grid grid-cols-2 gap-3">
             {cluster.faces.map((face, idx) => {
               const box = face.photo.boxes?.[face.boxIndex];
               return (
-                <div key={`${face.photo.id}_${face.boxIndex}_${idx}`}
-                  className="bg-slate-50 rounded-xl overflow-hidden border border-slate-200">
+                <div key={`${face.photo.id}_${face.boxIndex}_${idx}`} className="bg-slate-50 rounded-xl overflow-hidden border border-slate-200">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={face.photo.imageUrl} alt={face.photo.fileName}
-                    className="w-full h-28 object-cover bg-slate-100" />
+                  <img src={face.photo.imageUrl} alt={face.photo.fileName} className="w-full h-28 object-cover bg-slate-100" />
                   <div className="p-2.5 flex items-center gap-2.5">
                     {box && <div className="flex-shrink-0"><FaceChip imageUrl={face.photo.imageUrl} box={box} index={face.boxIndex} size={44} /></div>}
                     <div className="min-w-0">
@@ -208,48 +180,45 @@ function PersonModal({ cluster, onClose }: { cluster: PersonCluster; onClose: ()
   );
 }
 
-function parseDate(str: string): Date {
-  const d = new Date(str);
-  if (!isNaN(d.getTime())) return d;
-  const m = str.match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/);
-  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
-  return new Date(0);
+function getGroupKey(photo: FacePhoto): string {
+  if (photo.location) {
+    const parts = photo.location.split(",").map((s) => s.trim());
+    return parts.slice(-2).join(", ");
+  }
+  const d = new Date(photo.uploadedAt);
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1;
+  return y > 1970 ? `${y}년 ${m}월` : "기타";
 }
 
 export default function FacesPage() {
-  const [storedPhotos, setStoredPhotos] = useState<FacePhoto[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const raw = localStorage.getItem(FACES_STORAGE_KEY);
-      const photos: FacePhoto[] = raw ? JSON.parse(raw) : [];
-      return [...photos].sort((a, b) => parseDate(b.uploadedAt).getTime() - parseDate(a.uploadedAt).getTime());
-    } catch { return []; }
-  });
+  const [storedPhotos,   setStoredPhotos]   = useState<FacePhoto[]>([]);
+  const [activeTab,      setActiveTab]      = useState<"people" | "photos">("people");
+  const [threshold,      setThreshold]      = useState(0.50);
+  const [selectedPhoto,  setSelectedPhoto]  = useState<FacePhoto | null>(null);
+  const [selectedCluster,setSelectedCluster]= useState<PersonCluster | null>(null);
 
-  const [activeTab,       setActiveTab]       = useState<"people" | "photos">("people");
-  const [threshold,       setThreshold]       = useState(0.50);
-  const [selectedPhoto,   setSelectedPhoto]   = useState<FacePhoto | null>(null);
-  const [selectedCluster, setSelectedCluster] = useState<PersonCluster | null>(null);
+  useEffect(() => {
+    async function load() {
+      const { data: { user } } = await supabase.auth.getUser();
+      const uid = user?.id ?? "guest";
+      const stored: FacePhoto[] = JSON.parse(localStorage.getItem(`faces-${uid}`) ?? "[]");
+      setStoredPhotos(stored);
+    }
+    load();
+  }, []);
 
-  function handleDelete(id: string) {
-    const next = storedPhotos.filter((p) => p.id !== id);
-    setStoredPhotos(next);
-    localStorage.setItem(FACES_STORAGE_KEY, JSON.stringify(next));
+  async function handleDelete(id: string) {
+    const { data: { user } } = await supabase.auth.getUser();
+    const uid = user?.id ?? "guest";
+    const facesKey = `faces-${uid}`;
+    const photos: FacePhoto[] = JSON.parse(localStorage.getItem(facesKey) ?? "[]");
+    localStorage.setItem(facesKey, JSON.stringify(photos.filter((p) => p.id !== id)));
+    setStoredPhotos((prev) => prev.filter((p) => p.id !== id));
   }
 
   const clusters = useMemo(() => clusterByPerson(storedPhotos, threshold), [storedPhotos, threshold]);
   const hasDescriptors = storedPhotos.some((p) => p.descriptors?.length);
-
-  function getGroupKey(photo: FacePhoto): string {
-    if (photo.location) {
-      const parts = photo.location.split(",").map((s) => s.trim());
-      return parts.slice(-2).join(", ");
-    }
-    const d = parseDate(photo.uploadedAt);
-    const y = d.getFullYear();
-    const m = d.getMonth() + 1;
-    return y > 1970 ? `${y}년 ${m}월` : "기타";
-  }
 
   const photoGroups: Record<string, FacePhoto[]> = {};
   storedPhotos.forEach((p) => {
@@ -262,7 +231,6 @@ export default function FacesPage() {
     <main className="min-h-screen bg-slate-50 px-5 py-8 pb-28">
       <div className="max-w-2xl mx-auto">
 
-        {/* Header */}
         <div className="flex items-center gap-3 mb-8">
           <div className="w-10 h-10 bg-rose-500 rounded-xl flex items-center justify-center shadow-md shadow-rose-200">
             <Users size={22} className="text-white" />
@@ -283,25 +251,18 @@ export default function FacesPage() {
           </div>
         ) : (
           <>
-            {/* Tabs */}
             <div className="flex gap-1 mb-6 bg-slate-100 rounded-xl p-1">
               {(["people", "photos"] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
+                <button key={tab} onClick={() => setActiveTab(tab)}
                   className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all ${
-                    activeTab === tab
-                      ? "bg-white text-slate-900 shadow-sm"
-                      : "text-slate-500 hover:text-slate-700"
-                  }`}
-                >
+                    activeTab === tab ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                  }`}>
                   {tab === "people" ? <Users size={15} /> : <ImageIcon size={15} />}
                   {tab === "people" ? "사람별" : "사진별"}
                 </button>
               ))}
             </div>
 
-            {/* People tab */}
             {activeTab === "people" && (
               <div>
                 {!hasDescriptors ? (
@@ -311,8 +272,7 @@ export default function FacesPage() {
                       <p className="font-bold text-amber-800 text-sm">향상 모델이 필요합니다</p>
                     </div>
                     <p className="text-sm text-amber-700 leading-relaxed mb-3">
-                      사람별 분류를 쓰려면 SSD + Face Recognition 모델 파일이 필요합니다.<br />
-                      터미널에서 아래 명령어를 실행하고 앱을 재시작하세요.
+                      사람별 분류를 쓰려면 SSD + Face Recognition 모델 파일이 필요합니다.
                     </p>
                     <div className="bg-slate-900 rounded-xl px-4 py-3 flex items-center gap-2">
                       <Terminal size={14} className="text-emerald-400 flex-shrink-0" />
@@ -321,7 +281,6 @@ export default function FacesPage() {
                   </div>
                 ) : (
                   <>
-                    {/* Threshold slider */}
                     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 mb-5">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
@@ -332,18 +291,13 @@ export default function FacesPage() {
                           {clusters.length}명 감지됨
                         </span>
                       </div>
-                      <input
-                        type="range" min={0.3} max={0.7} step={0.01}
-                        value={threshold}
-                        onChange={(e) => setThreshold(parseFloat(e.target.value))}
-                        className="w-full"
-                      />
+                      <input type="range" min={0.3} max={0.7} step={0.01} value={threshold}
+                        onChange={(e) => setThreshold(parseFloat(e.target.value))} className="w-full" />
                       <div className="flex justify-between text-[10px] text-slate-400 mt-1.5">
                         <span>← 엄격 (같은 사람만)</span>
                         <span>느슨 (비슷한 얼굴 포함) →</span>
                       </div>
                     </div>
-
                     {clusters.length === 0 ? (
                       <p className="text-center text-slate-400 py-10">기준을 조정하면 얼굴이 분류됩니다.</p>
                     ) : (
@@ -352,15 +306,10 @@ export default function FacesPage() {
                           const rep = cluster.faces[0];
                           const repBox = rep.photo.boxes?.[rep.boxIndex];
                           return (
-                            <div
-                              key={cluster.id}
-                              onClick={() => setSelectedCluster(cluster)}
-                              className="photo-card bg-white rounded-2xl border border-slate-200 shadow-sm p-4 text-center cursor-pointer"
-                            >
+                            <div key={cluster.id} onClick={() => setSelectedCluster(cluster)}
+                              className="photo-card bg-white rounded-2xl border border-slate-200 shadow-sm p-4 text-center cursor-pointer">
                               <div className="flex justify-center mb-3">
-                                {repBox ? (
-                                  <FaceChip imageUrl={rep.photo.imageUrl} box={repBox} index={rep.boxIndex} size={72} />
-                                ) : (
+                                {repBox ? <FaceChip imageUrl={rep.photo.imageUrl} box={repBox} index={rep.boxIndex} size={72} /> : (
                                   <div className="w-18 h-18 rounded-full bg-slate-100 flex items-center justify-center">
                                     <Users size={28} className="text-slate-300" />
                                   </div>
@@ -378,7 +327,6 @@ export default function FacesPage() {
               </div>
             )}
 
-            {/* Photos tab */}
             {activeTab === "photos" && (
               <div className="space-y-6">
                 {Object.entries(photoGroups).map(([groupKey, photos]) => (
@@ -390,27 +338,16 @@ export default function FacesPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       {photos.map((photo) => (
-                        <div
-                          key={photo.id}
-                          onClick={() => setSelectedPhoto(photo)}
-                          className="photo-card bg-white rounded-xl overflow-hidden border border-slate-200 cursor-pointer shadow-sm relative group"
-                        >
+                        <div key={photo.id} onClick={() => setSelectedPhoto(photo)}
+                          className="photo-card bg-white rounded-xl overflow-hidden border border-slate-200 cursor-pointer shadow-sm relative group">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={photo.imageUrl} alt={photo.fileName}
-                            className="w-full h-40 object-contain bg-slate-100" />
-
-                          {/* Direct delete button — visible on hover */}
+                          <img src={photo.imageUrl} alt={photo.fileName} className="w-full h-40 object-contain bg-slate-100" />
                           <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (confirm("이 사진을 삭제하시겠습니까?")) handleDelete(photo.id);
-                            }}
+                            onClick={(e) => { e.stopPropagation(); if (confirm("이 사진을 삭제하시겠습니까?")) handleDelete(photo.id); }}
                             className="absolute top-2 right-2 w-8 h-8 flex items-center justify-center bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-150"
-                            title="Delete"
-                          >
+                            title="Delete">
                             <Trash2 size={14} />
                           </button>
-
                           <div className="p-2.5">
                             <p className="font-bold text-slate-800 text-xs truncate">{photo.fileName}</p>
                             <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
@@ -428,14 +365,9 @@ export default function FacesPage() {
           </>
         )}
 
-        {selectedPhoto && (
-          <PhotoModal photo={selectedPhoto} onClose={() => setSelectedPhoto(null)} onDelete={handleDelete} />
-        )}
-        {selectedCluster && (
-          <PersonModal cluster={selectedCluster} onClose={() => setSelectedCluster(null)} />
-        )}
+        {selectedPhoto && <PhotoModal photo={selectedPhoto} onClose={() => setSelectedPhoto(null)} onDelete={handleDelete} />}
+        {selectedCluster && <PersonModal cluster={selectedCluster} onClose={() => setSelectedCluster(null)} />}
       </div>
-
       <BottomNav />
     </main>
   );
