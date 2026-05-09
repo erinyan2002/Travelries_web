@@ -4,8 +4,8 @@ export type MapPhoto = {
   id: string;
   fileName: string;
   imageUrl: string;
-  lat: number;
-  lng: number;
+  lat?: number;
+  lng?: number;
   location?: string;
   captureDate?: string;
   captureTime?: string;

@@ -110,8 +110,8 @@ export default function MapPage() {
   const clusters = useMemo<Cluster[]>(() => {
     const map: Record<string, Cluster> = {};
     photos.forEach((p) => {
-      const key = `${Math.round(p.lat * 100)},${Math.round(p.lng * 100)}`;
-      if (!map[key]) map[key] = { key, lat: p.lat, lng: p.lng, photos: [] };
+      const key = `${Math.round(p.lat! * 100)},${Math.round(p.lng! * 100)}`;
+      if (!map[key]) map[key] = { key, lat: p.lat!, lng: p.lng!, photos: [] };
       map[key].photos.push(p);
     });
     return Object.values(map);
@@ -119,7 +119,7 @@ export default function MapPage() {
 
   const center = useMemo<[number, number]>(() => {
     if (photos.length === 0) return [36.5, 127.8];
-    return [photos[0].lat, photos[0].lng];
+    return [photos[0].lat!, photos[0].lng!];
   }, [photos]);
 
   async function handleClear() {

@@ -10,7 +10,7 @@ import {
   Camera, Upload, MapPin, Users, CalendarDays, Clock,
   FileImage, Ruler, CheckCircle2, Loader2, Cpu, AlertTriangle,
   Search, Navigation, Save, Pencil, X, Check, Wifi, WifiOff,
-  Coffee, Utensils, Wine,
+  Coffee, Utensils, Wine, TrendingUp, Sparkles,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────
@@ -33,6 +33,12 @@ type NearbyPlace = {
   type: "restaurant" | "cafe" | "bar" | string;
   cuisine: string;
   distance_m: number;
+};
+
+type BatchFile = {
+  name: string;
+  status: "pending" | "processing" | "done" | "error";
+  info: string;
 };
 
 type PhotoInfo = {
@@ -168,6 +174,33 @@ export default function HomePage() {
   const [placesLoading,    setPlacesLoading]    = useState(false);
   const [placesFetched,    setPlacesFetched]    = useState(false);
   const [userId,           setUserId]           = useState<string | null>(null);
+  const [dashStats,        setDashStats]        = useState({ totalPhotos: 0, totalLocations: 0, totalFaces: 0 });
+  const [highlights,       setHighlights]       = useState<{ recent: MapPhoto | null; mostFaces: MapPhoto | null }>({ recent: null, mostFaces: null });
+  const [batchItems,       setBatchItems]       = useState<BatchFile[]>([]);
+  const [batchActive,      setBatchActive]      = useState(false);
+
+  async function refreshStats() {
+    const { data: { user } } = await supabase.auth.getUser();
+    const uid = user?.id ?? "guest";
+    const mapPhotos: MapPhoto[] = JSON.parse(localStorage.getItem(`map-${uid}`) ?? "[]");
+    const facePhotos: FacePhoto[] = JSON.parse(localStorage.getItem(`faces-${uid}`) ?? "[]");
+    const locationSet = new Set(
+      mapPhotos.map((p) => p.location?.split(",")[0]?.trim()).filter(Boolean)
+    );
+    const totalFaces = facePhotos.reduce((sum, p) => sum + (p.faceCount ?? 0), 0);
+    setDashStats({ totalPhotos: mapPhotos.length, totalLocations: locationSet.size, totalFaces });
+    setHighlights({
+      recent: mapPhotos[0] ?? null,
+      mostFaces: mapPhotos.reduce<MapPhoto | null>(
+        (best, p) => ((p.faceCount ?? 0) > (best?.faceCount ?? 0) ? p : best), null
+      ),
+    });
+  }
+
+  useEffect(() => {
+    refreshStats();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const MODEL_URL = "/models";
@@ -190,8 +223,10 @@ export default function HomePage() {
   }, []);
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(event.target.files ?? []);
+    if (files.length === 0) return;
+    if (files.length > 1) { processBatch(files); return; }
+    const file = files[0];
 
     setSavedMessage("");
     setFaceMessage("");
@@ -381,6 +416,102 @@ export default function HomePage() {
     );
   }
 
+  async function processBatch(files: File[]) {
+    setBatchActive(true);
+    const items: BatchFile[] = files.map((f) => ({ name: f.name, status: "pending", info: "" }));
+    setBatchItems([...items]);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    const uid = user?.id ?? "guest";
+    const mapKey   = `map-${uid}`;
+    const facesKey = `faces-${uid}`;
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      items[i] = { ...items[i], status: "processing" };
+      setBatchItems([...items]);
+
+      try {
+        const exifData: any = await exifr.parse(file).catch(() => null);
+        const gpsData:  any = await exifr.gps(file).catch(() => null);
+        const lat = typeof gpsData?.latitude  === "number" ? gpsData.latitude  : undefined;
+        const lng = typeof gpsData?.longitude === "number" ? gpsData.longitude : undefined;
+
+        let captureDate: string | undefined;
+        let captureTime: string | undefined;
+        let location:    string | undefined;
+
+        const takenAt = exifData?.DateTimeOriginal || exifData?.CreateDate || null;
+        if (takenAt) {
+          const d = new Date(takenAt);
+          captureDate = d.toLocaleDateString();
+          captureTime = d.toLocaleTimeString();
+        }
+        if (lat !== undefined && lng !== undefined) {
+          const addr = await reverseGeocode(lat, lng);
+          location = addr || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+        }
+
+        let faceCount = 0;
+        let faceBoxes:   Array<{ x: number; y: number; width: number; height: number }> = [];
+        let faceDescriptors: number[][] = [];
+
+        if (isModelLoaded) {
+          const imgEl = await faceapi.fetchImage(URL.createObjectURL(file));
+          const AREA_THRESHOLD = 0.12;
+          if (modelType === "ssd") {
+            const all = await faceapi
+              .detectAllFaces(imgEl, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
+              .withFaceLandmarks().withFaceDescriptors();
+            const areas = all.map((d) => d.detection.box.width * d.detection.box.height);
+            const maxArea = areas.length > 0 ? Math.max(...areas) : 0;
+            const filtered = maxArea > 0 ? all.filter((_, j) => areas[j] / maxArea >= AREA_THRESHOLD) : all;
+            faceCount       = filtered.length;
+            faceBoxes       = filtered.map((d) => ({ x: d.detection.box.x / imgEl.naturalWidth, y: d.detection.box.y / imgEl.naturalHeight, width: d.detection.box.width / imgEl.naturalWidth, height: d.detection.box.height / imgEl.naturalHeight }));
+            faceDescriptors = filtered.map((d) => Array.from(d.descriptor));
+          } else {
+            const detections = await faceapi.detectAllFaces(imgEl, new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.3 }));
+            const areas = detections.map((d) => d.box.width * d.box.height);
+            const maxArea = areas.length > 0 ? Math.max(...areas) : 0;
+            const filtered = maxArea > 0 ? detections.filter((_, j) => areas[j] / maxArea >= AREA_THRESHOLD) : detections;
+            faceCount = filtered.length;
+            faceBoxes = filtered.map((d) => ({ x: d.box.x / imgEl.naturalWidth, y: d.box.y / imgEl.naturalHeight, width: d.box.width / imgEl.naturalWidth, height: d.box.height / imgEl.naturalHeight }));
+          }
+        }
+
+        const dataUrl   = await createThumbnailDataUrl(file, 420, 0.7);
+        const photoId   = crypto.randomUUID();
+
+        const mapPhotos: MapPhoto[]  = JSON.parse(localStorage.getItem(mapKey)   ?? "[]");
+        mapPhotos.unshift({ id: photoId, fileName: file.name, imageUrl: dataUrl, lat, lng, location, captureDate, captureTime, uploadedAt: new Date().toISOString(), faceCount });
+        localStorage.setItem(mapKey, JSON.stringify(mapPhotos));
+
+        if (faceCount > 0) {
+          const facePhotos: FacePhoto[] = JSON.parse(localStorage.getItem(facesKey) ?? "[]");
+          facePhotos.unshift({ id: crypto.randomUUID(), fileName: file.name, imageUrl: dataUrl, faceCount, uploadedAt: new Date().toISOString(), ...(faceBoxes.length > 0 && { boxes: faceBoxes }), ...(faceDescriptors.length > 0 && { descriptors: faceDescriptors }), ...(lat !== undefined && { lat }), ...(lng !== undefined && { lng }), ...(location && { location }) });
+          localStorage.setItem(facesKey, JSON.stringify(facePhotos));
+        }
+
+        const infoParts: string[] = [];
+        if (faceCount > 0) infoParts.push(`얼굴 ${faceCount}명`);
+        infoParts.push(location ? location.split(",")[0] : "GPS 없음");
+        items[i] = { name: file.name, status: "done", info: infoParts.join(" · ") };
+      } catch (err) {
+        console.error(`Batch error [${file.name}]:`, err);
+        items[i] = { name: file.name, status: "error", info: "처리 실패" };
+      }
+
+      setBatchItems([...items]);
+    }
+
+    refreshStats();
+  }
+
+  function resetBatch() {
+    setBatchActive(false);
+    setBatchItems([]);
+  }
+
   function startEditName() { setDraftFileName(customFileName); setIsEditingName(true); }
   async function saveEditedName() {
     const newName = draftFileName.trim();
@@ -430,6 +561,7 @@ export default function HomePage() {
       const existing: MapPhoto[] = JSON.parse(localStorage.getItem(mapKey) ?? "[]");
       localStorage.setItem(mapKey, JSON.stringify([photo, ...existing]));
       setSavedMessage("지도 및 앨범에 저장되었습니다!");
+      refreshStats();
     } catch (err) {
       console.error("Save to map failed:", err);
       setSavedMessage(`저장 실패: ${err instanceof Error ? err.message : "다시 시도해주세요."}`);
@@ -450,6 +582,100 @@ export default function HomePage() {
           </div>
           <p className="text-slate-500 ml-[52px] text-sm">여행 사진을 업로드하면 위치·얼굴을 자동으로 분석합니다.</p>
         </div>
+
+        {/* ── Dashboard Stats ── */}
+        <div className="grid grid-cols-3 gap-3 mb-6">
+          {[
+            { label: "저장된 사진",   value: dashStats.totalPhotos,    icon: Camera, color: "bg-blue-500"    },
+            { label: "방문한 장소",   value: dashStats.totalLocations, icon: MapPin, color: "bg-emerald-500" },
+            { label: "감지된 얼굴",   value: dashStats.totalFaces,     icon: Users,  color: "bg-rose-500"    },
+          ].map(({ label, value, icon: Icon, color }) => (
+            <div key={label} className="bg-white rounded-2xl border border-slate-200 shadow-sm px-4 py-3 flex items-center gap-3">
+              <div className={`w-9 h-9 ${color} rounded-xl flex items-center justify-center flex-shrink-0`}>
+                <Icon size={17} className="text-white" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xl font-extrabold text-slate-900 leading-tight">{value}</p>
+                <p className="text-[11px] text-slate-400 font-medium truncate">{label}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* ── Batch Upload UI ── */}
+        {batchActive && (() => {
+          const done  = batchItems.filter((b) => b.status === "done" || b.status === "error").length;
+          const total = batchItems.length;
+          const allDone = done === total && total > 0;
+          const saved = batchItems.filter((b) => b.status === "done").length;
+          const totalFacesFound = batchItems.filter((b) => b.info.includes("얼굴")).reduce((sum, b) => {
+            const m = b.info.match(/얼굴 (\d+)명/);
+            return sum + (m ? parseInt(m[1]) : 0);
+          }, 0);
+          return (
+            <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-6">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-blue-500 rounded-xl flex items-center justify-center">
+                    <Upload size={16} className="text-white" />
+                  </div>
+                  <div>
+                    <h2 className="font-bold text-slate-800">일괄 업로드</h2>
+                    <p className="text-xs text-slate-400">{done} / {total} 처리됨</p>
+                  </div>
+                </div>
+                {allDone && (
+                  <button onClick={resetBatch}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-sm font-bold hover:bg-slate-200 transition-colors">
+                    <X size={14} /> 닫기
+                  </button>
+                )}
+              </div>
+
+              {/* Progress bar */}
+              <div className="px-6 pt-4 pb-2">
+                <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-blue-500 rounded-full transition-all duration-300"
+                    style={{ width: total > 0 ? `${Math.round((done / total) * 100)}%` : "0%" }} />
+                </div>
+                <p className="text-xs text-slate-400 mt-1.5">{total > 0 ? Math.round((done / total) * 100) : 0}% 완료</p>
+              </div>
+
+              {/* File list */}
+              <div className="px-6 pb-4 space-y-2 max-h-72 overflow-y-auto">
+                {batchItems.map((item, i) => (
+                  <div key={i} className="flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
+                    {item.status === "pending"    && <div className="w-5 h-5 rounded-full border-2 border-slate-300 flex-shrink-0" />}
+                    {item.status === "processing" && <Loader2 size={18} className="text-blue-500 animate-spin flex-shrink-0" />}
+                    {item.status === "done"       && <CheckCircle2 size={18} className="text-emerald-500 flex-shrink-0" />}
+                    {item.status === "error"      && <AlertTriangle size={18} className="text-red-400 flex-shrink-0" />}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-800 truncate">{item.name}</p>
+                      <p className={`text-xs mt-0.5 ${item.status === "error" ? "text-red-400" : "text-slate-400"}`}>
+                        {item.info || (item.status === "pending" ? "대기 중..." : item.status === "processing" ? "처리 중..." : "")}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Done summary */}
+              {allDone && (
+                <div className="px-6 pb-5">
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-center gap-3">
+                    <CheckCircle2 size={18} className="text-emerald-500 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-emerald-700">{saved}개 저장 완료!</p>
+                      {totalFacesFound > 0 && (
+                        <p className="text-xs text-emerald-600 mt-0.5">{totalFacesFound}명의 얼굴이 감지되어 Faces 앨범에 저장되었습니다.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
+          );
+        })()}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
@@ -473,7 +699,7 @@ export default function HomePage() {
             <div className="p-6 space-y-4">
               {/* Drop zone */}
               <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-xl p-10 cursor-pointer bg-slate-50 hover:bg-blue-50 hover:border-blue-300 transition-all duration-200 group">
-                <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
+                <input type="file" accept="image/*" multiple onChange={handleFileChange} className="hidden" />
                 <div className="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center mb-3 group-hover:bg-blue-200 transition-colors">
                   <Upload size={26} className="text-blue-600" />
                 </div>
@@ -720,6 +946,59 @@ export default function HomePage() {
           </section>
 
         </div>
+
+        {/* ── Highlights ── */}
+        {(highlights.recent || (highlights.mostFaces && (highlights.mostFaces.faceCount ?? 0) > 0)) && (
+          <section className="mt-6 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="flex items-center gap-2 px-5 py-3.5 border-b border-slate-100 bg-slate-50">
+              <Sparkles size={16} className="text-amber-400" />
+              <h2 className="font-bold text-slate-800">Highlights</h2>
+            </div>
+            <div className="p-4 grid grid-cols-2 gap-3">
+              {highlights.recent && (
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                    <Clock size={9} /> 최근 업로드
+                  </p>
+                  <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={highlights.recent.imageUrl} alt={highlights.recent.fileName} className="w-full h-28 object-contain bg-slate-100" />
+                    <div className="p-2.5">
+                      <p className="text-xs font-bold text-slate-800 truncate">{highlights.recent.fileName}</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
+                        <CalendarDays size={9} />
+                        {highlights.recent.captureDate ?? highlights.recent.uploadedAt?.slice(0, 10) ?? ""}
+                      </p>
+                      {(highlights.recent.location) && (
+                        <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1 truncate">
+                          <MapPin size={9} />{highlights.recent.location.split(",")[0]}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+              {highlights.mostFaces && (highlights.mostFaces.faceCount ?? 0) > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                    <Users size={9} /> 최다 얼굴 사진
+                  </p>
+                  <div className="rounded-xl overflow-hidden border border-blue-200 bg-slate-50">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={highlights.mostFaces.imageUrl} alt={highlights.mostFaces.fileName} className="w-full h-28 object-contain bg-slate-100" />
+                    <div className="p-2.5">
+                      <p className="text-xs font-bold text-slate-800 truncate">{highlights.mostFaces.fileName}</p>
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full mt-1">
+                        <Users size={8} /> 얼굴 {highlights.mostFaces.faceCount}명
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
       </div>
 
       <BottomNav />

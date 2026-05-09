@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, Map, Image, Users, Star, LogOut, UserCircle } from "lucide-react";
+import { Home, Map, Image, Users, Star, LogOut, UserCircle, BarChart2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 const navItems = [
@@ -11,6 +11,7 @@ const navItems = [
   { href: "/albums",  icon: Image,      label: "Albums"  },
   { href: "/faces",   icon: Users,      label: "Faces"   },
   { href: "/saved",   icon: Star,       label: "Saved"   },
+  { href: "/stats",   icon: BarChart2,  label: "Stats"   },
   { href: "/profile", icon: UserCircle, label: "Profile" },
 ];
 
