@@ -1,10 +1,17 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import AuthGuard from "@/components/AuthGuard";
+import NotificationBell from "@/components/NotificationBell";
 
 export const metadata: Metadata = {
   title: "TravelLens",
   description: "Photo map & face detection app",
+  themeColor: "#3b82f6",
+  appleWebApp: {
+    capable: true,
+    title: "TravelLens",
+    statusBarStyle: "default",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -12,6 +19,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ko">
       <body className="antialiased">
         <AuthGuard>{children}</AuthGuard>
+        <NotificationBell />
       </body>
     </html>
   );

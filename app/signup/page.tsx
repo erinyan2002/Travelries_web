@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Globe, Eye, EyeOff, AlertCircle, UserPlus, CheckCircle2, Mail } from "lucide-react";
+import { Eye, EyeOff, AlertCircle, UserPlus, CheckCircle2, Mail } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import AppLogo from "@/components/AppLogo";
 
 export default function SignUpPage() {
   const router = useRouter();
@@ -69,10 +70,13 @@ export default function SignUpPage() {
 
         {/* Branding */}
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-200">
-            <Globe size={32} className="text-white" />
+          <div className="relative inline-flex mb-5">
+            <div className="absolute inset-0 bg-blue-400/25 blur-2xl rounded-full scale-[1.6]" />
+            <AppLogo size="xl" className="relative shadow-xl shadow-blue-300/50" />
           </div>
-          <h1 className="text-3xl font-extrabold text-slate-900 mb-1">TravelLens</h1>
+          <h1 className="text-3xl font-black tracking-tight text-slate-900 mb-1">
+            Travel<span className="bg-gradient-to-r from-blue-600 to-indigo-500 bg-clip-text text-transparent">Lens</span>
+          </h1>
           <p className="text-slate-500 text-sm">Create your account</p>
         </div>
 

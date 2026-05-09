@@ -4,7 +4,11 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
-const PUBLIC_PATHS = ["/login", "/signup"];
+const PUBLIC_PATHS = ["/login", "/signup", "/forgot-password", "/reset-password"];
+
+function isPublicPath(path: string) {
+  return PUBLIC_PATHS.includes(path) || path.startsWith("/share/");
+}
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router   = useRouter();
@@ -13,7 +17,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session && !PUBLIC_PATHS.includes(pathname)) {
+      if (!session && !isPublicPath(pathname)) {
         router.replace("/login");
       } else {
         setChecked(true);
@@ -21,7 +25,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
-      if (!session && !PUBLIC_PATHS.includes(pathname)) {
+      if (!session && !isPublicPath(pathname)) {
         router.replace("/login");
       }
     });

@@ -7,8 +7,9 @@ import { supabase } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
 import {
   Images, MapPin, Users, Image, Star, Download, Trash2,
-  X, CalendarDays, SlidersHorizontal, Search, Calendar,
+  X, CalendarDays, SlidersHorizontal, Search, Calendar, Share2, Loader2,
 } from "lucide-react";
+import { sharePhoto } from "@/lib/shareUtils";
 
 type Filter    = "전체" | "인물 사진" | "일반 사진";
 type DateRange = "all" | "week" | "month" | "year";
@@ -52,11 +53,40 @@ function InfoChip({ label, value }: { label: string; value: string }) {
   );
 }
 
+function ShareLinkModal({ url, onClose }: { url: string; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  async function handleCopy() {
+    await navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl p-5 max-w-[440px] w-full shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-1">
+          <p className="font-bold text-slate-900">Share link ready!</p>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1"><X size={18} /></button>
+        </div>
+        <p className="text-xs text-slate-400 mb-3">Anyone with this link can view the photo.</p>
+        <div className="flex gap-2">
+          <input readOnly value={url}
+            className="flex-1 text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-slate-600 truncate outline-none" />
+          <button onClick={handleCopy}
+            className="px-4 py-2.5 bg-blue-500 text-white text-sm font-bold rounded-xl hover:bg-blue-600 transition-colors whitespace-nowrap">
+            {copied ? "Copied!" : "Copy"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PhotoModal({
-  photo, onClose, onDelete, onDownload,
+  photo, onClose, onDelete, onDownload, onShare, sharing,
 }: {
   photo: MapPhoto; onClose: () => void;
   onDelete: (id: string) => void; onDownload: (photo: MapPhoto) => void;
+  onShare: (photo: MapPhoto) => void; sharing: boolean;
 }) {
   return (
     <div className="fixed inset-0 bg-black/85 z-[2000] flex items-center justify-center p-5" onClick={onClose}>
@@ -80,6 +110,10 @@ function PhotoModal({
           <InfoChip label="AI 분류" value={(photo.faceCount ?? 0) > 0 ? `인물 사진 (${photo.faceCount}명)` : "일반 사진"} />
         </div>
         <div className="flex gap-2 px-4 py-3 border-t border-slate-100">
+          <button onClick={() => onShare(photo)} disabled={sharing}
+            className="flex-1 flex items-center justify-center gap-2 bg-blue-500 text-white py-2.5 rounded-xl text-sm font-bold hover:bg-blue-600 transition-colors disabled:opacity-60">
+            {sharing ? <Loader2 size={15} className="animate-spin" /> : <Share2 size={15} />} Share
+          </button>
           <button onClick={() => onDownload(photo)}
             className="flex-1 flex items-center justify-center gap-2 bg-slate-900 text-white py-2.5 rounded-xl text-sm font-bold hover:bg-slate-700 transition-colors">
             <Download size={15} /> 다운로드
@@ -94,13 +128,44 @@ function PhotoModal({
   );
 }
 
+function AlbumsSkeleton() {
+  return (
+    <div className="space-y-5 animate-pulse">
+      {[0, 1].map((g) => (
+        <div key={g} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="flex items-center gap-2 px-5 py-3.5 border-b border-slate-100 bg-slate-50">
+            <div className="w-4 h-4 bg-slate-200 rounded-full" />
+            <div className="h-4 bg-slate-200 rounded-full w-32" />
+            <div className="ml-auto h-5 bg-slate-200 rounded-full w-10" />
+          </div>
+          <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+                <div className="w-full h-36 bg-slate-200" />
+                <div className="p-2.5 space-y-2">
+                  <div className="h-3 bg-slate-200 rounded-full w-3/4" />
+                  <div className="h-3 bg-slate-200 rounded-full w-1/2" />
+                  <div className="h-7 bg-slate-200 rounded-lg w-full mt-1" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function AlbumsPage() {
-  const [photos,        setPhotos]        = useState<MapPhoto[]>([]);
-  const [filter,        setFilter]        = useState<Filter>("전체");
-  const [dateRange,     setDateRange]     = useState<DateRange>("all");
-  const [searchQuery,   setSearchQuery]   = useState("");
-  const [selectedPhoto, setSelectedPhoto] = useState<MapPhoto | null>(null);
-  const [savedIds,      setSavedIds]      = useState<Set<string>>(new Set());
+  const [photos,         setPhotos]         = useState<MapPhoto[]>([]);
+  const [loading,        setLoading]        = useState(true);
+  const [filter,         setFilter]         = useState<Filter>("전체");
+  const [dateRange,      setDateRange]      = useState<DateRange>("all");
+  const [searchQuery,    setSearchQuery]    = useState("");
+  const [selectedPhoto,  setSelectedPhoto]  = useState<MapPhoto | null>(null);
+  const [savedIds,       setSavedIds]       = useState<Set<string>>(new Set());
+  const [sharingId,      setSharingId]      = useState<string | null>(null);
+  const [shareResultUrl, setShareResultUrl] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -109,6 +174,7 @@ export default function AlbumsPage() {
       const stored: MapPhoto[] = JSON.parse(localStorage.getItem(`map-${uid}`) ?? "[]");
       setPhotos(stored);
       setSavedIds(await getSavedIds());
+      setLoading(false);
     }
     load();
   }, []);
@@ -138,6 +204,18 @@ export default function AlbumsPage() {
     a.href = photo.imageUrl;
     a.download = photo.fileName;
     a.click();
+  }
+
+  async function handleShare(photo: MapPhoto) {
+    setSharingId(photo.id);
+    try {
+      const url = await sharePhoto(photo);
+      setShareResultUrl(url);
+    } catch (err) {
+      alert(`공유 링크 생성 실패:\n${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setSharingId(null);
+    }
   }
 
   function clearAllFilters() {
@@ -264,8 +342,8 @@ export default function AlbumsPage() {
           </div>
         )}
 
-        {/* Grid or empty state */}
-        {grouped.length === 0 ? (
+        {/* Grid, skeleton, or empty state */}
+        {loading ? <AlbumsSkeleton /> : grouped.length === 0 ? (
           <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-16 text-center">
             <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
               {isFiltering
@@ -318,6 +396,10 @@ export default function AlbumsPage() {
                               }`}>
                               <Star size={11} className={savedIds.has(photo.id) ? "fill-amber-500" : ""} />
                             </button>
+                            <button onClick={(e) => { e.stopPropagation(); handleShare(photo); }} disabled={sharingId === photo.id}
+                              className="flex-1 flex items-center justify-center py-1.5 rounded-lg text-[10px] font-bold bg-blue-50 text-blue-500 hover:bg-blue-100 transition-colors disabled:opacity-50">
+                              {sharingId === photo.id ? <Loader2 size={11} className="animate-spin" /> : <Share2 size={11} />}
+                            </button>
                             <button onClick={(e) => { e.stopPropagation(); handleDownload(photo); }}
                               className="flex-1 flex items-center justify-center py-1.5 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">
                               <Download size={11} />
@@ -339,8 +421,16 @@ export default function AlbumsPage() {
       </div>
 
       {selectedPhoto && (
-        <PhotoModal photo={selectedPhoto} onClose={() => setSelectedPhoto(null)} onDelete={handleDelete} onDownload={handleDownload} />
+        <PhotoModal
+          photo={selectedPhoto}
+          onClose={() => setSelectedPhoto(null)}
+          onDelete={handleDelete}
+          onDownload={handleDownload}
+          onShare={handleShare}
+          sharing={sharingId === selectedPhoto.id}
+        />
       )}
+      {shareResultUrl && <ShareLinkModal url={shareResultUrl} onClose={() => setShareResultUrl(null)} />}
       <BottomNav />
     </main>
   );

@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, Map, Image, Users, Star, LogOut, UserCircle, BarChart2 } from "lucide-react";
+import { Home, Map, Image, Users, Star, LogOut, UserCircle, BarChart2, FolderOpen } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 const navItems = [
   { href: "/",        icon: Home,       label: "Home"    },
   { href: "/map",     icon: Map,        label: "Map"     },
   { href: "/albums",  icon: Image,      label: "Albums"  },
+  { href: "/collab",  icon: FolderOpen, label: "Collab"  },
   { href: "/faces",   icon: Users,      label: "Faces"   },
   { href: "/saved",   icon: Star,       label: "Saved"   },
   { href: "/stats",   icon: BarChart2,  label: "Stats"   },
@@ -28,7 +29,7 @@ export default function BottomNav() {
     <nav className="fixed bottom-4 left-1/2 -translate-x-1/2 w-[min(820px,calc(100%-24px))] z-50">
       <div className="bg-white/95 backdrop-blur-xl border border-slate-200 rounded-full px-3 py-2 shadow-xl flex items-center gap-1">
         {navItems.map(({ href, icon: Icon, label }) => {
-          const active = pathname === href;
+          const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
           return (
             <Link
               key={href}

@@ -30,12 +30,12 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 
 ## Architecture
 
-**TravelLens** is a travel photo app: upload a photo → extract GPS + EXIF → run client-side face detection → save to map/albums.
+**TravelLens** is a travel photo app: upload photos (one or many) → extract GPS + EXIF → run client-side face detection → save to map/albums.
 
 ### Data storage split
 
-- **Auth**: Supabase Auth (`lib/supabase.ts`) — login, signup, session management.
-- **Photo data**: `localStorage` keyed by user ID — `map-<uid>` (MapPhoto[]), `faces-<uid>` (FacePhoto[]), `saved-<uid>` (string[] of saved photo IDs). This deliberately avoids needing Supabase DB tables to be set up.
+- **Auth**: Supabase Auth (`lib/supabase.ts`) — login, signup, session management. No Supabase DB tables or Storage buckets are used.
+- **Photo data**: `localStorage` keyed by user ID — `map-<uid>` (MapPhoto[]), `faces-<uid>` (FacePhoto[]), `saved-<uid>` (string[] of saved photo IDs).
 - **Images**: stored as base64 data URLs inside the localStorage JSON (created via `canvas.toDataURL` in `createThumbnailDataUrl`).
 
 ### Auth flow
@@ -44,35 +44,69 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 
 Page transitions are handled by `app/template.tsx` (framer-motion fade+slide on every route change).
 
+### Home page (`app/page.tsx`)
+
+Single-file upload OR multi-file batch upload. On file select:
+1. EXIF + GPS extracted via `exifr`
+2. Face detection runs in browser (`face-api.js`)
+3. Thumbnail created via `canvas.toDataURL`
+4. Result saved to `map-<uid>` and `faces-<uid>` in localStorage
+
+**Batch upload**: selecting multiple files queues them into a `BatchFile[]` state and processes them sequentially via `processBatch()`. A live progress panel shows per-file status icons and a progress bar. Stats refresh after the batch completes.
+
+**Dashboard stat cards** (3 cards below the header): total photos saved, unique locations visited, total faces detected — read live from `map-<uid>` localStorage.
+
+**Highlights section**: most recent upload and photo with the most faces detected.
+
 ### Face detection
 
-`app/page.tsx` runs face detection entirely in the browser using `face-api.js`. On file select it tries to load the SSD MobileNetV1 model first (higher accuracy, requires the weights from `download-models.sh`); falls back to TinyFaceDetector if SSD weights are absent. The result is stored in localStorage as part of the `FacePhoto` object including normalized bounding boxes and 128-dim face descriptors.
+`app/page.tsx` tries SSD MobileNetV1 first (higher accuracy, requires weights from `download-models.sh`); falls back to TinyFaceDetector if weights are absent. Result stored in `FacePhoto` with normalized bounding boxes and 128-dim descriptors.
 
-`app/faces/page.tsx` clusters stored face descriptors by Euclidean distance to group appearances of the same person — no server involved.
+`app/faces/page.tsx` clusters descriptors by Euclidean distance to group same-person appearances — no server involved.
+
+### Albums (`app/albums/page.tsx`)
+
+Photos grouped by location string. Filters:
+- **Search bar**: matches filename or location (case-insensitive substring)
+- **Date range chips**: All / This Week / This Month / This Year — filters by `captureDate` or `uploadedAt`
+- Both filters compose: category → date range → search
 
 ### Backend (optional)
 
-`backend/main.py` is a FastAPI server. The frontend polls `GET /health` on load; if it responds the app enters "API mode" (uses `/analyze` for EXIF+face detection server-side and `/nearby-places` for POI lookup). If the backend is offline the app falls back to browser-mode (exifr for EXIF, face-api.js for detection, Nominatim for geocoding). The backend is **not required** for any core functionality.
+`backend/main.py` is a FastAPI server. The frontend polls `GET /health` on load; if it responds the app enters "API mode" (server-side EXIF+face via `/analyze`, POI lookup via `/nearby-places`). If offline, falls back to browser-mode. **Not required** for any core functionality.
 
 ### Key shared types
 
-`lib/types.ts` defines `MapPhoto` and `FacePhoto` and their converter functions `rowToMapPhoto` / `rowToFacePhoto` (currently unused since data comes from localStorage, but kept for future Supabase DB migration).
+`lib/types.ts` — `MapPhoto` (`lat?`/`lng?` are optional; photos without GPS still appear in Albums but are filtered out of the map) and `FacePhoto`. `rowToMapPhoto` / `rowToFacePhoto` are kept for a future Supabase DB migration but currently unused.
 
 `lib/savedUtils.ts` — `toggleSaved(photoId)` and `getSavedIds()` operate on the `saved-<uid>` localStorage key.
 
-### Map
+### Map (`app/map/page.tsx`)
 
-`app/map/page.tsx` uses `react-leaflet` with OpenStreetMap tiles (free, no API key). Leaflet default icons are overridden with custom `L.divIcon` that renders a circular photo thumbnail with a count badge for clustered markers. The map is loaded client-side only (Leaflet requires `window`).
+Uses `react-leaflet` with OpenStreetMap tiles (free, no API key). Leaflet default icons overridden with `L.divIcon` showing a circular photo thumbnail + count badge for clustered markers. Loaded client-side only (Leaflet requires `window`). Only photos with `lat` and `lng` defined are shown.
+
+### Reusable components
+
+| Component | Purpose |
+|---|---|
+| `AuthGuard` | Auth redirect wrapper used in layout |
+| `BottomNav` | Fixed bottom navigation bar (Home, Map, Albums, Faces, Saved, Stats, Profile + Logout) |
+| `Header` | Top header bar |
+| `PhotoCard` | Photo thumbnail card used in Albums/Saved |
+| `PhotoPreview` | Full-size photo preview modal |
+| `UploadBox` | Drag-and-drop / click-to-upload file input |
+| `ClientMapPage` | Client-only wrapper for the Leaflet map |
+| `MapPlaceholder` | SSR placeholder shown before Leaflet loads |
 
 ### Pages
 
 | Route | Purpose |
 |---|---|
-| `/` | Upload + analyze photo, save to map |
+| `/` | Upload + analyze photo(s), dashboard stats + highlights |
 | `/map` | Leaflet map with photo markers |
-| `/albums` | Photos grouped by location with filters |
+| `/albums` | Photos grouped by location, search + date range filter |
 | `/faces` | Face photos, person clustering by descriptor similarity |
 | `/saved` | Starred photos |
-| `/stats` | Dashboard — photo counts, location breakdown, recent uploads |
+| `/stats` | Full dashboard — photo counts, top locations, recent uploads grid |
 | `/profile` | Edit name, change password |
 | `/login` `/signup` | Public auth pages |

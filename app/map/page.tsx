@@ -8,7 +8,8 @@ import { MapContainer, Marker, TileLayer } from "react-leaflet";
 import BottomNav from "@/components/BottomNav";
 import { supabase } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
-import { MapPin, ArrowLeft, Trash2, X, CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import { MapPin, ArrowLeft, Trash2, X, CalendarDays, ChevronLeft, ChevronRight, Share2, Loader2 } from "lucide-react";
+import { sharePhoto } from "@/lib/shareUtils";
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -42,9 +43,33 @@ function InfoChip({ label, value }: { label: string; value: string }) {
 }
 
 function PhotoModal({ cluster, onClose }: { cluster: Cluster; onClose: () => void }) {
-  const [idx, setIdx] = useState(0);
+  const [idx,          setIdx]          = useState(0);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareUrl,     setShareUrl]     = useState<string | null>(null);
+  const [copied,       setCopied]       = useState(false);
   const photo = cluster.photos[idx];
   const total = cluster.photos.length;
+
+  useEffect(() => { setShareUrl(null); setCopied(false); }, [idx]);
+
+  async function handleShare() {
+    setShareLoading(true);
+    try {
+      const url = await sharePhoto(photo);
+      setShareUrl(url);
+    } catch (err) {
+      alert(`공유 링크 생성 실패:\n${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setShareLoading(false);
+    }
+  }
+
+  async function handleCopy() {
+    await navigator.clipboard.writeText(shareUrl!);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
   return (
     <div className="fixed inset-0 bg-black/88 z-[3000] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl max-w-[520px] w-full overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -55,8 +80,12 @@ function PhotoModal({ cluster, onClose }: { cluster: Cluster; onClose: () => voi
               {photo.location?.split(",")[0] || "위치 정보 없음"} · {photo.captureDate || photo.uploadedAt?.slice(0, 10) || ""}
             </p>
           </div>
-          <div className="flex items-center gap-3 ml-4 flex-shrink-0">
+          <div className="flex items-center gap-2 ml-4 flex-shrink-0">
             {total > 1 && <span className="text-xs text-slate-400 font-semibold">{idx + 1} / {total}</span>}
+            <button onClick={handleShare} disabled={shareLoading}
+              className="text-slate-400 hover:text-blue-500 transition-colors p-1" title="Share">
+              {shareLoading ? <Loader2 size={18} className="animate-spin" /> : <Share2 size={18} />}
+            </button>
             <button onClick={onClose} className="text-slate-400 hover:text-slate-700 transition-colors p-1"><X size={20} /></button>
           </div>
         </div>
@@ -88,6 +117,19 @@ function PhotoModal({ cluster, onClose }: { cluster: Cluster; onClose: () => voi
           {photo.location && <div className="col-span-2"><InfoChip label="위치" value={photo.location} /></div>}
           {(photo.faceCount ?? 0) > 0 && <InfoChip label="감지된 얼굴" value={`${photo.faceCount}명`} />}
         </div>
+        {shareUrl && (
+          <div className="px-4 py-3 border-t border-emerald-100 bg-emerald-50">
+            <p className="text-xs font-bold text-emerald-700 mb-2">Share link ready!</p>
+            <div className="flex gap-2">
+              <input readOnly value={shareUrl}
+                className="flex-1 text-xs bg-white border border-emerald-200 rounded-lg px-3 py-2 text-slate-600 truncate outline-none" />
+              <button onClick={handleCopy}
+                className="px-3 py-2 bg-emerald-500 text-white text-xs font-bold rounded-lg hover:bg-emerald-600 transition-colors whitespace-nowrap">
+                {copied ? "Copied!" : "Copy"}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

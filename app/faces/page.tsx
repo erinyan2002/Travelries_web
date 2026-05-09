@@ -191,8 +191,29 @@ function getGroupKey(photo: FacePhoto): string {
   return y > 1970 ? `${y}년 ${m}월` : "기타";
 }
 
+function FacesSkeleton() {
+  return (
+    <div className="animate-pulse">
+      <div className="flex gap-1 mb-6 bg-slate-100 rounded-xl p-1">
+        <div className="flex-1 h-10 bg-slate-200 rounded-lg" />
+        <div className="flex-1 h-10 bg-slate-200 rounded-lg" />
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {[0, 1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 text-center">
+            <div className="w-[72px] h-[72px] bg-slate-200 rounded-full mx-auto mb-3" />
+            <div className="h-4 bg-slate-200 rounded-full w-3/4 mx-auto mb-2" />
+            <div className="h-3 bg-slate-200 rounded-full w-1/2 mx-auto" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function FacesPage() {
   const [storedPhotos,   setStoredPhotos]   = useState<FacePhoto[]>([]);
+  const [loading,        setLoading]        = useState(true);
   const [activeTab,      setActiveTab]      = useState<"people" | "photos">("people");
   const [threshold,      setThreshold]      = useState(0.50);
   const [selectedPhoto,  setSelectedPhoto]  = useState<FacePhoto | null>(null);
@@ -204,6 +225,7 @@ export default function FacesPage() {
       const uid = user?.id ?? "guest";
       const stored: FacePhoto[] = JSON.parse(localStorage.getItem(`faces-${uid}`) ?? "[]");
       setStoredPhotos(stored);
+      setLoading(false);
     }
     load();
   }, []);
@@ -241,7 +263,7 @@ export default function FacesPage() {
           </div>
         </div>
 
-        {storedPhotos.length === 0 ? (
+        {loading ? <FacesSkeleton /> : storedPhotos.length === 0 ? (
           <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-16 text-center">
             <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <Users size={28} className="text-slate-300" />
