@@ -29,6 +29,14 @@ files=(
   "face_recognition_model-weights_manifest.json"
   "face_recognition_model-shard1"
   "face_recognition_model-shard2"
+
+  # Age & Gender Net  (unlocks age/gender estimation per face)
+  "age_gender_model-weights_manifest.json"
+  "age_gender_model-shard1"
+
+  # Face Expression Net  (unlocks emotion detection: happy/sad/surprised/…)
+  "face_expression_model-weights_manifest.json"
+  "face_expression_model-shard1"
 )
 
 for f in "${files[@]}"; do
@@ -43,4 +51,5 @@ done
 
 echo ""
 echo "All model files ready. Restart the dev server and the app will"
-echo "automatically switch to high-accuracy detection mode."
+echo "automatically switch to high-accuracy detection mode with age,"
+echo "gender, and expression analysis."

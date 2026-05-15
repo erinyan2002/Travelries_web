@@ -6,11 +6,28 @@ import { supabase } from "@/lib/supabase";
 import { FacePhoto } from "@/lib/types";
 import {
   Users, ImageIcon, MapPin, CalendarDays, Trash2, X,
-  SlidersHorizontal, Terminal, AlertTriangle,
+  SlidersHorizontal, Terminal, AlertTriangle, Eye, Scan,
 } from "lucide-react";
 
 type FaceEntry = { photo: FacePhoto; boxIndex: number };
 type PersonCluster = { id: string; label: string; faces: FaceEntry[]; centroid: number[] };
+
+const EXPRESSION_EMOJI: Record<string, string> = {
+  happy: "😊", sad: "😢", angry: "😠", surprised: "😮",
+  fearful: "😨", disgusted: "🤢", neutral: "",
+};
+
+// Per-person color palette (rings cycle through these)
+const PALETTE = [
+  { ring: "ring-violet-400",  bg: "bg-violet-100",  text: "text-violet-700"  },
+  { ring: "ring-blue-400",    bg: "bg-blue-100",    text: "text-blue-700"    },
+  { ring: "ring-emerald-400", bg: "bg-emerald-100", text: "text-emerald-700" },
+  { ring: "ring-amber-400",   bg: "bg-amber-100",   text: "text-amber-700"   },
+  { ring: "ring-rose-400",    bg: "bg-rose-100",    text: "text-rose-700"    },
+  { ring: "ring-indigo-400",  bg: "bg-indigo-100",  text: "text-indigo-700"  },
+  { ring: "ring-pink-400",    bg: "bg-pink-100",    text: "text-pink-700"    },
+  { ring: "ring-cyan-400",    bg: "bg-cyan-100",    text: "text-cyan-700"    },
+];
 
 function euclidean(a: number[], b: number[]): number {
   let s = 0;
@@ -43,6 +60,7 @@ function clusterByPerson(photos: FacePhoto[], threshold: number): PersonCluster[
   return clusters.sort((a, b) => b.faces.length - a.faces.length).map((c, i) => ({ ...c, label: `Person ${i + 1}` }));
 }
 
+// ── Canvas components ─────────────────────────────────────────────────────────
 function PhotoWithBoxes({ photo }: { photo: FacePhoto }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -63,23 +81,39 @@ function PhotoWithBoxes({ photo }: { photo: FacePhoto }) {
       photo.boxes.forEach((box, i) => {
         const x = box.x * img.width, y = box.y * img.height;
         const w = box.width * img.width, h = box.height * img.height;
-        ctx.strokeStyle = "#2563eb"; ctx.lineWidth = lineW;
+        const conf = photo.confidences?.[i] ?? 1;
+        const [stroke, fill] =
+          conf >= 0.7 ? ["#22c55e", "rgba(34,197,94,0.88)"]
+          : conf >= 0.4 ? ["#f59e0b", "rgba(245,158,11,0.88)"]
+          : ["#ef4444", "rgba(239,68,68,0.88)"];
+        ctx.strokeStyle = stroke; ctx.lineWidth = lineW;
         ctx.strokeRect(x, y, w, h);
+        const age   = photo.ages?.[i];
+        const gend  = photo.genders?.[i];
+        const expr  = photo.expressions?.[i];
+        const label = (age != null ? `${gend === "male" ? "♂" : "♀"}${age}` : `#${i + 1}`)
+          + (expr && expr !== "neutral" ? ` ${EXPRESSION_EMOJI[expr] ?? ""}` : "");
         const lh = Math.min(labelH, h * 0.35);
-        ctx.fillStyle = "rgba(37,99,235,0.85)";
+        ctx.fillStyle = fill;
         ctx.fillRect(x, y, w, lh);
         ctx.fillStyle = "white";
         ctx.font = `bold ${fontSize}px sans-serif`;
         ctx.textAlign = "left";
-        ctx.fillText(`#${i + 1}`, x + 6, y + lh * 0.8);
+        ctx.fillText(label, x + 6, y + lh * 0.8);
       });
     };
   }, [photo]);
   return <canvas ref={canvasRef} className="w-full h-auto block" />;
 }
 
-function FaceChip({ imageUrl, box, index, size = 58 }: {
-  imageUrl: string; box: { x: number; y: number; width: number; height: number }; index: number; size?: number;
+function FaceChip({ imageUrl, box, index, size = 64, age, gender, ringClass = "ring-blue-400" }: {
+  imageUrl: string;
+  box: { x: number; y: number; width: number; height: number };
+  index: number;
+  size?: number;
+  age?: number;
+  gender?: string;
+  ringClass?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -92,7 +126,7 @@ function FaceChip({ imageUrl, box, index, size = 58 }: {
     img.onload = () => {
       const px = box.x * img.width, py = box.y * img.height;
       const pw = box.width * img.width, ph = box.height * img.height;
-      const pad = Math.min(pw, ph) * 0.22;
+      const pad = Math.min(pw, ph) * 0.25;
       const sx = Math.max(0, px - pad), sy = Math.max(0, py - pad);
       const sw = Math.min(img.width - sx, pw + pad * 2);
       const sh = Math.min(img.height - sy, ph + pad * 2);
@@ -101,40 +135,84 @@ function FaceChip({ imageUrl, box, index, size = 58 }: {
     };
   }, [imageUrl, box, size]);
   return (
-    <div className="text-center">
-      <canvas ref={canvasRef} style={{ width: `${size}px`, height: `${size}px` }} className="rounded-full border-2 border-blue-500 block" />
-      <span className="text-[10px] text-slate-400 mt-1 block">#{index + 1}</span>
+    <div className="text-center flex-shrink-0">
+      <canvas
+        ref={canvasRef}
+        style={{ width: `${size}px`, height: `${size}px` }}
+        className={`rounded-full ring-2 ring-offset-2 ${ringClass} block shadow-sm`}
+      />
+      {age != null ? (
+        <span className="text-[10px] text-slate-500 mt-1.5 block font-semibold">
+          {gender === "male" ? "♂" : "♀"} {age}yr
+        </span>
+      ) : (
+        <span className="text-[10px] text-slate-400 mt-1.5 block">#{index + 1}</span>
+      )}
     </div>
   );
 }
 
+// ── Modals ────────────────────────────────────────────────────────────────────
 function PhotoModal({ photo, onClose, onDelete }: { photo: FacePhoto; onClose: () => void; onDelete: (id: string) => void }) {
   return (
-    <div className="fixed inset-0 bg-black/85 z-[2000] flex items-center justify-center p-5 overflow-y-auto" onClick={onClose}>
-      <div className="max-w-[600px] w-full bg-white rounded-2xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[2000] flex items-end sm:items-center justify-center sm:p-5 overflow-y-auto" onClick={onClose}>
+      <div className="w-full sm:max-w-[600px] bg-white sm:rounded-3xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="bg-gradient-to-r from-violet-600 to-indigo-600 px-5 py-4 flex items-center justify-between">
           <div>
-            <h3 className="font-bold text-slate-900 text-sm">{photo.fileName}</h3>
-            <p className="text-xs text-slate-400 mt-0.5">
-              얼굴 {photo.faceCount}명 · {photo.uploadedAt}
-              {photo.location && ` · ${photo.location.split(",")[0]}`}
+            <h3 className="font-bold text-white text-sm truncate max-w-[260px]">{photo.fileName}</h3>
+            <p className="text-violet-200 text-xs mt-0.5 flex items-center gap-1.5">
+              <Users size={10} /> {photo.faceCount} face(s)
+              {photo.location && <><span>·</span><MapPin size={10} />{photo.location.split(",")[0]}</>}
             </p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 transition-colors p-1"><X size={20} /></button>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors">
+            <X size={16} />
+          </button>
         </div>
-        <div className="bg-slate-100"><PhotoWithBoxes photo={photo} /></div>
+
+        {/* Photo with boxes */}
+        <div className="bg-slate-950 max-h-[55vh] overflow-hidden flex items-center justify-center">
+          <PhotoWithBoxes photo={photo} />
+        </div>
+
+        {/* Face chips strip */}
         {photo.boxes && photo.boxes.length > 0 && (
           <div className="px-5 py-4 border-b border-slate-100">
-            <p className="text-xs text-slate-400 mb-3">감지된 얼굴 ({photo.faceCount}명)</p>
-            <div className="flex gap-2.5 flex-wrap">
-              {photo.boxes.map((box, i) => <FaceChip key={i} imageUrl={photo.imageUrl} box={box} index={i} />)}
+            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-3">
+              Detected faces ({photo.faceCount})
+            </p>
+            <div className="flex gap-3 overflow-x-auto pb-1">
+              {photo.boxes.map((box, i) => (
+                <FaceChip key={i} imageUrl={photo.imageUrl} box={box} index={i} size={60}
+                  age={photo.ages?.[i]} gender={photo.genders?.[i]} ringClass={PALETTE[i % PALETTE.length].ring} />
+              ))}
             </div>
           </div>
         )}
+
+        {/* Meta info */}
+        <div className="px-5 py-4 grid grid-cols-2 gap-2 border-b border-slate-100">
+          {photo.location && (
+            <div className="flex items-center gap-2 bg-slate-50 rounded-xl px-3 py-2">
+              <MapPin size={13} className="text-blue-500 flex-shrink-0" />
+              <span className="text-xs text-slate-700 font-medium truncate">{photo.location.split(",")[0]}</span>
+            </div>
+          )}
+          <div className="flex items-center gap-2 bg-slate-50 rounded-xl px-3 py-2">
+            <CalendarDays size={13} className="text-slate-400 flex-shrink-0" />
+            <span className="text-xs text-slate-700 font-medium">{photo.uploadedAt.slice(0, 10)}</span>
+          </div>
+        </div>
+
+        {/* Delete */}
         <div className="px-5 py-4">
-          <button onClick={() => { onDelete(photo.id); onClose(); }}
-            className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-600 text-white py-3 rounded-xl font-bold text-sm transition-colors">
-            <Trash2 size={15} /> 삭제
+          <button
+            onClick={() => { onDelete(photo.id); onClose(); }}
+            className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-600 active:scale-[0.98] text-white py-3 rounded-2xl font-bold text-sm transition-all shadow-lg shadow-red-200"
+          >
+            <Trash2 size={15} /> Delete Photo
           </button>
         </div>
       </div>
@@ -142,32 +220,63 @@ function PhotoModal({ photo, onClose, onDelete }: { photo: FacePhoto; onClose: (
   );
 }
 
-function PersonModal({ cluster, onClose }: { cluster: PersonCluster; onClose: () => void }) {
+function PersonModal({ cluster, onClose, colorIdx }: { cluster: PersonCluster; onClose: () => void; colorIdx: number }) {
+  const color = PALETTE[colorIdx % PALETTE.length];
+  const rep = cluster.faces[0];
+  const repBox = rep?.photo.boxes?.[rep.boxIndex];
+  const photoCount = new Set(cluster.faces.map(f => f.photo.id)).size;
+
   return (
-    <div className="fixed inset-0 bg-black/85 z-[2000] flex items-center justify-center p-5 overflow-y-auto" onClick={onClose}>
-      <div className="max-w-[640px] w-full bg-white rounded-2xl overflow-hidden shadow-2xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 flex-shrink-0">
-          <div>
-            <h3 className="font-bold text-slate-900 text-base">{cluster.label}</h3>
-            <p className="text-xs text-slate-400 mt-0.5">
-              {cluster.faces.length}번 등장 · {new Set(cluster.faces.map(f => f.photo.id)).size}장의 사진
-            </p>
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[2000] flex items-end sm:items-center justify-center sm:p-5 overflow-y-auto" onClick={onClose}>
+      <div className="w-full sm:max-w-[640px] bg-white sm:rounded-3xl overflow-hidden shadow-2xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="bg-gradient-to-r from-slate-800 to-slate-900 px-5 py-4 flex items-center gap-4 flex-shrink-0">
+          {repBox && (
+            <FaceChip imageUrl={rep.photo.imageUrl} box={repBox} index={rep.boxIndex}
+              size={56} age={rep.photo.ages?.[rep.boxIndex]} gender={rep.photo.genders?.[rep.boxIndex]}
+              ringClass={color.ring} />
+          )}
+          <div className="flex-1 min-w-0">
+            <h3 className="font-black text-white text-lg">{cluster.label}</h3>
+            <div className="flex items-center gap-2 mt-1">
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${color.bg} ${color.text}`}>
+                {cluster.faces.length} appearance{cluster.faces.length !== 1 ? "s" : ""}
+              </span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/10 text-white/70">
+                {photoCount} photo{photoCount !== 1 ? "s" : ""}
+              </span>
+            </div>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 transition-colors p-1"><X size={20} /></button>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors flex-shrink-0">
+            <X size={16} />
+          </button>
         </div>
-        <div className="p-5 overflow-y-auto">
+
+        {/* Gallery */}
+        <div className="p-4 overflow-y-auto">
           <div className="grid grid-cols-2 gap-3">
             {cluster.faces.map((face, idx) => {
               const box = face.photo.boxes?.[face.boxIndex];
+              const age = face.photo.ages?.[face.boxIndex];
+              const gender = face.photo.genders?.[face.boxIndex];
               return (
-                <div key={`${face.photo.id}_${face.boxIndex}_${idx}`} className="bg-slate-50 rounded-xl overflow-hidden border border-slate-200">
+                <div key={`${face.photo.id}_${face.boxIndex}_${idx}`} className="bg-slate-50 rounded-2xl overflow-hidden border border-slate-100 shadow-sm">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={face.photo.imageUrl} alt={face.photo.fileName} className="w-full h-28 object-cover bg-slate-100" />
+                  <img src={face.photo.imageUrl} alt={face.photo.fileName} className="w-full h-32 object-cover bg-slate-200" />
                   <div className="p-2.5 flex items-center gap-2.5">
-                    {box && <div className="flex-shrink-0"><FaceChip imageUrl={face.photo.imageUrl} box={box} index={face.boxIndex} size={44} /></div>}
+                    {box && (
+                      <FaceChip imageUrl={face.photo.imageUrl} box={box} index={face.boxIndex}
+                        size={40} age={age} gender={gender} ringClass={color.ring} />
+                    )}
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-slate-800 truncate">{face.photo.fileName}</p>
                       <p className="text-[10px] text-slate-400 mt-0.5">{face.photo.uploadedAt.slice(0, 10)}</p>
+                      {age != null && (
+                        <p className="text-[10px] font-semibold text-slate-500 mt-0.5">
+                          {gender === "male" ? "♂" : "♀"} {age}yr
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -187,23 +296,21 @@ function getGroupKey(photo: FacePhoto): string {
   }
   const d = new Date(photo.uploadedAt);
   const y = d.getFullYear();
-  const m = d.getMonth() + 1;
-  return y > 1970 ? `${y}년 ${m}월` : "기타";
+  const m = d.toLocaleString("en", { month: "short" });
+  return y > 1970 ? `${m} ${y}` : "Other";
 }
 
 function FacesSkeleton() {
   return (
-    <div className="animate-pulse">
-      <div className="flex gap-1 mb-6 bg-slate-100 rounded-xl p-1">
-        <div className="flex-1 h-10 bg-slate-200 rounded-lg" />
-        <div className="flex-1 h-10 bg-slate-200 rounded-lg" />
-      </div>
+    <div className="animate-pulse space-y-4">
+      <div className="h-36 bg-gradient-to-br from-violet-200 to-indigo-200 rounded-3xl" />
+      <div className="h-12 bg-slate-100 rounded-2xl" />
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        {[0, 1, 2, 3, 4, 5].map((i) => (
-          <div key={i} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 text-center">
-            <div className="w-[72px] h-[72px] bg-slate-200 rounded-full mx-auto mb-3" />
-            <div className="h-4 bg-slate-200 rounded-full w-3/4 mx-auto mb-2" />
-            <div className="h-3 bg-slate-200 rounded-full w-1/2 mx-auto" />
+        {[0,1,2,3,4,5].map((i) => (
+          <div key={i} className="bg-white rounded-2xl border border-slate-100 p-4 text-center">
+            <div className="w-16 h-16 bg-slate-200 rounded-full mx-auto mb-3" />
+            <div className="h-3.5 bg-slate-200 rounded-full w-2/3 mx-auto mb-2" />
+            <div className="h-3 bg-slate-100 rounded-full w-1/2 mx-auto" />
           </div>
         ))}
       </div>
@@ -211,13 +318,14 @@ function FacesSkeleton() {
   );
 }
 
+// ── Main Page ─────────────────────────────────────────────────────────────────
 export default function FacesPage() {
-  const [storedPhotos,   setStoredPhotos]   = useState<FacePhoto[]>([]);
-  const [loading,        setLoading]        = useState(true);
-  const [activeTab,      setActiveTab]      = useState<"people" | "photos">("people");
-  const [threshold,      setThreshold]      = useState(0.50);
-  const [selectedPhoto,  setSelectedPhoto]  = useState<FacePhoto | null>(null);
-  const [selectedCluster,setSelectedCluster]= useState<PersonCluster | null>(null);
+  const [storedPhotos,    setStoredPhotos]    = useState<FacePhoto[]>([]);
+  const [loading,         setLoading]         = useState(true);
+  const [activeTab,       setActiveTab]       = useState<"people" | "photos">("people");
+  const [threshold,       setThreshold]       = useState(0.50);
+  const [selectedPhoto,   setSelectedPhoto]   = useState<FacePhoto | null>(null);
+  const [selectedCluster, setSelectedCluster] = useState<{ cluster: PersonCluster; idx: number } | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -233,14 +341,15 @@ export default function FacesPage() {
   async function handleDelete(id: string) {
     const { data: { user } } = await supabase.auth.getUser();
     const uid = user?.id ?? "guest";
-    const facesKey = `faces-${uid}`;
-    const photos: FacePhoto[] = JSON.parse(localStorage.getItem(facesKey) ?? "[]");
-    localStorage.setItem(facesKey, JSON.stringify(photos.filter((p) => p.id !== id)));
+    const key = `faces-${uid}`;
+    const photos: FacePhoto[] = JSON.parse(localStorage.getItem(key) ?? "[]");
+    localStorage.setItem(key, JSON.stringify(photos.filter((p) => p.id !== id)));
     setStoredPhotos((prev) => prev.filter((p) => p.id !== id));
   }
 
-  const clusters = useMemo(() => clusterByPerson(storedPhotos, threshold), [storedPhotos, threshold]);
+  const clusters      = useMemo(() => clusterByPerson(storedPhotos, threshold), [storedPhotos, threshold]);
   const hasDescriptors = storedPhotos.some((p) => p.descriptors?.length);
+  const totalFaces    = storedPhotos.reduce((s, p) => s + (p.faceCount ?? 0), 0);
 
   const photoGroups: Record<string, FacePhoto[]> = {};
   storedPhotos.forEach((p) => {
@@ -250,51 +359,87 @@ export default function FacesPage() {
   });
 
   return (
-    <main className="min-h-screen bg-slate-50 px-5 py-8 pb-28">
+    <main className="min-h-screen bg-slate-50 px-4 pt-6 pb-28">
       <div className="max-w-2xl mx-auto">
 
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-10 h-10 bg-rose-500 rounded-xl flex items-center justify-center shadow-md shadow-rose-200">
-            <Users size={22} className="text-white" />
-          </div>
-          <div>
-            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Faces</h1>
-            <p className="text-slate-500 text-sm">홈에서 얼굴이 감지된 사진이 자동으로 저장됩니다.</p>
+        {/* ── Hero header ── */}
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-700 p-6 mb-5 shadow-xl shadow-violet-200">
+          <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full" />
+          <div className="absolute -bottom-6 -left-6 w-28 h-28 bg-white/10 rounded-full" />
+          <div className="relative">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-11 h-11 bg-white/20 rounded-2xl flex items-center justify-center shadow-inner">
+                <Scan size={20} className="text-white" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-black text-white tracking-tight leading-none">Faces</h1>
+                <p className="text-violet-200 text-xs mt-0.5">AI-powered face detection & clustering</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { label: "People",  value: loading ? "—" : clusters.length,        icon: Users     },
+                { label: "Faces",   value: loading ? "—" : totalFaces,             icon: Eye       },
+                { label: "Photos",  value: loading ? "—" : storedPhotos.length,    icon: ImageIcon },
+              ].map(({ label, value, icon: Icon }) => (
+                <div key={label} className="bg-white/15 rounded-2xl p-3 text-center backdrop-blur-sm">
+                  <Icon size={14} className="text-violet-200 mx-auto mb-1" />
+                  <p className="text-xl font-black text-white leading-none">{value}</p>
+                  <p className="text-violet-300 text-[10px] font-semibold mt-0.5">{label}</p>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
         {loading ? <FacesSkeleton /> : storedPhotos.length === 0 ? (
-          <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-16 text-center">
-            <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <Users size={28} className="text-slate-300" />
+
+          /* ── Empty state ── */
+          <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-14 text-center">
+            <div className="w-20 h-20 bg-gradient-to-br from-violet-100 to-indigo-100 rounded-3xl flex items-center justify-center mx-auto mb-5 shadow-inner">
+              <Users size={32} className="text-violet-300" />
             </div>
-            <p className="font-bold text-slate-700 mb-1">아직 저장된 얼굴 사진이 없습니다</p>
-            <p className="text-slate-400 text-sm">홈 화면에서 사진을 업로드하면<br />얼굴이 감지된 사진이 자동으로 여기에 모입니다.</p>
+            <p className="font-black text-slate-700 text-lg mb-1">No face photos yet</p>
+            <p className="text-slate-400 text-sm leading-relaxed">
+              Upload photos from the home screen.<br />
+              Photos with detected faces appear here.
+            </p>
           </div>
+
         ) : (
           <>
-            <div className="flex gap-1 mb-6 bg-slate-100 rounded-xl p-1">
-              {(["people", "photos"] as const).map((tab) => (
-                <button key={tab} onClick={() => setActiveTab(tab)}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all ${
-                    activeTab === tab ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+            {/* ── Tab switcher ── */}
+            <div className="flex gap-1.5 mb-5 bg-white rounded-2xl p-1.5 border border-slate-100 shadow-sm">
+              {([
+                { key: "people", label: "By Person", icon: Users,     count: clusters.length },
+                { key: "photos", label: "By Photo",  icon: ImageIcon, count: storedPhotos.length },
+              ] as const).map(({ key, label, icon: Icon, count }) => (
+                <button key={key} onClick={() => setActiveTab(key)}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                    activeTab === key
+                      ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-md shadow-violet-200"
+                      : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                   }`}>
-                  {tab === "people" ? <Users size={15} /> : <ImageIcon size={15} />}
-                  {tab === "people" ? "사람별" : "사진별"}
+                  <Icon size={14} />
+                  {label}
+                  <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+                    activeTab === key ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"
+                  }`}>{count}</span>
                 </button>
               ))}
             </div>
 
+            {/* ── By Person tab ── */}
             {activeTab === "people" && (
               <div>
                 {!hasDescriptors ? (
                   <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
                     <div className="flex items-center gap-2 mb-2">
                       <AlertTriangle size={16} className="text-amber-600" />
-                      <p className="font-bold text-amber-800 text-sm">향상 모델이 필요합니다</p>
+                      <p className="font-bold text-amber-800 text-sm">Enhanced model required</p>
                     </div>
                     <p className="text-sm text-amber-700 leading-relaxed mb-3">
-                      사람별 분류를 쓰려면 SSD + Face Recognition 모델 파일이 필요합니다.
+                      SSD + Face Recognition model files are required for person-based clustering.
                     </p>
                     <div className="bg-slate-900 rounded-xl px-4 py-3 flex items-center gap-2">
                       <Terminal size={14} className="text-emerald-400 flex-shrink-0" />
@@ -303,42 +448,55 @@ export default function FacesPage() {
                   </div>
                 ) : (
                   <>
-                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 mb-5">
+                    {/* Threshold slider */}
+                    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 mb-5">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
-                          <SlidersHorizontal size={15} className="text-slate-500" />
-                          <span className="text-sm font-bold text-slate-700">얼굴 유사도 기준</span>
+                          <SlidersHorizontal size={14} className="text-violet-500" />
+                          <span className="text-sm font-bold text-slate-700">Similarity Threshold</span>
                         </div>
-                        <span className="text-sm font-bold text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full">
-                          {clusters.length}명 감지됨
+                        <span className="text-xs font-black text-violet-700 bg-violet-50 border border-violet-200 px-2.5 py-0.5 rounded-full">
+                          {clusters.length} {clusters.length === 1 ? "person" : "people"}
                         </span>
                       </div>
                       <input type="range" min={0.3} max={0.7} step={0.01} value={threshold}
-                        onChange={(e) => setThreshold(parseFloat(e.target.value))} className="w-full" />
-                      <div className="flex justify-between text-[10px] text-slate-400 mt-1.5">
-                        <span>← 엄격 (같은 사람만)</span>
-                        <span>느슨 (비슷한 얼굴 포함) →</span>
+                        onChange={(e) => setThreshold(parseFloat(e.target.value))}
+                        className="w-full accent-violet-600" />
+                      <div className="flex justify-between text-[10px] text-slate-400 mt-1.5 font-medium">
+                        <span>← Strict</span>
+                        <span className="text-slate-500 font-bold">{threshold.toFixed(2)}</span>
+                        <span>Loose →</span>
                       </div>
                     </div>
+
                     {clusters.length === 0 ? (
-                      <p className="text-center text-slate-400 py-10">기준을 조정하면 얼굴이 분류됩니다.</p>
+                      <p className="text-center text-slate-400 py-12 text-sm">Adjust the threshold to cluster faces.</p>
                     ) : (
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                        {clusters.map((cluster) => {
+                        {clusters.map((cluster, idx) => {
+                          const color = PALETTE[idx % PALETTE.length];
                           const rep = cluster.faces[0];
-                          const repBox = rep.photo.boxes?.[rep.boxIndex];
+                          const repBox = rep?.photo.boxes?.[rep.boxIndex];
+                          const repAge = rep?.photo.ages?.[rep.boxIndex];
+                          const repGender = rep?.photo.genders?.[rep.boxIndex];
                           return (
-                            <div key={cluster.id} onClick={() => setSelectedCluster(cluster)}
-                              className="photo-card bg-white rounded-2xl border border-slate-200 shadow-sm p-4 text-center cursor-pointer">
+                            <div key={cluster.id}
+                              onClick={() => setSelectedCluster({ cluster, idx })}
+                              className="bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 active:scale-[0.97] transition-all cursor-pointer p-4 text-center group">
                               <div className="flex justify-center mb-3">
-                                {repBox ? <FaceChip imageUrl={rep.photo.imageUrl} box={repBox} index={rep.boxIndex} size={72} /> : (
-                                  <div className="w-18 h-18 rounded-full bg-slate-100 flex items-center justify-center">
-                                    <Users size={28} className="text-slate-300" />
+                                {repBox ? (
+                                  <FaceChip imageUrl={rep.photo.imageUrl} box={repBox} index={rep.boxIndex}
+                                    size={72} age={repAge} gender={repGender} ringClass={color.ring} />
+                                ) : (
+                                  <div className="w-[72px] h-[72px] rounded-full bg-slate-100 flex items-center justify-center ring-2 ring-offset-2 ring-slate-200">
+                                    <Users size={24} className="text-slate-300" />
                                   </div>
                                 )}
                               </div>
-                              <p className="font-bold text-slate-800 text-sm">{cluster.label}</p>
-                              <p className="text-xs text-slate-400 mt-0.5">{cluster.faces.length}번 등장</p>
+                              <p className="font-black text-slate-800 text-sm">{cluster.label}</p>
+                              <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full mt-1.5 ${color.bg} ${color.text}`}>
+                                {cluster.faces.length} appearance{cluster.faces.length !== 1 ? "s" : ""}
+                              </span>
                             </div>
                           );
                         })}
@@ -349,33 +507,79 @@ export default function FacesPage() {
               </div>
             )}
 
+            {/* ── By Photo tab ── */}
             {activeTab === "photos" && (
               <div className="space-y-6">
                 {Object.entries(photoGroups).map(([groupKey, photos]) => (
                   <div key={groupKey}>
-                    <div className="flex items-center gap-2 mb-3">
-                      {photos[0]?.location ? <MapPin size={15} className="text-blue-500" /> : <CalendarDays size={15} className="text-slate-400" />}
-                      <h3 className="font-bold text-slate-800 text-sm">{groupKey}</h3>
-                      <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{photos.length}장</span>
+                    {/* Group header */}
+                    <div className="flex items-center gap-2 mb-3 px-1">
+                      <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${photos[0]?.location ? "bg-blue-100" : "bg-slate-100"}`}>
+                        {photos[0]?.location
+                          ? <MapPin size={12} className="text-blue-500" />
+                          : <CalendarDays size={12} className="text-slate-400" />}
+                      </div>
+                      <h3 className="font-black text-slate-800 text-sm flex-1 truncate">{groupKey}</h3>
+                      <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                        {photos.length}
+                      </span>
                     </div>
+
                     <div className="grid grid-cols-2 gap-3">
                       {photos.map((photo) => (
-                        <div key={photo.id} onClick={() => setSelectedPhoto(photo)}
-                          className="photo-card bg-white rounded-xl overflow-hidden border border-slate-200 cursor-pointer shadow-sm relative group">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={photo.imageUrl} alt={photo.fileName} className="w-full h-40 object-contain bg-slate-100" />
-                          <button
-                            onClick={(e) => { e.stopPropagation(); if (confirm("이 사진을 삭제하시겠습니까?")) handleDelete(photo.id); }}
-                            className="absolute top-2 right-2 w-8 h-8 flex items-center justify-center bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-150"
-                            title="Delete">
-                            <Trash2 size={14} />
-                          </button>
-                          <div className="p-2.5">
-                            <p className="font-bold text-slate-800 text-xs truncate">{photo.fileName}</p>
-                            <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
-                              <Users size={9} /> 얼굴 {photo.faceCount}명
-                              {photo.descriptors && <span className="text-emerald-500 ml-1">✓</span>}
-                            </p>
+                        <div key={photo.id}
+                          onClick={() => setSelectedPhoto(photo)}
+                          className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 active:scale-[0.97] transition-all cursor-pointer group relative">
+
+                          {/* Image */}
+                          <div className="relative">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={photo.imageUrl} alt={photo.fileName}
+                              className="w-full h-44 object-cover bg-slate-100" />
+
+                            {/* Face count badge */}
+                            <div className="absolute top-2 left-2 flex items-center gap-1 bg-black/60 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded-full">
+                              <Users size={9} /> {photo.faceCount}
+                            </div>
+
+                            {/* Expression badge */}
+                            {photo.expressions?.[0] && photo.expressions[0] !== "neutral" && (
+                              <div className="absolute top-2 right-10 bg-black/60 backdrop-blur-sm text-sm px-1.5 py-0.5 rounded-full">
+                                {EXPRESSION_EMOJI[photo.expressions[0]]}
+                              </div>
+                            )}
+
+                            {/* Delete */}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); if (confirm("Delete this photo?")) handleDelete(photo.id); }}
+                              className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-all">
+                              <Trash2 size={12} />
+                            </button>
+
+                            {/* Age / gender bottom-left */}
+                            {photo.ages?.[0] != null && (
+                              <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                {photo.genders?.[0] === "male" ? "♂" : "♀"} {photo.ages[0]}yr
+                              </div>
+                            )}
+
+                            {/* Descriptor dot */}
+                            {photo.descriptors?.length && (
+                              <div className="absolute bottom-2 right-2 w-2 h-2 bg-emerald-400 rounded-full shadow" title="Has face recognition data" />
+                            )}
+                          </div>
+
+                          {/* Info strip */}
+                          <div className="px-3 py-2.5">
+                            <p className="font-bold text-slate-800 text-xs truncate leading-snug">{photo.fileName}</p>
+                            {photo.location ? (
+                              <p className="text-[10px] text-slate-400 flex items-center gap-0.5 mt-1 truncate">
+                                <MapPin size={8} className="flex-shrink-0" />
+                                {photo.location.split(",")[0]}
+                              </p>
+                            ) : (
+                              <p className="text-[10px] text-slate-300 mt-1">{photo.uploadedAt.slice(0, 10)}</p>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -387,8 +591,16 @@ export default function FacesPage() {
           </>
         )}
 
-        {selectedPhoto && <PhotoModal photo={selectedPhoto} onClose={() => setSelectedPhoto(null)} onDelete={handleDelete} />}
-        {selectedCluster && <PersonModal cluster={selectedCluster} onClose={() => setSelectedCluster(null)} />}
+        {selectedPhoto && (
+          <PhotoModal photo={selectedPhoto} onClose={() => setSelectedPhoto(null)} onDelete={handleDelete} />
+        )}
+        {selectedCluster && (
+          <PersonModal
+            cluster={selectedCluster.cluster}
+            colorIdx={selectedCluster.idx}
+            onClose={() => setSelectedCluster(null)}
+          />
+        )}
       </div>
       <BottomNav />
     </main>

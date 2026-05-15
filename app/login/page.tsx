@@ -75,7 +75,7 @@ export default function LoginPage() {
                 <label htmlFor="password" className="text-sm font-semibold text-slate-700">
                   Password
                 </label>
-                <Link href="/forgot-password" className="text-xs font-semibold text-blue-600 hover:text-blue-700 transition-colors">
+                <Link href="/forgot-password" className="text-sm font-semibold text-blue-600 hover:text-blue-700 transition-colors">
                   Forgot password?
                 </Link>
               </div>
@@ -98,9 +98,17 @@ export default function LoginPage() {
             </div>
 
             {error && (
-              <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-700 text-sm font-medium">
-                <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
-                {error}
+              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                <div className="flex items-start gap-3 text-red-700 text-sm font-medium">
+                  <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+                  {error}
+                </div>
+                <div className="mt-2 pl-7 text-sm text-slate-500">
+                  Forgot your password?{" "}
+                  <Link href="/forgot-password" className="font-semibold text-blue-600 hover:text-blue-700 underline transition-colors">
+                    Reset it here
+                  </Link>
+                </div>
               </div>
             )}
 

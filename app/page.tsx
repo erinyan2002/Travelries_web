@@ -10,7 +10,7 @@ import {
   Camera, Upload, MapPin, Users, CalendarDays, Clock,
   FileImage, Ruler, CheckCircle2, Loader2, Cpu, AlertTriangle,
   Search, Navigation, Save, Pencil, X, Check, Wifi, WifiOff,
-  Coffee, Utensils, Wine, TrendingUp, Sparkles,
+  Coffee, Utensils, Wine, Sparkles,
 } from "lucide-react";
 import AppLogo from "@/components/AppLogo";
 
@@ -23,6 +23,10 @@ export type FacePhoto = {
   uploadedAt: string;
   boxes?: Array<{ x: number; y: number; width: number; height: number }>;
   descriptors?: number[][];
+  confidences?: number[];
+  ages?: number[];
+  genders?: string[];
+  expressions?: string[];
   lat?: number;
   lng?: number;
   location?: string;
@@ -88,7 +92,7 @@ async function reverseGeocode(lat: number, lng: number): Promise<string> {
   try {
     const res = await fetch(
       `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
-      { headers: { "Accept-Language": "ko" } }
+      { headers: { "Accept-Language": "en" } }
     );
     const data = await res.json();
     const a = data.address || {};
@@ -106,7 +110,7 @@ async function forwardGeocode(query: string): Promise<{ lat: number; lng: number
   try {
     const res = await fetch(
       `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`,
-      { headers: { "Accept-Language": "ko" } }
+      { headers: { "Accept-Language": "en" } }
     );
     const data = await res.json();
     if (!data[0]) return null;
@@ -137,7 +141,110 @@ async function analyzeWithBackend(file: File) {
     faceCount:   number;
     faceBoxes:   Array<{ x_norm: number; y_norm: number; w_norm: number; h_norm: number }>;
     descriptors: number[][];
+    ages:        (number | null)[];
+    genders:     (string | null)[];
+    confidences: number[];
   }>;
+}
+
+// ── Face detection helpers ─────────────────────
+type DetectionResult = {
+  count:       number;
+  boxes:       Array<{ x: number; y: number; width: number; height: number }>;
+  descriptors: number[][];
+  confidences: number[];
+  ages:        number[];
+  genders:     string[];
+  expressions: string[];
+};
+
+const EXPRESSION_EN: Record<string, string> = {
+  happy: "😊 Happy", sad: "😢 Sad", angry: "😠 Angry",
+  surprised: "😮 Surprised", fearful: "😨 Fearful", disgusted: "🤢 Disgusted", neutral: "😐 Neutral",
+};
+
+function boxIoU(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number }
+): number {
+  const x1 = Math.max(a.x, b.x), y1 = Math.max(a.y, b.y);
+  const x2 = Math.min(a.x + a.width, b.x + b.width);
+  const y2 = Math.min(a.y + a.height, b.y + b.height);
+  const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  if (inter === 0) return 0;
+  return inter / (a.width * a.height + b.width * b.height - inter);
+}
+
+async function runFaceDetection(
+  imgEl: HTMLImageElement,
+  modelType: "ssd" | "tiny",
+  hasExtra: boolean,
+): Promise<DetectionResult> {
+  const MIN_PX = 20;
+  const W = imgEl.naturalWidth, H = imgEl.naturalHeight;
+  const normBox = (b: { x: number; y: number; width: number; height: number }) =>
+    ({ x: b.x / W, y: b.y / H, width: b.width / W, height: b.height / H });
+
+  if (modelType === "ssd") {
+    const opts = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
+
+    if (hasExtra) {
+      const all = await faceapi
+        .detectAllFaces(imgEl, opts)
+        .withFaceLandmarks()
+        .withFaceDescriptors()
+        .withAgeAndGender()
+        .withFaceExpressions();
+      const f = all.filter((d) => d.detection.box.width >= MIN_PX && d.detection.box.height >= MIN_PX);
+      return {
+        count:       f.length,
+        boxes:       f.map((d) => normBox(d.detection.box)),
+        descriptors: f.map((d) => Array.from(d.descriptor)),
+        confidences: f.map((d) => d.detection.score),
+        ages:        f.map((d) => Math.round(d.age)),
+        genders:     f.map((d) => d.gender),
+        expressions: f.map((d) => {
+          const e = d.expressions as unknown as Record<string, number>;
+          return Object.entries(e).sort((a, b) => b[1] - a[1])[0][0];
+        }),
+      };
+    }
+
+    const all = await faceapi
+      .detectAllFaces(imgEl, opts)
+      .withFaceLandmarks()
+      .withFaceDescriptors();
+    const f = all.filter((d) => d.detection.box.width >= MIN_PX && d.detection.box.height >= MIN_PX);
+    return {
+      count:       f.length,
+      boxes:       f.map((d) => normBox(d.detection.box)),
+      descriptors: f.map((d) => Array.from(d.descriptor)),
+      confidences: f.map((d) => d.detection.score),
+      ages: [], genders: [], expressions: [],
+    };
+  }
+
+  // TinyFaceDetector — multi-scale (416 + 608) with NMS for better small-face coverage
+  const [d416, d608] = await Promise.all([
+    faceapi.detectAllFaces(imgEl, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.2 })),
+    faceapi.detectAllFaces(imgEl, new faceapi.TinyFaceDetectorOptions({ inputSize: 608, scoreThreshold: 0.2 })),
+  ]);
+  const sorted = [...d416, ...d608].sort((a, b) => b.score - a.score);
+  const kept: typeof sorted = [];
+  for (const d of sorted) {
+    const box = { x: d.box.x, y: d.box.y, width: d.box.width, height: d.box.height };
+    if (kept.every((k) => boxIoU(box, { x: k.box.x, y: k.box.y, width: k.box.width, height: k.box.height }) < 0.45)) {
+      kept.push(d);
+    }
+  }
+  const f = kept.filter((d) => d.box.width >= MIN_PX && d.box.height >= MIN_PX);
+  return {
+    count:       f.length,
+    boxes:       f.map((d) => normBox(d.box)),
+    descriptors: [],
+    confidences: f.map((d) => d.score),
+    ages: [], genders: [], expressions: [],
+  };
 }
 
 // ── InfoRow component ──────────────────────────
@@ -165,6 +272,7 @@ export default function HomePage() {
   const [draftFileName,  setDraftFileName]  = useState("");
   const [isEditingName,  setIsEditingName]  = useState(false);
   const [isModelLoaded,  setIsModelLoaded]  = useState(false);
+  const [hasExtraModels, setHasExtraModels] = useState(false);
   const [modelType,      setModelType]      = useState<"ssd" | "tiny">("tiny");
   const [backendStatus,  setBackendStatus]  = useState<"checking" | "online" | "offline">("checking");
   const [locationQuery,  setLocationQuery]  = useState("");
@@ -174,7 +282,6 @@ export default function HomePage() {
   const [nearbyPlaces,     setNearbyPlaces]     = useState<NearbyPlace[]>([]);
   const [placesLoading,    setPlacesLoading]    = useState(false);
   const [placesFetched,    setPlacesFetched]    = useState(false);
-  const [userId,           setUserId]           = useState<string | null>(null);
   const [dashStats,        setDashStats]        = useState({ totalPhotos: 0, totalLocations: 0, totalFaces: 0 });
   const [highlights,       setHighlights]       = useState<{ recent: MapPhoto | null; mostFaces: MapPhoto | null }>({ recent: null, mostFaces: null });
   const [batchItems,       setBatchItems]       = useState<BatchFile[]>([]);
@@ -209,12 +316,19 @@ export default function HomePage() {
       faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
       faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
       faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-    ]).then(() => { setModelType("ssd"); setIsModelLoaded(true); })
-      .catch(() => {
-        faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL)
-          .then(() => { setModelType("tiny"); setIsModelLoaded(true); })
-          .catch((err) => console.error("AI model load failed", err));
-      });
+    ]).then(() => {
+      setModelType("ssd");
+      setIsModelLoaded(true);
+      // Optionally load age/gender + expression nets (requires extra weights from download-models.sh)
+      Promise.all([
+        faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
+        faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
+      ]).then(() => setHasExtraModels(true)).catch(() => {});
+    }).catch(() => {
+      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL)
+        .then(() => { setModelType("tiny"); setIsModelLoaded(true); })
+        .catch((err) => console.error("AI model load failed", err));
+    });
   }, []);
 
   useEffect(() => {
@@ -253,6 +367,10 @@ export default function HomePage() {
       let detectedFaceCount = 0;
       let faceBoxes: Array<{ x: number; y: number; width: number; height: number }> = [];
       let faceDescriptors: number[][] = [];
+      let faceConfidences: number[] = [];
+      let faceAges: number[] = [];
+      let faceGenders: string[] = [];
+      let faceExpressions: string[] = [];
 
       if (backendStatus === "online") {
         const data = await analyzeWithBackend(file);
@@ -262,8 +380,11 @@ export default function HomePage() {
         captureTime   = data.captureTime ?? "Not available";
         location      = data.location ?? (lat !== null ? `${lat.toFixed(6)}, ${lng?.toFixed(6)}` : "No GPS data");
         detectedFaceCount = data.faceCount ?? 0;
-        faceBoxes     = (data.faceBoxes ?? []).map((b) => ({ x: b.x_norm, y: b.y_norm, width: b.w_norm, height: b.h_norm }));
-        faceDescriptors = data.descriptors ?? [];
+        faceBoxes         = (data.faceBoxes ?? []).map((b) => ({ x: b.x_norm, y: b.y_norm, width: b.w_norm, height: b.h_norm }));
+        faceDescriptors   = data.descriptors ?? [];
+        faceConfidences   = (data.confidences ?? []).map(Number);
+        faceAges          = (data.ages ?? []).filter((a): a is number => a !== null);
+        faceGenders       = (data.genders ?? []).filter((g): g is string => g !== null);
       } else {
         const exifData: any = await exifr.parse(file).catch(() => null);
         const gpsData:  any = await exifr.gps(file).catch(() => null);
@@ -282,42 +403,18 @@ export default function HomePage() {
 
         if (isModelLoaded) {
           const imgEl = await faceapi.fetchImage(URL.createObjectURL(file));
-          const AREA_THRESHOLD = 0.12;
-          if (modelType === "ssd") {
-            const all = await faceapi
-              .detectAllFaces(imgEl, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
-              .withFaceLandmarks()
-              .withFaceDescriptors();
-            const areas = all.map((d) => d.detection.box.width * d.detection.box.height);
-            const maxArea = areas.length > 0 ? Math.max(...areas) : 0;
-            const filtered = maxArea > 0 ? all.filter((_, i) => areas[i] / maxArea >= AREA_THRESHOLD) : all;
-            detectedFaceCount = filtered.length;
-            faceBoxes = filtered.map((d) => ({
-              x: d.detection.box.x / imgEl.naturalWidth,
-              y: d.detection.box.y / imgEl.naturalHeight,
-              width: d.detection.box.width / imgEl.naturalWidth,
-              height: d.detection.box.height / imgEl.naturalHeight,
-            }));
-            faceDescriptors = filtered.map((d) => Array.from(d.descriptor));
-          } else {
-            const detections = await faceapi.detectAllFaces(
-              imgEl, new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.3 })
-            );
-            const areas = detections.map((d) => d.box.width * d.box.height);
-            const maxArea = areas.length > 0 ? Math.max(...areas) : 0;
-            const filtered = maxArea > 0 ? detections.filter((_, i) => areas[i] / maxArea >= AREA_THRESHOLD) : detections;
-            detectedFaceCount = filtered.length;
-            faceBoxes = filtered.map((d) => ({
-              x: d.box.x / imgEl.naturalWidth,
-              y: d.box.y / imgEl.naturalHeight,
-              width: d.box.width / imgEl.naturalWidth,
-              height: d.box.height / imgEl.naturalHeight,
-            }));
-          }
+          const r = await runFaceDetection(imgEl, modelType, hasExtraModels);
+          detectedFaceCount = r.count;
+          faceBoxes         = r.boxes;
+          faceDescriptors   = r.descriptors;
+          faceConfidences   = r.confidences;
+          faceAges          = r.ages;
+          faceGenders       = r.genders;
+          faceExpressions   = r.expressions;
         }
       }
 
-      const category = detectedFaceCount > 0 ? "인물 사진" : "일반 사진";
+      const category = detectedFaceCount > 0 ? "Portrait" : "Scenery";
       setPhotoInfo({
         fileName: file.name, fileType: file.type || "unknown",
         fileSize: formatBytes(file.size), uploadedAt: new Date().toLocaleString(),
@@ -335,11 +432,12 @@ export default function HomePage() {
       }
 
       if (detectedFaceCount > 0) {
-        setFaceMessage(`얼굴 ${detectedFaceCount}명 감지! 저장 중...`);
+        const topExpr = faceExpressions[0] ? (EXPRESSION_EN[faceExpressions[0]] ?? faceExpressions[0]) : null;
+        setFaceMessage(`${detectedFaceCount} face(s) detected!${topExpr ? ` · ${topExpr}` : ""} Saving...`);
         try {
           const { data: { user } } = await supabase.auth.getUser();
           const uid = user?.id ?? "guest";
-          const dataUrl = await createThumbnailDataUrl(file, 420, 0.75);
+          const dataUrl = await createThumbnailDataUrl(file, 600, 0.85);
           const facePhotoId = crypto.randomUUID();
           const facePhoto: FacePhoto = {
             id: facePhotoId,
@@ -349,6 +447,10 @@ export default function HomePage() {
             uploadedAt: new Date().toISOString(),
             ...(faceBoxes.length > 0       && { boxes: faceBoxes }),
             ...(faceDescriptors.length > 0 && { descriptors: faceDescriptors }),
+            ...(faceConfidences.length > 0 && { confidences: faceConfidences }),
+            ...(faceAges.length > 0        && { ages: faceAges }),
+            ...(faceGenders.length > 0     && { genders: faceGenders }),
+            ...(faceExpressions.length > 0 && { expressions: faceExpressions }),
             ...(lat !== null               && { lat }),
             ...(lng !== null               && { lng }),
             ...(location !== "No GPS data" && { location }),
@@ -357,10 +459,10 @@ export default function HomePage() {
           const existing: FacePhoto[] = JSON.parse(localStorage.getItem(facesKey) ?? "[]");
           localStorage.setItem(facesKey, JSON.stringify([facePhoto, ...existing]));
           setLastFacePhotoId(facePhotoId);
-          setFaceMessage(`얼굴 ${detectedFaceCount}명 감지! Faces 앨범에 자동 저장되었습니다.`);
+          setFaceMessage(`${detectedFaceCount} face(s) detected!${topExpr ? ` · ${topExpr}` : ""} Saved to Faces album.`);
         } catch (saveErr) {
           console.error("Face photo save failed:", saveErr);
-          setFaceMessage(`얼굴 ${detectedFaceCount}명 감지! (저장 실패)`);
+          setFaceMessage(`${detectedFaceCount} face(s) detected! (Save failed)`);
         }
       }
     } catch (err) {
@@ -393,7 +495,7 @@ export default function HomePage() {
   }
 
   function handleCurrentLocation() {
-    if (!navigator.geolocation) { alert("브라우저가 위치 정보를 지원하지 않습니다."); return; }
+    if (!navigator.geolocation) { alert("Geolocation is not supported by your browser."); return; }
     setLocationStatus("searching");
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
@@ -413,7 +515,7 @@ export default function HomePage() {
           });
         }
       },
-      () => { alert("위치 정보를 가져올 수 없습니다."); setLocationStatus("error"); }
+      () => { alert("Unable to retrieve your location."); setLocationStatus("error"); }
     );
   }
 
@@ -454,33 +556,26 @@ export default function HomePage() {
         }
 
         let faceCount = 0;
-        let faceBoxes:   Array<{ x: number; y: number; width: number; height: number }> = [];
+        let faceBoxes:    Array<{ x: number; y: number; width: number; height: number }> = [];
         let faceDescriptors: number[][] = [];
+        let faceConfs:    number[] = [];
+        let faceAgesB:    number[] = [];
+        let faceGendersB: string[] = [];
+        let faceExprsB:   string[] = [];
 
         if (isModelLoaded) {
           const imgEl = await faceapi.fetchImage(URL.createObjectURL(file));
-          const AREA_THRESHOLD = 0.12;
-          if (modelType === "ssd") {
-            const all = await faceapi
-              .detectAllFaces(imgEl, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
-              .withFaceLandmarks().withFaceDescriptors();
-            const areas = all.map((d) => d.detection.box.width * d.detection.box.height);
-            const maxArea = areas.length > 0 ? Math.max(...areas) : 0;
-            const filtered = maxArea > 0 ? all.filter((_, j) => areas[j] / maxArea >= AREA_THRESHOLD) : all;
-            faceCount       = filtered.length;
-            faceBoxes       = filtered.map((d) => ({ x: d.detection.box.x / imgEl.naturalWidth, y: d.detection.box.y / imgEl.naturalHeight, width: d.detection.box.width / imgEl.naturalWidth, height: d.detection.box.height / imgEl.naturalHeight }));
-            faceDescriptors = filtered.map((d) => Array.from(d.descriptor));
-          } else {
-            const detections = await faceapi.detectAllFaces(imgEl, new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.3 }));
-            const areas = detections.map((d) => d.box.width * d.box.height);
-            const maxArea = areas.length > 0 ? Math.max(...areas) : 0;
-            const filtered = maxArea > 0 ? detections.filter((_, j) => areas[j] / maxArea >= AREA_THRESHOLD) : detections;
-            faceCount = filtered.length;
-            faceBoxes = filtered.map((d) => ({ x: d.box.x / imgEl.naturalWidth, y: d.box.y / imgEl.naturalHeight, width: d.box.width / imgEl.naturalWidth, height: d.box.height / imgEl.naturalHeight }));
-          }
+          const r = await runFaceDetection(imgEl, modelType, hasExtraModels);
+          faceCount       = r.count;
+          faceBoxes       = r.boxes;
+          faceDescriptors = r.descriptors;
+          faceConfs       = r.confidences;
+          faceAgesB       = r.ages;
+          faceGendersB    = r.genders;
+          faceExprsB      = r.expressions;
         }
 
-        const dataUrl   = await createThumbnailDataUrl(file, 420, 0.7);
+        const dataUrl   = await createThumbnailDataUrl(file, 600, 0.85);
         const photoId   = crypto.randomUUID();
 
         const mapPhotos: MapPhoto[]  = JSON.parse(localStorage.getItem(mapKey)   ?? "[]");
@@ -489,17 +584,29 @@ export default function HomePage() {
 
         if (faceCount > 0) {
           const facePhotos: FacePhoto[] = JSON.parse(localStorage.getItem(facesKey) ?? "[]");
-          facePhotos.unshift({ id: crypto.randomUUID(), fileName: file.name, imageUrl: dataUrl, faceCount, uploadedAt: new Date().toISOString(), ...(faceBoxes.length > 0 && { boxes: faceBoxes }), ...(faceDescriptors.length > 0 && { descriptors: faceDescriptors }), ...(lat !== undefined && { lat }), ...(lng !== undefined && { lng }), ...(location && { location }) });
+          facePhotos.unshift({
+            id: crypto.randomUUID(), fileName: file.name, imageUrl: dataUrl,
+            faceCount, uploadedAt: new Date().toISOString(),
+            ...(faceBoxes.length > 0       && { boxes: faceBoxes }),
+            ...(faceDescriptors.length > 0 && { descriptors: faceDescriptors }),
+            ...(faceConfs.length > 0       && { confidences: faceConfs }),
+            ...(faceAgesB.length > 0       && { ages: faceAgesB }),
+            ...(faceGendersB.length > 0    && { genders: faceGendersB }),
+            ...(faceExprsB.length > 0      && { expressions: faceExprsB }),
+            ...(lat !== undefined          && { lat }),
+            ...(lng !== undefined          && { lng }),
+            ...(location                   && { location }),
+          });
           localStorage.setItem(facesKey, JSON.stringify(facePhotos));
         }
 
         const infoParts: string[] = [];
-        if (faceCount > 0) infoParts.push(`얼굴 ${faceCount}명`);
-        infoParts.push(location ? location.split(",")[0] : "GPS 없음");
+        if (faceCount > 0) infoParts.push(`${faceCount} face(s)`);
+        infoParts.push(location ? location.split(",")[0] : "No GPS");
         items[i] = { name: file.name, status: "done", info: infoParts.join(" · ") };
       } catch (err) {
         console.error(`Batch error [${file.name}]:`, err);
-        items[i] = { name: file.name, status: "error", info: "처리 실패" };
+        items[i] = { name: file.name, status: "error", info: "Failed" };
       }
 
       setBatchItems([...items]);
@@ -538,7 +645,7 @@ export default function HomePage() {
     const effectiveLat = photoInfo.lat ?? manualCoords?.lat ?? null;
     const effectiveLng = photoInfo.lng ?? manualCoords?.lng ?? null;
     if (effectiveLat === null || effectiveLng === null) {
-      alert("위치 정보가 없습니다. 아래 위치 입력란에서 장소를 검색하거나 현재 위치를 사용하세요.");
+      alert("No location data. Please search for a place or use your current location below.");
       return;
     }
     try {
@@ -561,11 +668,11 @@ export default function HomePage() {
       const mapKey = `map-${uid}`;
       const existing: MapPhoto[] = JSON.parse(localStorage.getItem(mapKey) ?? "[]");
       localStorage.setItem(mapKey, JSON.stringify([photo, ...existing]));
-      setSavedMessage("지도 및 앨범에 저장되었습니다!");
+      setSavedMessage("Saved to map and albums!");
       refreshStats();
     } catch (err) {
       console.error("Save to map failed:", err);
-      setSavedMessage(`저장 실패: ${err instanceof Error ? err.message : "다시 시도해주세요."}`);
+      setSavedMessage(`Save failed: ${err instanceof Error ? err.message : "Please try again."}`);
     }
   }
 
@@ -581,15 +688,15 @@ export default function HomePage() {
               Travel<span className="bg-gradient-to-r from-blue-600 to-indigo-500 bg-clip-text text-transparent">Lens</span>
             </h1>
           </div>
-          <p className="text-slate-500 ml-[52px] text-sm">여행 사진을 업로드하면 위치·얼굴을 자동으로 분석합니다.</p>
+          <p className="text-slate-500 ml-[52px] text-sm">Upload travel photos to automatically analyze location &amp; faces.</p>
         </div>
 
         {/* ── Dashboard Stats ── */}
         <div className="grid grid-cols-3 gap-3 mb-6">
           {[
-            { label: "저장된 사진",   value: dashStats.totalPhotos,    icon: Camera, color: "bg-blue-500"    },
-            { label: "방문한 장소",   value: dashStats.totalLocations, icon: MapPin, color: "bg-emerald-500" },
-            { label: "감지된 얼굴",   value: dashStats.totalFaces,     icon: Users,  color: "bg-rose-500"    },
+            { label: "Photos Saved",   value: dashStats.totalPhotos,    icon: Camera, color: "bg-blue-500"    },
+            { label: "Places Visited", value: dashStats.totalLocations, icon: MapPin, color: "bg-emerald-500" },
+            { label: "Faces Detected", value: dashStats.totalFaces,     icon: Users,  color: "bg-rose-500"    },
           ].map(({ label, value, icon: Icon, color }) => (
             <div key={label} className="bg-white rounded-2xl border border-slate-200 shadow-sm px-4 py-3 flex items-center gap-3">
               <div className={`w-9 h-9 ${color} rounded-xl flex items-center justify-center flex-shrink-0`}>
@@ -609,8 +716,8 @@ export default function HomePage() {
           const total = batchItems.length;
           const allDone = done === total && total > 0;
           const saved = batchItems.filter((b) => b.status === "done").length;
-          const totalFacesFound = batchItems.filter((b) => b.info.includes("얼굴")).reduce((sum, b) => {
-            const m = b.info.match(/얼굴 (\d+)명/);
+          const totalFacesFound = batchItems.filter((b) => b.info.includes("face")).reduce((sum, b) => {
+            const m = b.info.match(/(\d+) face/);
             return sum + (m ? parseInt(m[1]) : 0);
           }, 0);
           return (
@@ -621,14 +728,14 @@ export default function HomePage() {
                     <Upload size={16} className="text-white" />
                   </div>
                   <div>
-                    <h2 className="font-bold text-slate-800">일괄 업로드</h2>
-                    <p className="text-xs text-slate-400">{done} / {total} 처리됨</p>
+                    <h2 className="font-bold text-slate-800">Batch Upload</h2>
+                    <p className="text-xs text-slate-400">{done} / {total} processed</p>
                   </div>
                 </div>
                 {allDone && (
                   <button onClick={resetBatch}
                     className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-sm font-bold hover:bg-slate-200 transition-colors">
-                    <X size={14} /> 닫기
+                    <X size={14} /> Close
                   </button>
                 )}
               </div>
@@ -639,7 +746,7 @@ export default function HomePage() {
                   <div className="h-full bg-blue-500 rounded-full transition-all duration-300"
                     style={{ width: total > 0 ? `${Math.round((done / total) * 100)}%` : "0%" }} />
                 </div>
-                <p className="text-xs text-slate-400 mt-1.5">{total > 0 ? Math.round((done / total) * 100) : 0}% 완료</p>
+                <p className="text-xs text-slate-400 mt-1.5">{total > 0 ? Math.round((done / total) * 100) : 0}% complete</p>
               </div>
 
               {/* File list */}
@@ -653,7 +760,7 @@ export default function HomePage() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-slate-800 truncate">{item.name}</p>
                       <p className={`text-xs mt-0.5 ${item.status === "error" ? "text-red-400" : "text-slate-400"}`}>
-                        {item.info || (item.status === "pending" ? "대기 중..." : item.status === "processing" ? "처리 중..." : "")}
+                        {item.info || (item.status === "pending" ? "Waiting..." : item.status === "processing" ? "Processing..." : "")}
                       </p>
                     </div>
                   </div>
@@ -666,9 +773,9 @@ export default function HomePage() {
                   <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-center gap-3">
                     <CheckCircle2 size={18} className="text-emerald-500 flex-shrink-0" />
                     <div>
-                      <p className="text-sm font-bold text-emerald-700">{saved}개 저장 완료!</p>
+                      <p className="text-sm font-bold text-emerald-700">{saved} photo(s) saved!</p>
                       {totalFacesFound > 0 && (
-                        <p className="text-xs text-emerald-600 mt-0.5">{totalFacesFound}명의 얼굴이 감지되어 Faces 앨범에 저장되었습니다.</p>
+                        <p className="text-xs text-emerald-600 mt-0.5">{totalFacesFound} face(s) detected and saved to Faces album.</p>
                       )}
                     </div>
                   </div>
@@ -690,9 +797,9 @@ export default function HomePage() {
                   backendStatus === "offline"  ? "bg-slate-400"   : "bg-amber-400"
                 }`} />
                 <span className="text-xs text-slate-500 flex items-center gap-1">
-                  {backendStatus === "online"   ? <><Wifi size={12} /> API 연결됨</> :
-                   backendStatus === "offline"  ? <><WifiOff size={12} /> 브라우저 모드</> :
-                   "확인 중..."}
+                  {backendStatus === "online"   ? <><Wifi size={12} /> API Connected</> :
+                   backendStatus === "offline"  ? <><WifiOff size={12} /> Browser Mode</> :
+                   "Checking..."}
                 </span>
               </div>
             </div>
@@ -704,21 +811,26 @@ export default function HomePage() {
                 <div className="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center mb-3 group-hover:bg-blue-200 transition-colors">
                   <Upload size={26} className="text-blue-600" />
                 </div>
-                <p className="font-semibold text-slate-700 group-hover:text-blue-700 transition-colors">클릭해서 사진 선택</p>
-                <p className="text-xs text-slate-400 mt-1">JPG, PNG, HEIC 등</p>
+                <p className="font-semibold text-slate-700 group-hover:text-blue-700 transition-colors">Click to select photos</p>
+                <p className="text-xs text-slate-400 mt-1">JPG, PNG, HEIC, etc.</p>
                 {!isModelLoaded && (
                   <p className="mt-2 text-xs text-slate-400 flex items-center gap-1">
-                    <Loader2 size={12} className="animate-spin" /> AI 엔진 준비 중...
+                    <Loader2 size={12} className="animate-spin" /> Loading AI engine...
                   </p>
                 )}
-                {isModelLoaded && modelType === "ssd" && (
+                {isModelLoaded && modelType === "ssd" && hasExtraModels && (
                   <p className="mt-2 text-xs text-emerald-600 flex items-center gap-1 font-medium">
-                    <CheckCircle2 size={12} /> 고급 감지 모드 (SSD + 얼굴 인식)
+                    <CheckCircle2 size={12} /> Premium Mode (SSD + Age/Gender + Expression)
+                  </p>
+                )}
+                {isModelLoaded && modelType === "ssd" && !hasExtraModels && (
+                  <p className="mt-2 text-xs text-emerald-600 flex items-center gap-1 font-medium">
+                    <CheckCircle2 size={12} /> Advanced Mode (SSD + Face Recognition)
                   </p>
                 )}
                 {isModelLoaded && modelType === "tiny" && (
                   <p className="mt-2 text-xs text-amber-500 flex items-center gap-1">
-                    <AlertTriangle size={12} /> 기본 감지 모드
+                    <AlertTriangle size={12} /> Basic Mode (Multi-scale)
                   </p>
                 )}
               </label>
@@ -727,7 +839,7 @@ export default function HomePage() {
               {loading && (
                 <div className="flex items-center justify-center gap-2 text-blue-600 py-2 text-sm font-medium">
                   <Loader2 size={16} className="animate-spin" />
-                  분석 중...
+                  Analyzing...
                 </div>
               )}
 
@@ -743,7 +855,7 @@ export default function HomePage() {
               {photoInfo && photoInfo.lat === null && (
                 <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 space-y-3">
                   <p className="text-sm font-bold text-orange-700 flex items-center gap-2">
-                    <MapPin size={15} /> GPS 정보 없음 — 위치를 직접 입력해주세요
+                    <MapPin size={15} /> No GPS data — please enter a location manually
                   </p>
 
                   <button
@@ -752,8 +864,8 @@ export default function HomePage() {
                     className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white text-sm font-bold py-2.5 rounded-xl transition-colors"
                   >
                     {locationStatus === "searching"
-                      ? <><Loader2 size={14} className="animate-spin" /> 위치 가져오는 중...</>
-                      : <><Navigation size={14} /> 현재 위치 사용 (GPS)</>
+                      ? <><Loader2 size={14} className="animate-spin" /> Getting location...</>
+                      : <><Navigation size={14} /> Use Current Location (GPS)</>
                     }
                   </button>
 
@@ -762,7 +874,7 @@ export default function HomePage() {
                       value={locationQuery}
                       onChange={(e) => setLocationQuery(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && handleLocationSearch()}
-                      placeholder="장소 검색 (예: 에펠탑, 제주도)"
+                      placeholder="Search location (e.g., Eiffel Tower, Paris)"
                       className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
                     />
                     <button
@@ -776,11 +888,11 @@ export default function HomePage() {
 
                   {locationStatus === "done" && manualCoords && (
                     <p className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
-                      <CheckCircle2 size={13} /> 위치 설정됨: {manualCoords.name.slice(0, 60)}...
+                      <CheckCircle2 size={13} /> Location set: {manualCoords.name.slice(0, 60)}...
                     </p>
                   )}
                   {locationStatus === "error" && (
-                    <p className="text-xs text-red-500 font-medium">장소를 찾을 수 없습니다. 다른 이름으로 검색해보세요.</p>
+                    <p className="text-xs text-red-500 font-medium">Location not found. Try a different search term.</p>
                   )}
                 </div>
               )}
@@ -817,7 +929,7 @@ export default function HomePage() {
 
                   <button onClick={handleSaveToMap}
                     className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-700 text-white py-3.5 rounded-xl font-bold text-sm transition-colors shadow-lg shadow-slate-200">
-                    <Save size={16} /> 지도에 저장
+                    <Save size={16} /> Save to Map
                   </button>
 
                   {savedMessage && (
@@ -854,7 +966,7 @@ export default function HomePage() {
                       : "bg-slate-50 border-slate-200"
                   }`}>
                     <div>
-                      <p className="text-xs text-slate-400 mb-0.5">AI 분류 결과</p>
+                      <p className="text-xs text-slate-400 mb-0.5">AI Classification</p>
                       <p className={`font-extrabold text-lg ${photoInfo.faceCount > 0 ? "text-blue-700" : "text-slate-700"}`}>
                         {photoInfo.category}
                       </p>
@@ -863,7 +975,7 @@ export default function HomePage() {
                       <p className={`text-3xl font-extrabold ${photoInfo.faceCount > 0 ? "text-blue-600" : "text-slate-300"}`}>
                         {photoInfo.faceCount}
                       </p>
-                      <p className="text-xs text-slate-400">명 감지</p>
+                      <p className="text-xs text-slate-400">detected</p>
                     </div>
                   </div>
 
@@ -880,7 +992,7 @@ export default function HomePage() {
                         photoInfo.lat != null
                           ? `${photoInfo.lat.toFixed(4)}, ${photoInfo.lng?.toFixed(4)}`
                           : manualCoords
-                            ? `${manualCoords.lat.toFixed(4)}, ${manualCoords.lng.toFixed(4)} (수동)`
+                            ? `${manualCoords.lat.toFixed(4)}, ${manualCoords.lng.toFixed(4)} (manual)`
                             : "None"
                       }
                       icon={Navigation}
@@ -897,12 +1009,12 @@ export default function HomePage() {
                       {placesLoading && (
                         <div className="flex items-center gap-2 text-slate-400 text-sm py-2">
                           <Loader2 size={14} className="animate-spin" />
-                          주변 장소 검색 중...
+                          Searching nearby places...
                         </div>
                       )}
 
                       {!placesLoading && placesFetched && nearbyPlaces.length === 0 && (
-                        <p className="text-sm text-slate-400 italic py-1">500m 이내에 등록된 장소가 없습니다.</p>
+                        <p className="text-sm text-slate-400 italic py-1">No registered places within 500m.</p>
                       )}
 
                       {!placesLoading && nearbyPlaces.length > 0 && (
@@ -940,7 +1052,7 @@ export default function HomePage() {
                   <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mb-4">
                     <Camera size={28} className="text-slate-300" />
                   </div>
-                  <p className="text-slate-400 text-sm">사진을 선택하면 여기에 분석 결과가 표시됩니다</p>
+                  <p className="text-slate-400 text-sm">Select a photo to see the analysis results here</p>
                 </div>
               )}
             </div>
@@ -959,7 +1071,7 @@ export default function HomePage() {
               {highlights.recent && (
                 <div>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
-                    <Clock size={9} /> 최근 업로드
+                    <Clock size={9} /> Recent Upload
                   </p>
                   <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -982,7 +1094,7 @@ export default function HomePage() {
               {highlights.mostFaces && (highlights.mostFaces.faceCount ?? 0) > 0 && (
                 <div>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
-                    <Users size={9} /> 최다 얼굴 사진
+                    <Users size={9} /> Most Faces
                   </p>
                   <div className="rounded-xl overflow-hidden border border-blue-200 bg-slate-50">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -990,7 +1102,7 @@ export default function HomePage() {
                     <div className="p-2.5">
                       <p className="text-xs font-bold text-slate-800 truncate">{highlights.mostFaces.fileName}</p>
                       <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full mt-1">
-                        <Users size={8} /> 얼굴 {highlights.mostFaces.faceCount}명
+                        <Users size={8} /> {highlights.mostFaces.faceCount} face(s)
                       </span>
                     </div>
                   </div>

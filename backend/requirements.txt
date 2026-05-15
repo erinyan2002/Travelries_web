@@ -8,3 +8,6 @@ numpy
 face-recognition
 scikit-learn
 requests
+# InsightFace — primary face detection/recognition/age/gender engine
+insightface
+onnxruntime

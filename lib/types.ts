@@ -22,6 +22,10 @@ export type FacePhoto = {
   uploadedAt: string;
   boxes?: Array<{ x: number; y: number; width: number; height: number }>;
   descriptors?: number[][];
+  confidences?: number[];
+  ages?: number[];
+  genders?: string[];
+  expressions?: string[];
   lat?: number;
   lng?: number;
   location?: string;

@@ -102,6 +102,9 @@ async def analyze_photo(file: UploadFile = File(...)):
         "faceCount":   faces["facesDetected"],
         "faceBoxes":   faces["faceBoxes"],
         "descriptors": faces["descriptors"],
+        "ages":        faces.get("ages", []),
+        "genders":     faces.get("genders", []),
+        "confidences": faces.get("confidences", []),
     }
 
 

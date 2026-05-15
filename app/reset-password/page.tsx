@@ -19,17 +19,33 @@ export default function ResetPasswordPage() {
   const [loading,         setLoading]         = useState(false);
 
   useEffect(() => {
-    // Supabase fires PASSWORD_RECOVERY when it detects the recovery token in the URL
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY") {
-        setStage("form");
-      }
-    });
-
-    // If no recovery event arrives within 6 s the link is invalid/expired
     const timeout = setTimeout(() => {
       setStage((prev) => (prev === "waiting" ? "invalid" : prev));
     }, 6000);
+
+    // Supabase fires PASSWORD_RECOVERY when it detects the recovery token in the URL.
+    // Subscribe first so we don't miss the event.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setStage("form");
+        clearTimeout(timeout);
+      }
+    });
+
+    // The PASSWORD_RECOVERY event can fire before useEffect runs (Supabase processes
+    // the URL hash at client init time). Check the URL directly as a fallback.
+    // Implicit flow: #access_token=...&type=recovery
+    // PKCE flow:     ?code=...
+    const hash   = new URLSearchParams(window.location.hash.slice(1));
+    const search = new URLSearchParams(window.location.search);
+    const isRecovery =
+      (hash.get("type") === "recovery" && !!hash.get("access_token")) ||
+      !!search.get("code");
+
+    if (isRecovery) {
+      setStage("form");
+      clearTimeout(timeout);
+    }
 
     return () => {
       subscription.unsubscribe();
