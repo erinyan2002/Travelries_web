@@ -4,11 +4,11 @@ import AuthGuard from "@/components/AuthGuard";
 import NotificationBell from "@/components/NotificationBell";
 
 export const metadata: Metadata = {
-  title: "TravelLens",
+  title: "Travelries",
   description: "Photo map & face detection app",
   appleWebApp: {
     capable: true,
-    title: "TravelLens",
+    title: "Travelries",
     statusBarStyle: "default",
   },
 };

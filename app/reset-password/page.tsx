@@ -209,7 +209,7 @@ export default function ResetPasswordPage() {
         </div>
 
         <p className="text-center mt-5 text-xs text-slate-400">
-          TravelLens · Photo Map &amp; Face Detection
+          Travelries · Photo Map &amp; Face Detection
         </p>
       </div>
     </main>

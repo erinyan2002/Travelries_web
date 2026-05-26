@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { FacePhoto } from "@/lib/types";
 import {
   Users, ImageIcon, MapPin, CalendarDays, Trash2, X,
-  SlidersHorizontal, Terminal, AlertTriangle, Eye, Scan,
+  SlidersHorizontal, Terminal, AlertTriangle, Eye, Scan, Pencil, Check,
 } from "lucide-react";
 
 type FaceEntry = { photo: FacePhoto; boxIndex: number };
@@ -88,11 +88,8 @@ function PhotoWithBoxes({ photo }: { photo: FacePhoto }) {
           : ["#ef4444", "rgba(239,68,68,0.88)"];
         ctx.strokeStyle = stroke; ctx.lineWidth = lineW;
         ctx.strokeRect(x, y, w, h);
-        const age   = photo.ages?.[i];
-        const gend  = photo.genders?.[i];
         const expr  = photo.expressions?.[i];
-        const label = (age != null ? `${gend === "male" ? "♂" : "♀"}${age}` : `#${i + 1}`)
-          + (expr && expr !== "neutral" ? ` ${EXPRESSION_EMOJI[expr] ?? ""}` : "");
+        const label = `#${i + 1}` + (expr && expr !== "neutral" ? ` ${EXPRESSION_EMOJI[expr] ?? ""}` : "");
         const lh = Math.min(labelH, h * 0.35);
         ctx.fillStyle = fill;
         ctx.fillRect(x, y, w, lh);
@@ -106,13 +103,11 @@ function PhotoWithBoxes({ photo }: { photo: FacePhoto }) {
   return <canvas ref={canvasRef} className="w-full h-auto block" />;
 }
 
-function FaceChip({ imageUrl, box, index, size = 64, age, gender, ringClass = "ring-blue-400" }: {
+function FaceChip({ imageUrl, box, index, size = 64, ringClass = "ring-blue-400" }: {
   imageUrl: string;
   box: { x: number; y: number; width: number; height: number };
   index: number;
   size?: number;
-  age?: number;
-  gender?: string;
   ringClass?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -141,13 +136,7 @@ function FaceChip({ imageUrl, box, index, size = 64, age, gender, ringClass = "r
         style={{ width: `${size}px`, height: `${size}px` }}
         className={`rounded-full ring-2 ring-offset-2 ${ringClass} block shadow-sm`}
       />
-      {age != null ? (
-        <span className="text-[10px] text-slate-500 mt-1.5 block font-semibold">
-          {gender === "male" ? "♂" : "♀"} {age}yr
-        </span>
-      ) : (
-        <span className="text-[10px] text-slate-400 mt-1.5 block">#{index + 1}</span>
-      )}
+      <span className="text-[10px] text-slate-400 mt-1.5 block">#{index + 1}</span>
     </div>
   );
 }
@@ -186,7 +175,7 @@ function PhotoModal({ photo, onClose, onDelete }: { photo: FacePhoto; onClose: (
             <div className="flex gap-3 overflow-x-auto pb-1">
               {photo.boxes.map((box, i) => (
                 <FaceChip key={i} imageUrl={photo.imageUrl} box={box} index={i} size={60}
-                  age={photo.ages?.[i]} gender={photo.genders?.[i]} ringClass={PALETTE[i % PALETTE.length].ring} />
+                  ringClass={PALETTE[i % PALETTE.length].ring} />
               ))}
             </div>
           </div>
@@ -234,8 +223,7 @@ function PersonModal({ cluster, onClose, colorIdx }: { cluster: PersonCluster; o
         <div className="bg-gradient-to-r from-slate-800 to-slate-900 px-5 py-4 flex items-center gap-4 flex-shrink-0">
           {repBox && (
             <FaceChip imageUrl={rep.photo.imageUrl} box={repBox} index={rep.boxIndex}
-              size={56} age={rep.photo.ages?.[rep.boxIndex]} gender={rep.photo.genders?.[rep.boxIndex]}
-              ringClass={color.ring} />
+              size={56} ringClass={color.ring} />
           )}
           <div className="flex-1 min-w-0">
             <h3 className="font-black text-white text-lg">{cluster.label}</h3>
@@ -258,8 +246,6 @@ function PersonModal({ cluster, onClose, colorIdx }: { cluster: PersonCluster; o
           <div className="grid grid-cols-2 gap-3">
             {cluster.faces.map((face, idx) => {
               const box = face.photo.boxes?.[face.boxIndex];
-              const age = face.photo.ages?.[face.boxIndex];
-              const gender = face.photo.genders?.[face.boxIndex];
               return (
                 <div key={`${face.photo.id}_${face.boxIndex}_${idx}`} className="bg-slate-50 rounded-2xl overflow-hidden border border-slate-100 shadow-sm">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -267,16 +253,11 @@ function PersonModal({ cluster, onClose, colorIdx }: { cluster: PersonCluster; o
                   <div className="p-2.5 flex items-center gap-2.5">
                     {box && (
                       <FaceChip imageUrl={face.photo.imageUrl} box={box} index={face.boxIndex}
-                        size={40} age={age} gender={gender} ringClass={color.ring} />
+                        size={40} ringClass={color.ring} />
                     )}
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-slate-800 truncate">{face.photo.fileName}</p>
                       <p className="text-[10px] text-slate-400 mt-0.5">{face.photo.uploadedAt.slice(0, 10)}</p>
-                      {age != null && (
-                        <p className="text-[10px] font-semibold text-slate-500 mt-0.5">
-                          {gender === "male" ? "♂" : "♀"} {age}yr
-                        </p>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -326,6 +307,9 @@ export default function FacesPage() {
   const [threshold,       setThreshold]       = useState(0.50);
   const [selectedPhoto,   setSelectedPhoto]   = useState<FacePhoto | null>(null);
   const [selectedCluster, setSelectedCluster] = useState<{ cluster: PersonCluster; idx: number } | null>(null);
+  const [customLabels,    setCustomLabels]    = useState<Record<string, string>>({});
+  const [editingId,       setEditingId]       = useState<string | null>(null);
+  const [editDraft,       setEditDraft]       = useState("");
 
   useEffect(() => {
     async function load() {
@@ -477,23 +461,50 @@ export default function FacesPage() {
                           const color = PALETTE[idx % PALETTE.length];
                           const rep = cluster.faces[0];
                           const repBox = rep?.photo.boxes?.[rep.boxIndex];
-                          const repAge = rep?.photo.ages?.[rep.boxIndex];
-                          const repGender = rep?.photo.genders?.[rep.boxIndex];
+                          const displayLabel = customLabels[cluster.id] ?? cluster.label;
+                          const isEditing = editingId === cluster.id;
                           return (
                             <div key={cluster.id}
-                              onClick={() => setSelectedCluster({ cluster, idx })}
+                              onClick={() => { if (!isEditing) setSelectedCluster({ cluster: { ...cluster, label: displayLabel }, idx }); }}
                               className="bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 active:scale-[0.97] transition-all cursor-pointer p-4 text-center group">
                               <div className="flex justify-center mb-3">
                                 {repBox ? (
                                   <FaceChip imageUrl={rep.photo.imageUrl} box={repBox} index={rep.boxIndex}
-                                    size={72} age={repAge} gender={repGender} ringClass={color.ring} />
+                                    size={72} ringClass={color.ring} />
                                 ) : (
                                   <div className="w-[72px] h-[72px] rounded-full bg-slate-100 flex items-center justify-center ring-2 ring-offset-2 ring-slate-200">
                                     <Users size={24} className="text-slate-300" />
                                   </div>
                                 )}
                               </div>
-                              <p className="font-black text-slate-800 text-sm">{cluster.label}</p>
+                              {isEditing ? (
+                                <div className="flex items-center gap-1 mt-1" onClick={(e) => e.stopPropagation()}>
+                                  <input
+                                    autoFocus
+                                    value={editDraft}
+                                    onChange={(e) => setEditDraft(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") { setCustomLabels((prev) => ({ ...prev, [cluster.id]: editDraft.trim() || cluster.label })); setEditingId(null); }
+                                      if (e.key === "Escape") setEditingId(null);
+                                    }}
+                                    className="flex-1 text-xs font-bold text-slate-800 border border-violet-300 rounded-lg px-2 py-1 outline-none text-center min-w-0"
+                                  />
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setCustomLabels((prev) => ({ ...prev, [cluster.id]: editDraft.trim() || cluster.label })); setEditingId(null); }}
+                                    className="w-6 h-6 flex items-center justify-center bg-violet-500 rounded-lg text-white flex-shrink-0">
+                                    <Check size={12} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                  <p className="font-black text-slate-800 text-sm">{displayLabel}</p>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setEditDraft(displayLabel); setEditingId(cluster.id); }}
+                                    className="w-5 h-5 flex items-center justify-center text-slate-300 hover:text-violet-500 transition-colors">
+                                    <Pencil size={11} />
+                                  </button>
+                                </div>
+                              )}
                               <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full mt-1.5 ${color.bg} ${color.text}`}>
                                 {cluster.faces.length} appearance{cluster.faces.length !== 1 ? "s" : ""}
                               </span>

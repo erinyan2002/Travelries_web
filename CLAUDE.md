@@ -8,8 +8,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Frontend (Next.js)
 npm run dev        # start dev server at localhost:3000
 npm run build      # production build
+npm start          # serve production build
 npm run lint       # ESLint check
 npx tsc --noEmit   # TypeScript type check (no test suite exists)
+
+# Deploy to production server (uses pnpm + SFTP)
+npm run deploy     # runs _scripts/deploy.sh — sets NEXT_PUBLIC_API_TARGET=prod, builds, SFTPs to iubns.net
 
 # Backend (optional Python FastAPI — only needed for nearby-places feature)
 cd backend
@@ -27,6 +31,8 @@ bash _scripts/download-models.sh
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 ```
+
+`NEXT_PUBLIC_API_TARGET=prod` is set automatically by the deploy script and may affect backend URL resolution at build time.
 
 ## Architecture
 
@@ -46,7 +52,9 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 
 ### Auth flow
 
-`AuthGuard` (`components/AuthGuard.tsx`) wraps the entire app in `app/layout.tsx`. It calls `supabase.auth.getSession()` on mount and subscribes to `onAuthStateChange`. Unauthenticated users are redirected to `/login`; only `/login`, `/signup`, `/forgot-password`, `/reset-password`, and `/share/[id]` are public paths.
+`AuthGuard` (`components/AuthGuard.tsx`) wraps the entire app in `app/layout.tsx`. It calls `supabase.auth.getSession()` on mount and subscribes to `onAuthStateChange`. While the session check is in flight it renders a full-screen 🌍 spinner. Unauthenticated users are redirected to `/login`; public paths are `/login`, `/signup`, `/forgot-password`, `/reset-password`, and `/share/[id]` (matched with `path.startsWith("/share/")`).
+
+`NotificationBell` is rendered directly in `app/layout.tsx` (not inside `Header`) so it floats over all pages globally.
 
 Page transitions are handled by `app/template.tsx` (framer-motion fade+slide on every route change).
 
@@ -89,7 +97,7 @@ Photos grouped by location string. Filters:
 
 ### Notifications (`lib/notificationUtils.ts`)
 
-Real-time notifications via Supabase Realtime. `subscribeToNotifications(userId, onNew)` opens a postgres_changes channel filtered to `user_id`. The `NotificationBell` component (shown in Header) polls on mount and subscribes for live inserts. Notification types: `share_viewed`, `collab_joined`, `collab_photo_added`.
+Real-time notifications via Supabase Realtime. `subscribeToNotifications(userId, onNew)` opens a postgres_changes channel filtered to `user_id`. The `NotificationBell` component polls on mount and subscribes for live inserts. Notification types: `share_viewed`, `collab_joined`, `collab_photo_added`.
 
 ### Collaborative albums (`lib/collabUtils.ts`, `app/collab/page.tsx`)
 
@@ -107,9 +115,8 @@ Key backend files:
 - `backend/utils/face_utils.py` — two-tier face pipeline (InsightFace Tier 1, SSD+dlib Tier 2). InsightFace downloads `buffalo_l` (~200 MB) to `~/.insightface/models/buffalo_l/` on first run.
 - `backend/utils/exif_utils.py` — EXIF extraction + reverse geocoding
 - `backend/utils/places_utils.py` — Overpass API for nearby POIs
-- `backend/requirements.txt` — includes `insightface`, `onnxruntime`, `opencv-python`, `exifread`, `face-recognition`, `scikit-learn`
 
-To install InsightFace tier: `pip install insightface onnxruntime` (already in requirements.txt).
+To install InsightFace tier: `pip install insightface onnxruntime` (already in `backend/requirements.txt`).
 
 ### Key shared types
 
@@ -120,37 +127,6 @@ To install InsightFace tier: `pip install insightface onnxruntime` (already in r
 ### Map (`app/map/page.tsx`)
 
 Uses `react-leaflet` with OpenStreetMap tiles (free, no API key). Leaflet default icons overridden with `L.divIcon` showing a circular photo thumbnail + count badge for clustered markers. Loaded client-side only (Leaflet requires `window`). Only photos with `lat` and `lng` defined are shown.
-
-### Reusable components
-
-| Component | Purpose |
-|---|---|
-| `AuthGuard` | Auth redirect wrapper used in layout |
-| `BottomNav` | Fixed bottom navigation bar |
-| `Header` | Top header bar (includes `NotificationBell`) |
-| `NotificationBell` | Real-time notification dropdown in Header |
-| `AppLogo` | Shared logo component |
-| `PhotoCard` | Photo thumbnail card used in Albums/Saved |
-| `PhotoPreview` | Full-size photo preview modal |
-| `UploadBox` | Drag-and-drop / click-to-upload file input |
-| `ClientMapPage` | Client-only wrapper for the Leaflet map |
-| `MapPlaceholder` | SSR placeholder shown before Leaflet loads |
-
-### Pages
-
-| Route | Purpose |
-|---|---|
-| `/` | Upload + analyze photo(s), dashboard stats + highlights |
-| `/map` | Leaflet map with photo markers |
-| `/albums` | Photos grouped by location, search + date range filter |
-| `/faces` | Face photos, person clustering; color-coded PALETTE per cluster, gradient hero header, `PhotoModal` + `PersonModal` |
-| `/saved` | Starred photos |
-| `/stats` | Full dashboard — photo counts, top locations, recent uploads grid |
-| `/collab` | Collaborative albums list + create; `/collab/[id]` for album detail |
-| `/share/[id]` | Public share page (no auth required) |
-| `/profile` | Edit name, change password |
-| `/login` `/signup` | Public auth pages |
-| `/forgot-password` `/reset-password` | Password reset flow |
 
 ### Metadata / Viewport
 

@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "TravelLens",
-    short_name: "TravelLens",
+    name: "Travelries",
+    short_name: "Travelries",
     description: "Photo map & face detection app",
     start_url: "/",
     display: "standalone",

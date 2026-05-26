@@ -39,7 +39,7 @@ export default function SharePage() {
           <p className="text-slate-400 text-sm mb-4">This link may have expired or been removed.</p>
           <Link href="/"
             className="inline-block px-4 py-2 bg-blue-500 text-white text-sm font-bold rounded-xl hover:bg-blue-600 transition-colors">
-            Open TravelLens
+            Open Travelries
           </Link>
         </div>
       </div>
@@ -104,7 +104,7 @@ export default function SharePage() {
             </div>
             <div className="mt-3 pt-3 border-t border-slate-100 text-center">
               <Link href="/" className="text-xs text-blue-500 font-semibold hover:underline">
-                Open TravelLens →
+                Open Travelries →
               </Link>
             </div>
           </div>

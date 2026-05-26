@@ -135,9 +135,36 @@ function PhotoModal({ cluster, onClose }: { cluster: Cluster; onClose: () => voi
   );
 }
 
+function DeleteConfirmModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[4000] flex items-center justify-center p-4" onClick={onCancel}>
+      <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <Trash2 size={22} className="text-red-500" />
+        </div>
+        <h2 className="text-lg font-black text-slate-900 text-center mb-1">Delete All Photos?</h2>
+        <p className="text-sm text-slate-500 text-center mb-6">
+          Once deleted, recovery is not possible.
+        </p>
+        <div className="flex gap-3">
+          <button onClick={onCancel}
+            className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50 transition-colors">
+            Back
+          </button>
+          <button onClick={onConfirm}
+            className="flex-1 py-2.5 rounded-xl bg-red-500 text-white font-bold text-sm hover:bg-red-600 transition-colors">
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function MapPage() {
   const [photos,        setPhotos]        = useState<MapPhoto[]>([]);
   const [activeCluster, setActiveCluster] = useState<Cluster | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -165,12 +192,12 @@ export default function MapPage() {
   }, [photos]);
 
   async function handleClear() {
-    if (!confirm("모든 사진을 삭제하시겠습니까?")) return;
     const { data: { user } } = await supabase.auth.getUser();
     const uid = user?.id ?? "guest";
     localStorage.removeItem(`map-${uid}`);
     setPhotos([]);
     setActiveCluster(null);
+    setShowDeleteConfirm(false);
   }
 
   return (
@@ -192,7 +219,7 @@ export default function MapPage() {
               <ArrowLeft size={15} /> Back
             </Link>
             {photos.length > 0 && (
-              <button onClick={handleClear}
+              <button onClick={() => setShowDeleteConfirm(true)}
                 className="flex items-center gap-1.5 px-4 py-2.5 bg-red-500 text-white rounded-xl text-sm font-bold hover:bg-red-600 transition-colors">
                 <Trash2 size={15} /> 전체 삭제
               </button>
@@ -242,6 +269,9 @@ export default function MapPage() {
       </div>
 
       {activeCluster && <PhotoModal cluster={activeCluster} onClose={() => setActiveCluster(null)} />}
+      {showDeleteConfirm && (
+        <DeleteConfirmModal onConfirm={handleClear} onCancel={() => setShowDeleteConfirm(false)} />
+      )}
       <BottomNav />
     </main>
   );

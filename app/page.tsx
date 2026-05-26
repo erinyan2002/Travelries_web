@@ -685,7 +685,7 @@ export default function HomePage() {
           <div className="flex items-center gap-3 mb-1">
             <AppLogo size="md" className="shadow-md shadow-blue-200" />
             <h1 className="text-4xl font-extrabold tracking-tight">
-              Travel<span className="bg-gradient-to-r from-blue-600 to-indigo-500 bg-clip-text text-transparent">Lens</span>
+              Travel<span className="bg-gradient-to-r from-blue-600 to-indigo-500 bg-clip-text text-transparent">ries</span>
             </h1>
           </div>
           <p className="text-slate-500 ml-[52px] text-sm">Upload travel photos to automatically analyze location &amp; faces.</p>

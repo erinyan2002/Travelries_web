@@ -3,7 +3,7 @@ export default function Header() {
     <header className="border-b border-slate-200 bg-white">
       <div className="mx-auto max-w-6xl px-6 py-6">
         <p className="text-sm font-semibold uppercase tracking-[0.2em] text-blue-600">
-          TravelLens
+          Travelries
         </p>
         <h1 className="mt-2 text-3xl font-bold text-slate-900">
           Travel Photo Analysis App
