@@ -75,7 +75,7 @@ export default function SignUpPage() {
             <AppLogo size="xl" className="relative shadow-xl shadow-blue-300/50" />
           </div>
           <h1 className="text-3xl font-black tracking-tight text-slate-900 mb-1">
-            Travel<span className="bg-gradient-to-r from-blue-600 to-indigo-500 bg-clip-text text-transparent">Lens</span>
+            Travel<span className="bg-gradient-to-r from-blue-600 to-indigo-500 bg-clip-text text-transparent">ries</span>
           </h1>
           <p className="text-slate-500 text-sm">Create your account</p>
         </div>

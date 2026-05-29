@@ -52,7 +52,7 @@ export default function SharePage() {
         <div className="flex items-center gap-2 mb-4">
           <AppLogo size="sm" />
           <span className="text-sm font-bold text-slate-700">
-            Travel<span className="bg-gradient-to-r from-blue-600 to-indigo-500 bg-clip-text text-transparent">Lens</span>
+            Travel<span className="bg-gradient-to-r from-blue-600 to-indigo-500 bg-clip-text text-transparent">ries</span>
           </span>
           <span className="text-slate-300 mx-1">·</span>
           <span className="text-xs text-slate-400">Shared photo</span>
