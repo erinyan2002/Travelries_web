@@ -10,11 +10,13 @@ import {
   getAlbum, getAlbumMembers, getAlbumPhotos,
   addPhotoToAlbum, removePhotoFromAlbum,
   leaveAlbum, deleteAlbum, removeMember,
-  CollabAlbum, CollabMember, CollabPhoto,
+  getReactions, toggleReaction, getComments, addComment,
+  CollabAlbum, CollabMember, CollabPhoto, CollabReaction, CollabComment,
 } from "@/lib/collabUtils";
 import {
   FolderOpen, ArrowLeft, Copy, Check, Plus, Trash2, UserMinus,
   Users, Images, X, LogOut, Loader2, CalendarDays, UserPlus, Share2,
+  MessageCircle, Send,
 } from "lucide-react";
 
 const ROLE_COLORS: Record<string, string> = {
@@ -55,7 +57,7 @@ function InviteModal({ inviteCode, onClose }: { inviteCode: string; onClose: () 
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <div>
             <h2 className="font-bold text-slate-900">Invite Members</h2>
-            <p className="text-xs text-slate-400 mt-0.5">링크 또는 코드를 공유하세요</p>
+            <p className="text-xs text-slate-400 mt-0.5">Share the link or code with others</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1"><X size={18} /></button>
         </div>
@@ -75,7 +77,7 @@ function InviteModal({ inviteCode, onClose }: { inviteCode: string; onClose: () 
               </button>
             </div>
             <p className="text-[10px] text-slate-400 mt-1.5">
-              이 링크를 받은 사람은 누구든지 앨범에 참여할 수 있어요.
+              Anyone with this link can join the album.
             </p>
           </div>
 
@@ -92,7 +94,7 @@ function InviteModal({ inviteCode, onClose }: { inviteCode: string; onClose: () 
               </button>
             </div>
             <p className="text-[10px] text-slate-400 mt-1.5">
-              상대방이 <strong className="text-slate-600">Collab → Join</strong>에서 이 코드를 입력하면 참여돼요.
+              They can enter this code at <strong className="text-slate-600">Collab → Join</strong>.
             </p>
           </div>
 
@@ -146,7 +148,7 @@ function PhotoPicker({
       await onAdd(toAdd);
       onClose();
     } catch (err) {
-      alert(`사진 추가 실패: ${err instanceof Error ? err.message : String(err)}`);
+      alert(`Failed to add photos: ${err instanceof Error ? err.message : String(err)}`);
       setAdding(false);
     }
   }
@@ -159,7 +161,7 @@ function PhotoPicker({
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <div>
             <h2 className="font-bold text-slate-900">Add Photos</h2>
-            <p className="text-xs text-slate-400 mt-0.5">내 사진에서 선택하세요 · {selected.size}장 선택됨</p>
+            <p className="text-xs text-slate-400 mt-0.5">Select from your photos · {selected.size} selected</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1"><X size={18} /></button>
         </div>
@@ -167,7 +169,7 @@ function PhotoPicker({
         <div className="overflow-y-auto flex-1 p-4">
           {localPhotos.length === 0 ? (
             <div className="text-center py-12 text-slate-400 text-sm">
-              저장된 사진이 없습니다. 홈에서 사진을 업로드하세요.
+              No photos saved yet. Upload photos from the home screen.
             </div>
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
@@ -202,7 +204,7 @@ function PhotoPicker({
           <button onClick={handleAdd} disabled={selected.size === 0 || adding}
             className="w-full py-3 bg-violet-600 text-white font-bold rounded-xl hover:bg-violet-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
             {adding
-              ? <><Loader2 size={16} className="animate-spin" /> 업로드 중...</>
+              ? <><Loader2 size={16} className="animate-spin" /> Uploading...</>
               : `Add ${selected.size} Photo${selected.size !== 1 ? "s" : ""}`
             }
           </button>
@@ -212,17 +214,151 @@ function PhotoPicker({
   );
 }
 
+const REACTION_EMOJIS = ["❤️", "😊", "🔥", "✨"];
+
+function CollabPhotoModal({
+  photo, myUid, canDelete,
+  onClose, onRemove,
+}: {
+  photo: CollabPhoto;
+  myUid: string | null;
+  canDelete: boolean;
+  onClose: () => void;
+  onRemove: (id: string) => void;
+}) {
+  const [reactions, setReactions] = useState<CollabReaction[]>([]);
+  const [comments,  setComments]  = useState<CollabComment[]>([]);
+  const [draft,     setDraft]     = useState("");
+  const [sending,   setSending]   = useState(false);
+
+  useEffect(() => {
+    getReactions(photo.id).then(setReactions);
+    getComments(photo.id).then(setComments);
+  }, [photo.id]);
+
+  async function handleToggle(emoji: string) {
+    try {
+      await toggleReaction(photo.id, emoji);
+      setReactions(await getReactions(photo.id));
+    } catch { /* table may not exist yet */ }
+  }
+
+  async function handleSendComment() {
+    if (!draft.trim()) return;
+    setSending(true);
+    try {
+      const c = await addComment(photo.id, draft.trim());
+      setComments(prev => [...prev, c]);
+      setDraft("");
+    } catch { /* table may not exist yet */ }
+    setSending(false);
+  }
+
+  const reactionCounts: Record<string, number> = {};
+  const myReactions = new Set<string>();
+  reactions.forEach(r => {
+    reactionCounts[r.emoji] = (reactionCounts[r.emoji] ?? 0) + 1;
+    if (r.user_id === myUid) myReactions.add(r.emoji);
+  });
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-[3000] flex items-end sm:items-center justify-center sm:p-4 overflow-y-auto"
+      onClick={onClose}>
+      <div className="w-full sm:max-w-[520px] bg-white sm:rounded-3xl overflow-hidden shadow-2xl max-h-[92vh] flex flex-col"
+        onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 flex-shrink-0">
+          <div className="min-w-0">
+            <p className="font-bold text-slate-900 text-sm truncate">{photo.file_name}</p>
+            {photo.added_by_email && (
+              <p className="text-[10px] text-slate-400 mt-0.5">by {photo.added_by_email.split("@")[0]}</p>
+            )}
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1 ml-3 flex-shrink-0"><X size={18} /></button>
+        </div>
+
+        {/* Photo */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={photo.image_url} alt={photo.file_name} className="w-full max-h-[40vh] object-contain bg-slate-100 flex-shrink-0" />
+
+        {/* Reactions */}
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100 flex-shrink-0">
+          {REACTION_EMOJIS.map(emoji => (
+            <button key={emoji} onClick={() => handleToggle(emoji)}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-bold transition-all ${
+                myReactions.has(emoji)
+                  ? "bg-rose-100 ring-1 ring-rose-300"
+                  : "bg-slate-50 hover:bg-slate-100"
+              }`}>
+              {emoji}
+              {reactionCounts[emoji] ? <span className="text-[11px] text-slate-600">{reactionCounts[emoji]}</span> : null}
+            </button>
+          ))}
+        </div>
+
+        {/* Comments */}
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5 min-h-[80px]">
+          {comments.length === 0 ? (
+            <p className="text-xs text-slate-400 text-center py-3">No comments yet. Be the first!</p>
+          ) : (
+            comments.map(c => (
+              <div key={c.id} className="flex gap-2 items-start">
+                <div className="w-6 h-6 rounded-full bg-violet-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <span className="text-[10px] font-bold text-violet-700">
+                    {((c.user_email ?? c.user_id)[0] ?? "?").toUpperCase()}
+                  </span>
+                </div>
+                <div className="bg-slate-50 rounded-xl px-3 py-1.5 flex-1 min-w-0">
+                  <p className="text-[10px] font-bold text-slate-500">{c.user_email?.split("@")[0] ?? "user"}</p>
+                  <p className="text-xs text-slate-800 mt-0.5 break-words">{c.content}</p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Comment input */}
+        <div className="flex gap-2 px-4 py-3 border-t border-slate-100 flex-shrink-0">
+          <input
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && !e.shiftKey && handleSendComment()}
+            placeholder="Add a comment..."
+            className="flex-1 text-sm bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-200 transition-all"
+          />
+          <button onClick={handleSendComment} disabled={!draft.trim() || sending}
+            className="w-9 h-9 flex items-center justify-center bg-violet-600 text-white rounded-xl hover:bg-violet-700 transition-colors disabled:opacity-40 flex-shrink-0">
+            {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+          </button>
+        </div>
+
+        {/* Remove */}
+        {canDelete && (
+          <div className="px-4 pb-4 flex-shrink-0">
+            <button onClick={() => { onRemove(photo.id); onClose(); }}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-50 text-red-500 hover:bg-red-100 text-sm font-bold transition-colors">
+              <Trash2 size={14} /> Remove from album
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function CollabAlbumPage() {
   const { id } = useParams<{ id: string }>();
   const router  = useRouter();
 
-  const [album,      setAlbum]      = useState<CollabAlbum | null | undefined>(undefined);
-  const [members,    setMembers]    = useState<CollabMember[]>([]);
-  const [photos,     setPhotos]     = useState<CollabPhoto[]>([]);
-  const [myUid,      setMyUid]      = useState<string | null>(null);
-  const [tab,        setTab]        = useState<"photos" | "members">("photos");
-  const [showPicker, setShowPicker] = useState(false);
-  const [showInvite, setShowInvite] = useState(false);
+  const [album,              setAlbum]              = useState<CollabAlbum | null | undefined>(undefined);
+  const [members,            setMembers]            = useState<CollabMember[]>([]);
+  const [photos,             setPhotos]             = useState<CollabPhoto[]>([]);
+  const [myUid,              setMyUid]              = useState<string | null>(null);
+  const [tab,                setTab]                = useState<"photos" | "members">("photos");
+  const [showPicker,         setShowPicker]         = useState(false);
+  const [showInvite,         setShowInvite]         = useState(false);
+  const [selectedCollabPhoto,setSelectedCollabPhoto]= useState<CollabPhoto | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -250,13 +386,13 @@ export default function CollabAlbumPage() {
   }
 
   async function handleRemovePhoto(photoId: string) {
-    if (!confirm("이 사진을 앨범에서 삭제하시겠습니까?")) return;
+    if (!confirm("Remove this photo from the album?")) return;
     await removePhotoFromAlbum(photoId);
     setPhotos((prev) => prev.filter((p) => p.id !== photoId));
   }
 
   async function handleLeave() {
-    if (!confirm("이 앨범을 나가시겠습니까?")) return;
+    if (!confirm("Leave this album?")) return;
     try {
       await leaveAlbum(id);
       router.push("/collab");
@@ -266,7 +402,7 @@ export default function CollabAlbumPage() {
   }
 
   async function handleDelete() {
-    if (!confirm("앨범을 삭제하면 모든 사진과 멤버 데이터가 삭제됩니다. 계속하시겠습니까?")) return;
+    if (!confirm("Deleting this album will remove all photos and members. Continue?")) return;
     try {
       await deleteAlbum(id);
       router.push("/collab");
@@ -276,7 +412,7 @@ export default function CollabAlbumPage() {
   }
 
   async function handleRemoveMember(userId: string) {
-    if (!confirm("이 멤버를 제거하시겠습니까?")) return;
+    if (!confirm("Remove this member?")) return;
     try {
       await removeMember(id, userId);
       setMembers((prev) => prev.filter((m) => m.user_id !== userId));
@@ -389,7 +525,7 @@ export default function CollabAlbumPage() {
                 <Images size={28} className="text-slate-300" />
               </div>
               <p className="font-bold text-slate-700 mb-1">No photos yet</p>
-              <p className="text-slate-400 text-sm mb-4">멤버들이 사진을 추가할 수 있어요.</p>
+              <p className="text-slate-400 text-sm mb-4">Members can add photos here.</p>
               {canContribute && (
                 <button onClick={() => setShowPicker(true)}
                   className="px-5 py-2.5 bg-violet-600 text-white text-sm font-bold rounded-xl hover:bg-violet-700 transition-colors">
@@ -399,35 +535,32 @@ export default function CollabAlbumPage() {
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-              {photos.map((photo) => {
-                const canDelete = photo.added_by === myUid || isOwner;
-                return (
-                  <div key={photo.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={photo.image_url} alt={photo.file_name}
-                      className="w-full h-36 object-contain bg-slate-100" />
-                    <div className="p-2.5">
-                      <p className="font-bold text-slate-800 text-xs truncate">{photo.file_name}</p>
-                      {photo.capture_date && (
-                        <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-0.5">
-                          <CalendarDays size={9} /> {photo.capture_date}
-                        </p>
-                      )}
-                      {photo.added_by_email && (
-                        <p className="text-[10px] text-slate-400 mt-0.5 truncate">
-                          by {photo.added_by_email.split("@")[0]}
-                        </p>
-                      )}
-                      {canDelete && (
-                        <button onClick={() => handleRemovePhoto(photo.id)}
-                          className="mt-1.5 w-full flex items-center justify-center gap-1 py-1.5 rounded-lg text-[10px] font-bold bg-red-50 text-red-500 hover:bg-red-100 transition-colors">
-                          <Trash2 size={10} /> Remove
-                        </button>
-                      )}
+              {photos.map((photo) => (
+                <div key={photo.id}
+                  onClick={() => setSelectedCollabPhoto(photo)}
+                  className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={photo.image_url} alt={photo.file_name}
+                    className="w-full h-36 object-contain bg-slate-100" />
+                  <div className="p-2.5">
+                    <p className="font-bold text-slate-800 text-xs truncate">{photo.file_name}</p>
+                    {photo.capture_date && (
+                      <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-0.5">
+                        <CalendarDays size={9} /> {photo.capture_date}
+                      </p>
+                    )}
+                    {photo.added_by_email && (
+                      <p className="text-[10px] text-slate-400 mt-0.5 truncate">
+                        by {photo.added_by_email.split("@")[0]}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-1 mt-1.5">
+                      <MessageCircle size={10} className="text-slate-300" />
+                      <span className="text-[10px] text-slate-400">tap to react &amp; comment</span>
                     </div>
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
           )
         )}
@@ -449,10 +582,10 @@ export default function CollabAlbumPage() {
                   <div className="flex-1 min-w-0">
                     <p className="font-bold text-slate-800 text-sm truncate">
                       {member.email ?? `${member.user_id.slice(0, 8)}...`}
-                      {isMe && <span className="text-violet-400 font-normal ml-1">(나)</span>}
+                      {isMe && <span className="text-violet-400 font-normal ml-1">(me)</span>}
                     </p>
                     <p className="text-[11px] text-slate-400">
-                      Joined {new Date(member.joined_at).toLocaleDateString()}
+                      Joined {new Date(member.joined_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
                     </p>
                   </div>
                   <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full flex-shrink-0 ${ROLE_COLORS[member.role] ?? ""}`}>
@@ -476,6 +609,18 @@ export default function CollabAlbumPage() {
       )}
       {showInvite && album && (
         <InviteModal inviteCode={album.invite_code} onClose={() => setShowInvite(false)} />
+      )}
+      {selectedCollabPhoto && (
+        <CollabPhotoModal
+          photo={selectedCollabPhoto}
+          myUid={myUid}
+          canDelete={selectedCollabPhoto.added_by === myUid || isOwner}
+          onClose={() => setSelectedCollabPhoto(null)}
+          onRemove={(photoId) => {
+            handleRemovePhoto(photoId);
+            setSelectedCollabPhoto(null);
+          }}
+        />
       )}
       <BottomNav />
     </main>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import BottomNav from "@/components/BottomNav";
@@ -12,11 +12,6 @@ function JoinForm() {
   const searchParams = useSearchParams();
   const [code,    setCode]    = useState(searchParams.get("code") ?? "");
   const [joining, setJoining] = useState(false);
-
-  useEffect(() => {
-    const c = searchParams.get("code");
-    if (c) setCode(c);
-  }, [searchParams]);
 
   async function handleJoin() {
     if (!code.trim()) return;
@@ -39,7 +34,7 @@ function JoinForm() {
           </div>
           <div>
             <h1 className="text-2xl font-extrabold text-slate-900">Join Album</h1>
-            <p className="text-slate-500 text-sm">초대 코드를 입력하세요</p>
+            <p className="text-slate-500 text-sm">Enter your invite code</p>
           </div>
         </div>
 

@@ -31,7 +31,11 @@ export default function LoginPage() {
     });
 
     if (authError) {
-      setError("Incorrect email or password.");
+      if (authError.message.toLowerCase().includes("email not confirmed")) {
+        setError("Please confirm your email address before signing in. Check your inbox for the confirmation link.");
+      } else {
+        setError("Incorrect email or password.");
+      }
       setLoading(false);
     } else {
       router.push("/");

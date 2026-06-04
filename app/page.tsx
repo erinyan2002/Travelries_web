@@ -8,9 +8,9 @@ import { supabase } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
 import {
   Camera, Upload, MapPin, Users, CalendarDays, Clock,
-  FileImage, Ruler, CheckCircle2, Loader2, Cpu, AlertTriangle,
-  Search, Navigation, Save, Pencil, X, Check, Wifi, WifiOff,
-  Coffee, Utensils, Wine, Sparkles,
+  FileImage, Ruler, CheckCircle2, Loader2, AlertTriangle,
+  Search, Navigation, X, Check, Wifi,
+  Coffee, Utensils, Wine, Sparkles, Trash2, Globe, Map,
 } from "lucide-react";
 import AppLogo from "@/components/AppLogo";
 
@@ -61,6 +61,26 @@ type PhotoInfo = {
 };
 
 const BACKEND_URL = "http://localhost:8000";
+
+function base64ToBlob(dataUrl: string): { blob: Blob; mimeType: string } {
+  const [header, data] = dataUrl.split(",");
+  const mimeType = header.match(/:(.*?);/)?.[1] ?? "image/jpeg";
+  const binary = atob(data);
+  const arr = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+  return { blob: new Blob([arr], { type: mimeType }), mimeType };
+}
+
+async function uploadToUserPhotos(uid: string, photoId: string, dataUrl: string): Promise<string> {
+  const { blob, mimeType } = base64ToBlob(dataUrl);
+  const ext = mimeType.split("/")[1] ?? "jpg";
+  const path = `${uid}/${photoId}.${ext}`;
+  const { error } = await supabase.storage
+    .from("user-photos")
+    .upload(path, blob, { contentType: mimeType });
+  if (error) throw new Error(error.message);
+  return supabase.storage.from("user-photos").getPublicUrl(path).data.publicUrl;
+}
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -187,7 +207,6 @@ async function runFaceDetection(
 
   if (modelType === "ssd") {
     const opts = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
-
     if (hasExtra) {
       const all = await faceapi
         .detectAllFaces(imgEl, opts)
@@ -209,7 +228,6 @@ async function runFaceDetection(
         }),
       };
     }
-
     const all = await faceapi
       .detectAllFaces(imgEl, opts)
       .withFaceLandmarks()
@@ -224,7 +242,7 @@ async function runFaceDetection(
     };
   }
 
-  // TinyFaceDetector — multi-scale (416 + 608) with NMS for better small-face coverage
+  // TinyFaceDetector — multi-scale (416 + 608) with NMS
   const [d416, d608] = await Promise.all([
     faceapi.detectAllFaces(imgEl, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.2 })),
     faceapi.detectAllFaces(imgEl, new faceapi.TinyFaceDetectorOptions({ inputSize: 608, scoreThreshold: 0.2 })),
@@ -247,15 +265,23 @@ async function runFaceDetection(
   };
 }
 
-// ── InfoRow component ──────────────────────────
-function InfoRow({ label, value, icon: Icon }: { label: string; value: string; icon?: React.ElementType }) {
+// ── InfoRow — all icons sky blue ──────────────────────────
+function InfoRow({ label, value, icon: Icon }: {
+  label: string;
+  value: string;
+  icon?: React.ElementType;
+}) {
   return (
-    <div className="bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
-      <p className="text-[11px] text-slate-400 font-medium mb-0.5 flex items-center gap-1">
-        {Icon && <Icon size={11} />}
-        {label}
-      </p>
-      <p className="text-sm font-bold text-slate-800 break-all leading-snug">{value}</p>
+    <div className="bg-white rounded-xl px-3 py-3 border border-slate-100 flex items-start gap-2.5 shadow-sm">
+      {Icon && (
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-sky-50 border border-sky-100">
+          <Icon size={15} className="text-sky-500" />
+        </div>
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] text-slate-400 font-medium mb-0.5">{label}</p>
+        <p className="text-sm font-bold text-slate-800 break-all leading-snug">{value}</p>
+      </div>
     </div>
   );
 }
@@ -286,6 +312,7 @@ export default function HomePage() {
   const [highlights,       setHighlights]       = useState<{ recent: MapPhoto | null; mostFaces: MapPhoto | null }>({ recent: null, mostFaces: null });
   const [batchItems,       setBatchItems]       = useState<BatchFile[]>([]);
   const [batchActive,      setBatchActive]      = useState(false);
+  const [isMapSaved,       setIsMapSaved]       = useState(false);
 
   async function refreshStats() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -307,7 +334,6 @@ export default function HomePage() {
 
   useEffect(() => {
     refreshStats();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -319,7 +345,6 @@ export default function HomePage() {
     ]).then(() => {
       setModelType("ssd");
       setIsModelLoaded(true);
-      // Optionally load age/gender + expression nets (requires extra weights from download-models.sh)
       Promise.all([
         faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
         faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
@@ -351,6 +376,7 @@ export default function HomePage() {
     setLastFacePhotoId(null);
     setNearbyPlaces([]);
     setPlacesFetched(false);
+    setIsMapSaved(false);
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
     setCustomFileName(file.name);
@@ -386,7 +412,9 @@ export default function HomePage() {
         faceAges          = (data.ages ?? []).filter((a): a is number => a !== null);
         faceGenders       = (data.genders ?? []).filter((g): g is string => g !== null);
       } else {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const exifData: any = await exifr.parse(file).catch(() => null);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const gpsData:  any = await exifr.gps(file).catch(() => null);
         lat = typeof gpsData?.latitude  === "number" ? gpsData.latitude  : null;
         lng = typeof gpsData?.longitude === "number" ? gpsData.longitude : null;
@@ -400,7 +428,6 @@ export default function HomePage() {
           const addr = await reverseGeocode(lat, lng);
           location = addr || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
         }
-
         if (isModelLoaded) {
           const imgEl = await faceapi.fetchImage(URL.createObjectURL(file));
           const r = await runFaceDetection(imgEl, modelType, hasExtraModels);
@@ -437,7 +464,7 @@ export default function HomePage() {
         try {
           const { data: { user } } = await supabase.auth.getUser();
           const uid = user?.id ?? "guest";
-          const dataUrl = await createThumbnailDataUrl(file, 600, 0.85);
+          const dataUrl = await createThumbnailDataUrl(file, 1024, 0.90);
           const facePhotoId = crypto.randomUUID();
           const facePhoto: FacePhoto = {
             id: facePhotoId,
@@ -457,7 +484,9 @@ export default function HomePage() {
           };
           const facesKey = `faces-${uid}`;
           const existing: FacePhoto[] = JSON.parse(localStorage.getItem(facesKey) ?? "[]");
-          localStorage.setItem(facesKey, JSON.stringify([facePhoto, ...existing]));
+          // Remove any previous entry with the same filename to avoid duplicates from re-uploading
+          const deduped = existing.filter((p) => p.fileName !== file.name);
+          localStorage.setItem(facesKey, JSON.stringify([facePhoto, ...deduped]));
           setLastFacePhotoId(facePhotoId);
           setFaceMessage(`${detectedFaceCount} face(s) detected!${topExpr ? ` · ${topExpr}` : ""} Saved to Faces album.`);
         } catch (saveErr) {
@@ -533,17 +562,16 @@ export default function HomePage() {
       const file = files[i];
       items[i] = { ...items[i], status: "processing" };
       setBatchItems([...items]);
-
       try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const exifData: any = await exifr.parse(file).catch(() => null);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const gpsData:  any = await exifr.gps(file).catch(() => null);
         const lat = typeof gpsData?.latitude  === "number" ? gpsData.latitude  : undefined;
         const lng = typeof gpsData?.longitude === "number" ? gpsData.longitude : undefined;
-
         let captureDate: string | undefined;
         let captureTime: string | undefined;
         let location:    string | undefined;
-
         const takenAt = exifData?.DateTimeOriginal || exifData?.CreateDate || null;
         if (takenAt) {
           const d = new Date(takenAt);
@@ -554,7 +582,6 @@ export default function HomePage() {
           const addr = await reverseGeocode(lat, lng);
           location = addr || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
         }
-
         let faceCount = 0;
         let faceBoxes:    Array<{ x: number; y: number; width: number; height: number }> = [];
         let faceDescriptors: number[][] = [];
@@ -562,7 +589,6 @@ export default function HomePage() {
         let faceAgesB:    number[] = [];
         let faceGendersB: string[] = [];
         let faceExprsB:   string[] = [];
-
         if (isModelLoaded) {
           const imgEl = await faceapi.fetchImage(URL.createObjectURL(file));
           const r = await runFaceDetection(imgEl, modelType, hasExtraModels);
@@ -574,18 +600,27 @@ export default function HomePage() {
           faceGendersB    = r.genders;
           faceExprsB      = r.expressions;
         }
+        const dataUrl = await createThumbnailDataUrl(file, 1024, 0.90);
+        const photoId = crypto.randomUUID();
 
-        const dataUrl   = await createThumbnailDataUrl(file, 600, 0.85);
-        const photoId   = crypto.randomUUID();
+        // Upload to Supabase Storage; fall back to base64 if it fails
+        let imageUrl = dataUrl;
+        if (uid !== "guest") {
+          try {
+            imageUrl = await uploadToUserPhotos(uid, photoId, dataUrl);
+          } catch (uploadErr) {
+            console.warn(`Supabase upload failed for ${file.name}, storing locally:`, uploadErr);
+          }
+        }
 
-        const mapPhotos: MapPhoto[]  = JSON.parse(localStorage.getItem(mapKey)   ?? "[]");
-        mapPhotos.unshift({ id: photoId, fileName: file.name, imageUrl: dataUrl, lat, lng, location, captureDate, captureTime, uploadedAt: new Date().toISOString(), faceCount });
+        const mapPhotos: MapPhoto[] = JSON.parse(localStorage.getItem(mapKey) ?? "[]");
+        mapPhotos.unshift({ id: photoId, fileName: file.name, imageUrl, lat, lng, location, captureDate, captureTime, uploadedAt: new Date().toISOString(), faceCount });
         localStorage.setItem(mapKey, JSON.stringify(mapPhotos));
-
         if (faceCount > 0) {
-          const facePhotos: FacePhoto[] = JSON.parse(localStorage.getItem(facesKey) ?? "[]");
+          const allFacePhotos: FacePhoto[] = JSON.parse(localStorage.getItem(facesKey) ?? "[]");
+          const facePhotos = allFacePhotos.filter((p) => p.fileName !== file.name);
           facePhotos.unshift({
-            id: crypto.randomUUID(), fileName: file.name, imageUrl: dataUrl,
+            id: photoId, fileName: file.name, imageUrl,
             faceCount, uploadedAt: new Date().toISOString(),
             ...(faceBoxes.length > 0       && { boxes: faceBoxes }),
             ...(faceDescriptors.length > 0 && { descriptors: faceDescriptors }),
@@ -599,7 +634,6 @@ export default function HomePage() {
           });
           localStorage.setItem(facesKey, JSON.stringify(facePhotos));
         }
-
         const infoParts: string[] = [];
         if (faceCount > 0) infoParts.push(`${faceCount} face(s)`);
         infoParts.push(location ? location.split(",")[0] : "No GPS");
@@ -608,16 +642,30 @@ export default function HomePage() {
         console.error(`Batch error [${file.name}]:`, err);
         items[i] = { name: file.name, status: "error", info: "Failed" };
       }
-
       setBatchItems([...items]);
     }
-
     refreshStats();
   }
 
   function resetBatch() {
     setBatchActive(false);
     setBatchItems([]);
+  }
+
+  function clearSelection() {
+    setSelectedFile(null);
+    setPreviewUrl("");
+    setPhotoInfo(null);
+    setCustomFileName("");
+    setDraftFileName("");
+    setSavedMessage("");
+    setFaceMessage("");
+    setManualCoords(null);
+    setLocationStatus("idle");
+    setLastFacePhotoId(null);
+    setNearbyPlaces([]);
+    setPlacesFetched(false);
+    setIsMapSaved(false);
   }
 
   function startEditName() { setDraftFileName(customFileName); setIsEditingName(true); }
@@ -651,12 +699,23 @@ export default function HomePage() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       const uid = user?.id ?? "guest";
-      const dataUrl = await createThumbnailDataUrl(selectedFile, 420, 0.6);
+      const dataUrl = await createThumbnailDataUrl(selectedFile, 1024, 0.90);
       const photoId = crypto.randomUUID();
+
+      // Upload to Supabase Storage; fall back to base64 if it fails
+      let imageUrl = dataUrl;
+      if (uid !== "guest") {
+        try {
+          imageUrl = await uploadToUserPhotos(uid, photoId, dataUrl);
+        } catch (uploadErr) {
+          console.warn("Supabase upload failed, storing locally:", uploadErr);
+        }
+      }
+
       const photo: MapPhoto = {
         id: photoId,
         fileName: customFileName.trim() || selectedFile.name,
-        imageUrl: dataUrl,
+        imageUrl,
         lat: effectiveLat,
         lng: effectiveLng,
         location: manualCoords?.name ?? photoInfo.location,
@@ -668,6 +727,21 @@ export default function HomePage() {
       const mapKey = `map-${uid}`;
       const existing: MapPhoto[] = JSON.parse(localStorage.getItem(mapKey) ?? "[]");
       localStorage.setItem(mapKey, JSON.stringify([photo, ...existing]));
+
+      // Sync face entry: update ID and imageUrl to match map photo
+      if (lastFacePhotoId && photoInfo.faceCount > 0) {
+        const facesKey = `faces-${uid}`;
+        const allFaces: FacePhoto[] = JSON.parse(localStorage.getItem(facesKey) ?? "[]");
+        const fIdx = allFaces.findIndex((p) => p.id === lastFacePhotoId);
+        if (fIdx >= 0) {
+          allFaces[fIdx].id = photoId;
+          allFaces[fIdx].imageUrl = imageUrl;
+          localStorage.setItem(facesKey, JSON.stringify(allFaces));
+          setLastFacePhotoId(photoId);
+        }
+      }
+
+      setIsMapSaved(true);
       setSavedMessage("Saved to map and albums!");
       refreshStats();
     } catch (err) {
@@ -694,9 +768,9 @@ export default function HomePage() {
         {/* ── Dashboard Stats ── */}
         <div className="grid grid-cols-3 gap-3 mb-6">
           {[
-            { label: "Photos Saved",   value: dashStats.totalPhotos,    icon: Camera, color: "bg-blue-500"    },
-            { label: "Places Visited", value: dashStats.totalLocations, icon: MapPin, color: "bg-emerald-500" },
-            { label: "Faces Detected", value: dashStats.totalFaces,     icon: Users,  color: "bg-rose-500"    },
+            { label: "Photos Saved",   value: dashStats.totalPhotos,    icon: Camera, color: "bg-blue-500" },
+            { label: "Places Visited", value: dashStats.totalLocations, icon: MapPin, color: "bg-blue-500" },
+            { label: "Faces Detected", value: dashStats.totalFaces,     icon: Users,  color: "bg-blue-500" },
           ].map(({ label, value, icon: Icon, color }) => (
             <div key={label} className="bg-white rounded-2xl border border-slate-200 shadow-sm px-4 py-3 flex items-center gap-3">
               <div className={`w-9 h-9 ${color} rounded-xl flex items-center justify-center flex-shrink-0`}>
@@ -739,8 +813,6 @@ export default function HomePage() {
                   </button>
                 )}
               </div>
-
-              {/* Progress bar */}
               <div className="px-6 pt-4 pb-2">
                 <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                   <div className="h-full bg-blue-500 rounded-full transition-all duration-300"
@@ -748,8 +820,6 @@ export default function HomePage() {
                 </div>
                 <p className="text-xs text-slate-400 mt-1.5">{total > 0 ? Math.round((done / total) * 100) : 0}% complete</p>
               </div>
-
-              {/* File list */}
               <div className="px-6 pb-4 space-y-2 max-h-72 overflow-y-auto">
                 {batchItems.map((item, i) => (
                   <div key={i} className="flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
@@ -766,8 +836,6 @@ export default function HomePage() {
                   </div>
                 ))}
               </div>
-
-              {/* Done summary */}
               {allDone && (
                 <div className="px-6 pb-5">
                   <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-center gap-3">
@@ -789,55 +857,70 @@ export default function HomePage() {
 
           {/* ── Upload Section ── */}
           <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-800">Upload Photo</h2>
-              <div className="flex items-center gap-2">
-                <span className={`w-2 h-2 rounded-full ${
-                  backendStatus === "online"   ? "bg-emerald-500" :
-                  backendStatus === "offline"  ? "bg-slate-400"   : "bg-amber-400"
-                }`} />
-                <span className="text-xs text-slate-500 flex items-center gap-1">
-                  {backendStatus === "online"   ? <><Wifi size={12} /> API Connected</> :
-                   backendStatus === "offline"  ? <><WifiOff size={12} /> Browser Mode</> :
-                   "Checking..."}
-                </span>
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 bg-sky-50 border border-sky-100 rounded-xl flex items-center justify-center">
+                  <FileImage size={16} className="text-sky-500" />
+                </div>
+                <h2 className="text-lg font-bold text-slate-800">Upload Photo</h2>
+              </div>
+              <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-semibold ${
+                backendStatus === "online"
+                  ? "bg-sky-50 border-sky-200 text-sky-600"
+                  : backendStatus === "offline"
+                    ? "bg-slate-50 border-slate-200 text-slate-500"
+                    : "bg-amber-50 border-amber-200 text-amber-600"
+              }`}>
+                {backendStatus === "online"
+                  ? <><Wifi size={11} /> API Connected</>
+                  : backendStatus === "offline"
+                    ? <><Globe size={11} /> Browser Mode</>
+                    : "Checking..."}
               </div>
             </div>
 
-            <div className="p-6 space-y-4">
-              {/* Drop zone */}
-              <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-xl p-10 cursor-pointer bg-slate-50 hover:bg-blue-50 hover:border-blue-300 transition-all duration-200 group">
-                <input type="file" accept="image/*" multiple onChange={handleFileChange} className="hidden" />
-                <div className="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center mb-3 group-hover:bg-blue-200 transition-colors">
-                  <Upload size={26} className="text-blue-600" />
-                </div>
-                <p className="font-semibold text-slate-700 group-hover:text-blue-700 transition-colors">Click to select photos</p>
-                <p className="text-xs text-slate-400 mt-1">JPG, PNG, HEIC, etc.</p>
-                {!isModelLoaded && (
-                  <p className="mt-2 text-xs text-slate-400 flex items-center gap-1">
-                    <Loader2 size={12} className="animate-spin" /> Loading AI engine...
-                  </p>
-                )}
-                {isModelLoaded && modelType === "ssd" && hasExtraModels && (
-                  <p className="mt-2 text-xs text-emerald-600 flex items-center gap-1 font-medium">
-                    <CheckCircle2 size={12} /> Premium Mode (SSD + Age/Gender + Expression)
-                  </p>
-                )}
-                {isModelLoaded && modelType === "ssd" && !hasExtraModels && (
-                  <p className="mt-2 text-xs text-emerald-600 flex items-center gap-1 font-medium">
-                    <CheckCircle2 size={12} /> Advanced Mode (SSD + Face Recognition)
-                  </p>
-                )}
-                {isModelLoaded && modelType === "tiny" && (
-                  <p className="mt-2 text-xs text-amber-500 flex items-center gap-1">
-                    <AlertTriangle size={12} /> Basic Mode (Multi-scale)
-                  </p>
-                )}
-              </label>
+            <div className="p-5 space-y-4">
 
-              {/* Loading */}
+              {/* Polaroid-style drop zone wrapper */}
+              <div className="relative bg-gradient-to-br from-sky-50 to-blue-50 rounded-2xl pt-7 px-3 pb-3">
+                {/* Tape strips */}
+                <div className="absolute -top-2 left-8 w-14 h-5 bg-sky-300/50 rounded rotate-[-4deg] border border-sky-200/40" />
+                <div className="absolute -top-1.5 left-[72px] w-10 h-4 bg-sky-200/60 rounded rotate-[3deg]" />
+
+                {/* Inner drop zone */}
+                <label className="relative flex flex-col items-center justify-center border-2 border-dashed border-sky-200 rounded-xl py-10 px-6 cursor-pointer bg-white/60 hover:bg-white/80 hover:border-sky-400 transition-all duration-200 group overflow-hidden">
+                  <input type="file" accept="image/*" multiple onChange={handleFileChange} className="hidden" />
+
+                  {/* Sparkles inside box, around the icon */}
+                  <span className="absolute left-[28%] top-[35%] text-sky-400 opacity-70 text-sm select-none pointer-events-none">✦</span>
+                  <span className="absolute right-[26%] top-[38%] text-sky-300 opacity-60 text-xs select-none pointer-events-none">✦</span>
+                  <span className="absolute left-[32%] bottom-[28%] text-sky-300 opacity-50 text-[10px] select-none pointer-events-none">✦</span>
+                  <span className="absolute right-[30%] bottom-[30%] text-sky-400 opacity-40 text-[10px] select-none pointer-events-none">✦</span>
+
+                  {/* Cloud upload icon */}
+                  <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mb-4 shadow-md shadow-sky-100 group-hover:shadow-sky-200 border border-sky-100 group-hover:border-sky-200 transition-all duration-200">
+                    <Upload size={28} className="text-sky-500 group-hover:text-sky-600 transition-colors" />
+                  </div>
+
+                  <p className="font-bold text-slate-700 group-hover:text-sky-700 transition-colors text-base">Drag & drop or click to upload</p>
+                  <p className="text-xs text-slate-400 mt-1.5">JPG, PNG, HEIC, etc.</p>
+
+                  {!isModelLoaded && (
+                    <p className="mt-3 text-xs text-slate-400 flex items-center gap-1">
+                      <Loader2 size={12} className="animate-spin" /> Loading AI engine...
+                    </p>
+                  )}
+
+                  <p className="absolute bottom-3 text-[11px] text-sky-300/80 italic tracking-wide select-none font-medium">
+                    Upload your photo ♡
+                  </p>
+                </label>
+              </div>
+
+              {/* Analyzing indicator */}
               {loading && (
-                <div className="flex items-center justify-center gap-2 text-blue-600 py-2 text-sm font-medium">
+                <div className="flex items-center justify-center gap-2 text-sky-600 py-2 text-sm font-medium">
                   <Loader2 size={16} className="animate-spin" />
                   Analyzing...
                 </div>
@@ -845,9 +928,9 @@ export default function HomePage() {
 
               {/* Face detection message */}
               {faceMessage && (
-                <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
-                  <Users size={16} className="text-blue-600 mt-0.5 flex-shrink-0" />
-                  <p className="text-sm font-semibold text-blue-700">{faceMessage}</p>
+                <div className="flex items-start gap-3 bg-sky-50 border border-sky-200 rounded-xl px-4 py-3">
+                  <Users size={16} className="text-sky-600 mt-0.5 flex-shrink-0" />
+                  <p className="text-sm font-semibold text-sky-700">{faceMessage}</p>
                 </div>
               )}
 
@@ -857,25 +940,23 @@ export default function HomePage() {
                   <p className="text-sm font-bold text-orange-700 flex items-center gap-2">
                     <MapPin size={15} /> No GPS data — please enter a location manually
                   </p>
-
                   <button
                     onClick={handleCurrentLocation}
                     disabled={locationStatus === "searching"}
-                    className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white text-sm font-bold py-2.5 rounded-xl transition-colors"
+                    className="w-full flex items-center justify-center gap-2 bg-sky-500 hover:bg-sky-600 disabled:bg-sky-300 text-white text-sm font-bold py-2.5 rounded-xl transition-colors"
                   >
                     {locationStatus === "searching"
                       ? <><Loader2 size={14} className="animate-spin" /> Getting location...</>
                       : <><Navigation size={14} /> Use Current Location (GPS)</>
                     }
                   </button>
-
                   <div className="flex gap-2">
                     <input
                       value={locationQuery}
                       onChange={(e) => setLocationQuery(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && handleLocationSearch()}
                       placeholder="Search location (e.g., Eiffel Tower, Paris)"
-                      className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
+                      className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition-all"
                     />
                     <button
                       onClick={handleLocationSearch}
@@ -885,7 +966,6 @@ export default function HomePage() {
                       <Search size={15} />
                     </button>
                   </div>
-
                   {locationStatus === "done" && manualCoords && (
                     <p className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
                       <CheckCircle2 size={13} /> Location set: {manualCoords.name.slice(0, 60)}...
@@ -897,18 +977,18 @@ export default function HomePage() {
                 </div>
               )}
 
-              {/* File name edit + save button */}
+              {/* File chip + save button */}
               {photoInfo && (
-                <div className="space-y-3 pt-1">
+                <div className="space-y-3">
                   {isEditingName ? (
                     <div className="flex gap-2">
                       <input
                         value={draftFileName}
                         onChange={(e) => setDraftFileName(e.target.value)}
-                        className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                        className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
                       />
                       <button onClick={saveEditedName}
-                        className="bg-blue-600 text-white px-3 py-2 rounded-xl hover:bg-blue-700 transition-colors">
+                        className="bg-sky-500 text-white px-3 py-2 rounded-xl hover:bg-sky-600 transition-colors">
                         <Check size={16} />
                       </button>
                       <button onClick={() => setIsEditingName(false)}
@@ -917,19 +997,31 @@ export default function HomePage() {
                       </button>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-2 bg-slate-50 rounded-xl px-4 py-2.5 border border-slate-100">
-                      <FileImage size={14} className="text-slate-400 flex-shrink-0" />
-                      <span className="flex-1 text-sm text-slate-700 truncate">{customFileName}</span>
-                      <button onClick={startEditName}
-                        className="text-slate-400 hover:text-slate-700 transition-colors p-1">
-                        <Pencil size={14} />
+                    <div className="flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
+                      <div className="w-9 h-9 bg-sky-50 border border-sky-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <FileImage size={15} className="text-sky-500" />
+                      </div>
+                      <div className="flex-1 min-w-0 cursor-pointer" onClick={startEditName}>
+                        <p className="text-sm font-bold text-slate-800 truncate">{customFileName}</p>
+                        <p className="text-xs text-slate-400 mt-0.5">{photoInfo.fileSize}</p>
+                      </div>
+                      <button
+                        onClick={clearSelection}
+                        className="text-slate-400 hover:text-red-500 transition-colors p-1 rounded-lg hover:bg-red-50">
+                        <Trash2 size={15} />
                       </button>
                     </div>
                   )}
 
-                  <button onClick={handleSaveToMap}
-                    className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-700 text-white py-3.5 rounded-xl font-bold text-sm transition-colors shadow-lg shadow-slate-200">
-                    <Save size={16} /> Save to Map
+                  <button
+                    onClick={handleSaveToMap}
+                    disabled={isMapSaved}
+                    className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-xl font-bold text-sm transition-all ${
+                      isMapSaved
+                        ? "bg-emerald-100 text-emerald-700 cursor-not-allowed"
+                        : "bg-gradient-to-r from-sky-400 to-blue-500 hover:from-sky-500 hover:to-blue-600 text-white shadow-lg shadow-sky-200"
+                    }`}>
+                    {isMapSaved ? <><CheckCircle2 size={16} /> Already Saved</> : <><Map size={16} /> Save to Map<span className="ml-1 opacity-70 text-base leading-none">✦✦</span></>}
                   </button>
 
                   {savedMessage && (
@@ -939,53 +1031,79 @@ export default function HomePage() {
                   )}
                 </div>
               )}
+
+              {/* AI mode pill */}
+              {isModelLoaded && (
+                <div className="flex justify-center pt-1">
+                  <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border ${
+                    hasExtraModels
+                      ? "bg-sky-50 text-sky-600 border-sky-200"
+                      : modelType === "ssd"
+                        ? "bg-emerald-50 text-emerald-600 border-emerald-200"
+                        : "bg-amber-50 text-amber-600 border-amber-200"
+                  }`}>
+                    <Sparkles size={10} />
+                    {hasExtraModels
+                      ? "Premium Mode (SSD + Age/Gender + Expression)"
+                      : modelType === "ssd"
+                        ? "Advanced Mode (SSD + Face Recognition)"
+                        : "Basic Mode (Multi-scale)"}
+                  </div>
+                </div>
+              )}
             </div>
           </section>
 
           {/* ── Analysis Result Section ── */}
           <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="flex items-center gap-2 px-6 py-4 border-b border-slate-100">
-              <Cpu size={18} className="text-slate-500" />
-              <h2 className="text-lg font-bold text-slate-800">Analysis Result</h2>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <span className="text-sky-500 font-bold text-lg leading-none">✦</span>
+                <h2 className="text-lg font-bold text-slate-800">Analysis Result</h2>
+              </div>
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-sky-50 border border-sky-200 text-sky-600 text-xs font-bold rounded-full">
+                <Sparkles size={10} /> AI Powered
+              </span>
             </div>
 
-            <div className="p-6">
+            <div className="p-5">
               {photoInfo && previewUrl ? (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={previewUrl}
                     alt={customFileName}
-                    className="w-full max-h-64 object-cover rounded-xl border border-slate-100"
+                    className="w-full max-h-60 object-cover rounded-xl border border-slate-100"
                   />
 
-                  {/* Face count banner */}
-                  <div className={`flex items-center justify-between rounded-xl px-4 py-3 border ${
+                  {/* AI Classification gradient card */}
+                  <div className={`flex items-center justify-between rounded-xl px-4 py-4 ${
                     photoInfo.faceCount > 0
-                      ? "bg-blue-50 border-blue-200"
-                      : "bg-slate-50 border-slate-200"
+                      ? "bg-gradient-to-r from-sky-400 to-blue-500"
+                      : "bg-gradient-to-r from-slate-400 to-slate-500"
                   }`}>
-                    <div>
-                      <p className="text-xs text-slate-400 mb-0.5">AI Classification</p>
-                      <p className={`font-extrabold text-lg ${photoInfo.faceCount > 0 ? "text-blue-700" : "text-slate-700"}`}>
-                        {photoInfo.category}
-                      </p>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center flex-shrink-0 border border-white/30">
+                        <span className="text-white text-xs font-extrabold italic">Ai</span>
+                      </div>
+                      <div>
+                        <p className="text-xs text-white/70 mb-0.5">AI Classification</p>
+                        <p className="font-extrabold text-lg text-white leading-tight">{photoInfo.category}</p>
+                      </div>
                     </div>
                     <div className="text-right">
-                      <p className={`text-3xl font-extrabold ${photoInfo.faceCount > 0 ? "text-blue-600" : "text-slate-300"}`}>
-                        {photoInfo.faceCount}
-                      </p>
-                      <p className="text-xs text-slate-400">detected</p>
+                      <p className="text-3xl font-extrabold text-white">{photoInfo.faceCount}</p>
+                      <p className="text-xs text-white/70">detected</p>
                     </div>
                   </div>
 
-                  {/* Info grid */}
+                  {/* Info grid — all sky blue icons */}
                   <div className="grid grid-cols-2 gap-2">
-                    <InfoRow label="File name"    value={customFileName}        icon={FileImage}   />
-                    <InfoRow label="File size"    value={photoInfo.fileSize}    icon={Ruler}       />
-                    <InfoRow label="Capture date" value={photoInfo.captureDate} icon={CalendarDays}/>
-                    <InfoRow label="Capture time" value={photoInfo.captureTime} icon={Clock}       />
-                    <InfoRow label="Location"     value={photoInfo.location}    icon={MapPin}      />
+                    <InfoRow label="File name"    value={customFileName}        icon={FileImage}    />
+                    <InfoRow label="File size"    value={photoInfo.fileSize}    icon={Ruler}        />
+                    <InfoRow label="Capture date" value={photoInfo.captureDate} icon={CalendarDays} />
+                    <InfoRow label="Capture time" value={photoInfo.captureTime} icon={Clock}        />
+                    <InfoRow label="Location"     value={photoInfo.location}    icon={MapPin}       />
                     <InfoRow
                       label="Coordinates"
                       value={
@@ -1005,18 +1123,15 @@ export default function HomePage() {
                       <p className="text-xs font-semibold text-slate-500 flex items-center gap-1.5 uppercase tracking-wide">
                         <MapPin size={11} /> Nearby Places
                       </p>
-
                       {placesLoading && (
                         <div className="flex items-center gap-2 text-slate-400 text-sm py-2">
                           <Loader2 size={14} className="animate-spin" />
                           Searching nearby places...
                         </div>
                       )}
-
                       {!placesLoading && placesFetched && nearbyPlaces.length === 0 && (
                         <p className="text-sm text-slate-400 italic py-1">No registered places within 500m.</p>
                       )}
-
                       {!placesLoading && nearbyPlaces.length > 0 && (
                         <div className="space-y-1.5 max-h-52 overflow-y-auto pr-0.5">
                           {nearbyPlaces.map((place, i) => {
@@ -1049,8 +1164,8 @@ export default function HomePage() {
                 </div>
               ) : (
                 <div className="h-80 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-xl text-center">
-                  <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mb-4">
-                    <Camera size={28} className="text-slate-300" />
+                  <div className="w-16 h-16 bg-sky-50 rounded-2xl flex items-center justify-center mb-4 border border-sky-100">
+                    <Camera size={28} className="text-sky-300" />
                   </div>
                   <p className="text-slate-400 text-sm">Select a photo to see the analysis results here</p>
                 </div>
@@ -1096,12 +1211,12 @@ export default function HomePage() {
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
                     <Users size={9} /> Most Faces
                   </p>
-                  <div className="rounded-xl overflow-hidden border border-blue-200 bg-slate-50">
+                  <div className="rounded-xl overflow-hidden border border-sky-200 bg-slate-50">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={highlights.mostFaces.imageUrl} alt={highlights.mostFaces.fileName} className="w-full h-28 object-contain bg-slate-100" />
                     <div className="p-2.5">
                       <p className="text-xs font-bold text-slate-800 truncate">{highlights.mostFaces.fileName}</p>
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full mt-1">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-600 bg-sky-50 px-2 py-0.5 rounded-full mt-1">
                         <Users size={8} /> {highlights.mostFaces.faceCount} face(s)
                       </span>
                     </div>
@@ -1113,7 +1228,6 @@ export default function HomePage() {
         )}
 
       </div>
-
       <BottomNav />
     </main>
   );

@@ -33,6 +33,23 @@ export type CollabPhoto = {
   added_at: string;
 };
 
+export type CollabReaction = {
+  id: string;
+  photo_id: string;
+  user_id: string;
+  emoji: string;
+  created_at: string;
+};
+
+export type CollabComment = {
+  id: string;
+  photo_id: string;
+  user_id: string;
+  user_email: string | null;
+  content: string;
+  created_at: string;
+};
+
 function base64ToBlob(dataUrl: string): { blob: Blob; mimeType: string } {
   const [header, data] = dataUrl.split(",");
   const mimeType = header.match(/:(.*?);/)?.[1] ?? "image/jpeg";
@@ -200,4 +217,41 @@ export async function removeMember(albumId: string, userId: string): Promise<voi
     .eq("album_id", albumId)
     .eq("user_id", userId);
   if (error) throw new Error(error.message);
+}
+
+export async function getReactions(photoId: string): Promise<CollabReaction[]> {
+  const { data } = await supabase.from("collab_reactions").select("*").eq("photo_id", photoId);
+  return (data ?? []) as CollabReaction[];
+}
+
+export async function toggleReaction(photoId: string, emoji: string): Promise<boolean> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+  const { data: existing } = await supabase
+    .from("collab_reactions").select("id")
+    .eq("photo_id", photoId).eq("user_id", user.id).eq("emoji", emoji).maybeSingle();
+  if (existing) {
+    await supabase.from("collab_reactions").delete().eq("id", existing.id);
+    return false;
+  }
+  await supabase.from("collab_reactions").insert({ photo_id: photoId, user_id: user.id, emoji });
+  return true;
+}
+
+export async function getComments(photoId: string): Promise<CollabComment[]> {
+  const { data } = await supabase
+    .from("collab_comments").select("*").eq("photo_id", photoId)
+    .order("created_at", { ascending: true });
+  return (data ?? []) as CollabComment[];
+}
+
+export async function addComment(photoId: string, content: string): Promise<CollabComment> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+  const { data, error } = await supabase
+    .from("collab_comments")
+    .insert({ photo_id: photoId, user_id: user.id, user_email: user.email ?? null, content })
+    .select("*").single();
+  if (error) throw new Error(error.message);
+  return data as CollabComment;
 }

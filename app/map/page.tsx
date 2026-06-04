@@ -11,6 +11,7 @@ import { MapPhoto } from "@/lib/types";
 import { MapPin, ArrowLeft, Trash2, X, CalendarDays, ChevronLeft, ChevronRight, Share2, Loader2 } from "lucide-react";
 import { sharePhoto } from "@/lib/shareUtils";
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: "/leaflet/marker-icon-2x.png",
@@ -58,7 +59,7 @@ function PhotoModal({ cluster, onClose }: { cluster: Cluster; onClose: () => voi
       const url = await sharePhoto(photo);
       setShareUrl(url);
     } catch (err) {
-      alert(`공유 링크 생성 실패:\n${err instanceof Error ? err.message : String(err)}`);
+      alert(`Failed to create share link:\n${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setShareLoading(false);
     }
@@ -77,7 +78,7 @@ function PhotoModal({ cluster, onClose }: { cluster: Cluster; onClose: () => voi
           <div className="min-w-0 flex-1">
             <p className="font-bold text-slate-900 text-sm truncate">{photo.fileName}</p>
             <p className="text-xs text-slate-400 mt-0.5">
-              {photo.location?.split(",")[0] || "위치 정보 없음"} · {photo.captureDate || photo.uploadedAt?.slice(0, 10) || ""}
+              {photo.location?.split(",")[0] || "Unknown location"} · {photo.captureDate || photo.uploadedAt?.slice(0, 10) || ""}
             </p>
           </div>
           <div className="flex items-center gap-2 ml-4 flex-shrink-0">
@@ -95,7 +96,7 @@ function PhotoModal({ cluster, onClose }: { cluster: Cluster; onClose: () => voi
           <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100">
             <button onClick={() => setIdx((i) => Math.max(0, i - 1))} disabled={idx === 0}
               className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-colors ${idx === 0 ? "bg-slate-100 text-slate-300 cursor-not-allowed" : "bg-slate-900 text-white hover:bg-slate-700"}`}>
-              <ChevronLeft size={16} /> 이전
+              <ChevronLeft size={16} /> Prev
             </button>
             <div className="flex gap-1.5 overflow-x-auto max-w-[55%]">
               {cluster.photos.map((p, i) => (
@@ -108,14 +109,14 @@ function PhotoModal({ cluster, onClose }: { cluster: Cluster; onClose: () => voi
             </div>
             <button onClick={() => setIdx((i) => Math.min(total - 1, i + 1))} disabled={idx === total - 1}
               className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-colors ${idx === total - 1 ? "bg-slate-100 text-slate-300 cursor-not-allowed" : "bg-slate-900 text-white hover:bg-slate-700"}`}>
-              다음 <ChevronRight size={16} />
+              Next <ChevronRight size={16} />
             </button>
           </div>
         )}
         <div className="p-4 grid grid-cols-2 gap-2 border-t border-slate-100">
-          {photo.captureDate && photo.captureDate !== "Not available" && <InfoChip label="촬영일" value={photo.captureDate} />}
-          {photo.location && <div className="col-span-2"><InfoChip label="위치" value={photo.location} /></div>}
-          {(photo.faceCount ?? 0) > 0 && <InfoChip label="감지된 얼굴" value={`${photo.faceCount}명`} />}
+          {photo.captureDate && photo.captureDate !== "Not available" && <InfoChip label="Taken" value={photo.captureDate} />}
+          {photo.location && <div className="col-span-2"><InfoChip label="Location" value={photo.location} /></div>}
+          {(photo.faceCount ?? 0) > 0 && <InfoChip label="Faces detected" value={`${photo.faceCount}`} />}
         </div>
         {shareUrl && (
           <div className="px-4 py-3 border-t border-emerald-100 bg-emerald-50">
@@ -206,12 +207,12 @@ export default function MapPage() {
 
         <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-md shadow-emerald-200">
+            <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center shadow-md shadow-blue-200">
               <MapPin size={22} className="text-white" />
             </div>
             <div>
               <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Photo Map</h1>
-              <p className="text-slate-500 text-sm">마커를 클릭하면 사진 전체보기</p>
+              <p className="text-slate-500 text-sm">Click a marker to view photos</p>
             </div>
           </div>
           <div className="flex gap-2">
@@ -221,13 +222,13 @@ export default function MapPage() {
             {photos.length > 0 && (
               <button onClick={() => setShowDeleteConfirm(true)}
                 className="flex items-center gap-1.5 px-4 py-2.5 bg-red-500 text-white rounded-xl text-sm font-bold hover:bg-red-600 transition-colors">
-                <Trash2 size={15} /> 전체 삭제
+                <Trash2 size={15} /> Delete All
               </button>
             )}
           </div>
         </div>
 
-        <div className="h-[600px] w-full rounded-2xl overflow-hidden shadow-sm border border-slate-200 mb-6">
+        <div className="h-[380px] w-full rounded-2xl overflow-hidden shadow-sm border border-slate-200 mb-6">
           <MapContainer center={center} zoom={7} scrollWheelZoom={true} style={{ height: "100%", width: "100%" }}>
             <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
             {clusters.map((cluster) => (
@@ -240,13 +241,13 @@ export default function MapPage() {
 
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="flex items-center gap-2 px-5 py-3.5 border-b border-slate-100 bg-slate-50">
-            <MapPin size={16} className="text-emerald-500" />
+            <MapPin size={16} className="text-blue-500" />
             <h2 className="font-bold text-slate-800">Saved Photos</h2>
-            <span className="text-xs text-slate-400 bg-slate-200 px-2 py-0.5 rounded-full ml-auto">{photos.length}장</span>
+            <span className="text-xs text-slate-400 bg-slate-200 px-2 py-0.5 rounded-full ml-auto">{photos.length} photos</span>
           </div>
           {photos.length === 0 ? (
             <div className="p-10 text-center">
-              <p className="text-slate-400 text-sm">아직 저장된 사진이 없습니다. 홈에서 사진을 업로드하고 저장해보세요.</p>
+              <p className="text-slate-400 text-sm">No photos saved yet. Upload photos from the home screen.</p>
             </div>
           ) : (
             <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
@@ -258,7 +259,7 @@ export default function MapPage() {
                   <div className="p-2">
                     <p className="font-bold text-slate-800 text-[11px] truncate">{photo.fileName}</p>
                     <p className="text-[9px] text-slate-400 mt-0.5 flex items-center gap-0.5">
-                      <CalendarDays size={8} /> {photo.captureDate || "날짜 없음"}
+                      <CalendarDays size={8} /> {photo.captureDate || "No date"}
                     </p>
                   </div>
                 </div>

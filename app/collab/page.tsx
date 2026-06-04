@@ -49,12 +49,12 @@ export default function CollabPage() {
 
         <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-violet-600 rounded-xl flex items-center justify-center shadow-md shadow-violet-200">
+            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-md shadow-blue-200">
               <FolderOpen size={22} className="text-white" />
             </div>
             <div>
               <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Collab Albums</h1>
-              <p className="text-slate-500 text-sm">공유 앨범을 만들고 함께 사진을 모아보세요</p>
+              <p className="text-slate-500 text-sm">Create shared albums and collect photos together.</p>
             </div>
           </div>
           <div className="flex gap-2">
@@ -63,7 +63,7 @@ export default function CollabPage() {
               <LogIn size={15} /> Join
             </Link>
             <button onClick={() => setShowCreate(true)}
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-violet-600 text-white rounded-xl text-sm font-bold hover:bg-violet-700 transition-colors">
+              className="flex items-center gap-1.5 px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors">
               <Plus size={15} /> New Album
             </button>
           </div>
@@ -93,7 +93,7 @@ export default function CollabPage() {
           <div className="grid gap-3">
             {albums.map((album) => (
               <Link key={album.id} href={`/collab/${album.id}`}
-                className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 hover:border-violet-300 hover:shadow-md transition-all block">
+                className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 hover:border-blue-300 hover:shadow-md transition-all block">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
@@ -109,8 +109,8 @@ export default function CollabPage() {
                     )}
                   </div>
                   <div className="text-xs text-slate-400 flex-shrink-0 text-right">
-                    <p>Code: <code className="font-mono font-bold text-violet-600">{album.invite_code}</code></p>
-                    <p className="mt-0.5">{new Date(album.created_at).toLocaleDateString()}</p>
+                    <p>Code: <code className="font-mono font-bold text-blue-600">{album.invite_code}</code></p>
+                    <p className="mt-0.5">{new Date(album.created_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}</p>
                   </div>
                 </div>
               </Link>
@@ -135,18 +135,18 @@ export default function CollabPage() {
                 <label className="text-xs font-bold text-slate-600 mb-1 block">Album name *</label>
                 <input value={name} onChange={(e) => setName(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-                  placeholder="e.g. 제주도 여행"
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition-all" />
+                  placeholder="e.g. Summer Trip"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
               </div>
               <div>
                 <label className="text-xs font-bold text-slate-600 mb-1 block">Description (optional)</label>
                 <textarea value={desc} onChange={(e) => setDesc(e.target.value)}
                   placeholder="Album description..."
                   rows={2}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition-all resize-none" />
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all resize-none" />
               </div>
               <button onClick={handleCreate} disabled={creating || !name.trim()}
-                className="w-full py-3 bg-violet-600 text-white font-bold rounded-xl hover:bg-violet-700 transition-colors disabled:opacity-50">
+                className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50">
                 {creating ? "Creating..." : "Create Album"}
               </button>
             </div>

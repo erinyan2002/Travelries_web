@@ -43,6 +43,7 @@ export default function ResetPasswordPage() {
       !!search.get("code");
 
     if (isRecovery) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setStage("form");
       clearTimeout(timeout);
     }

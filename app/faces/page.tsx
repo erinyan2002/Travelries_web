@@ -4,9 +4,11 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import BottomNav from "@/components/BottomNav";
 import { supabase } from "@/lib/supabase";
 import { FacePhoto } from "@/lib/types";
+import { deletePhotoEverywhere } from "@/lib/savedUtils";
+import { useRouter } from "next/navigation";
 import {
-  Users, ImageIcon, MapPin, CalendarDays, Trash2, X,
-  SlidersHorizontal, Terminal, AlertTriangle, Eye, Scan, Pencil, Check,
+  Users, ImageIcon, Images, MapPin, CalendarDays, Trash2, X,
+  Terminal, AlertTriangle, Eye, Scan, Pencil, Check,
 } from "lucide-react";
 
 type FaceEntry = { photo: FacePhoto; boxIndex: number };
@@ -37,7 +39,11 @@ function euclidean(a: number[], b: number[]): number {
 
 function clusterByPerson(photos: FacePhoto[], threshold: number): PersonCluster[] {
   const clusters: PersonCluster[] = [];
-  for (const photo of photos) {
+  // Sort oldest-first so the seed face of each cluster is stable when new photos are added later
+  const sorted = [...photos].sort(
+    (a, b) => new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime()
+  );
+  for (const photo of sorted) {
     if (!photo.descriptors?.length || !photo.boxes?.length) continue;
     for (let i = 0; i < photo.descriptors.length; i++) {
       const desc = photo.descriptors[i];
@@ -45,6 +51,8 @@ function clusterByPerson(photos: FacePhoto[], threshold: number): PersonCluster[
       let nearest: PersonCluster | null = null;
       let minDist = Infinity;
       for (const c of clusters) {
+        // Same-photo constraint: two faces from the same photo can never be the same person
+        if (c.faces.some(f => f.photo.id === photo.id)) continue;
         const d = euclidean(desc, c.centroid);
         if (d < minDist) { minDist = d; nearest = c; }
       }
@@ -53,7 +61,8 @@ function clusterByPerson(photos: FacePhoto[], threshold: number): PersonCluster[
         const n = nearest.faces.length;
         nearest.centroid = nearest.centroid.map((v, j) => (v * (n - 1) + desc[j]) / n);
       } else {
-        clusters.push({ id: `p${clusters.length}`, label: `Person ${clusters.length + 1}`, faces: [{ photo, boxIndex: i }], centroid: [...desc] });
+        // Stable ID based on seed face — does not change when new photos are added
+        clusters.push({ id: `${photo.id}_${i}`, label: `Person ${clusters.length + 1}`, faces: [{ photo, boxIndex: i }], centroid: [...desc] });
       }
     }
   }
@@ -148,10 +157,10 @@ function PhotoModal({ photo, onClose, onDelete }: { photo: FacePhoto; onClose: (
       <div className="w-full sm:max-w-[600px] bg-white sm:rounded-3xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
 
         {/* Header */}
-        <div className="bg-gradient-to-r from-violet-600 to-indigo-600 px-5 py-4 flex items-center justify-between">
+        <div className="bg-gradient-to-r from-sky-500 to-blue-600 px-5 py-4 flex items-center justify-between">
           <div>
             <h3 className="font-bold text-white text-sm truncate max-w-[260px]">{photo.fileName}</h3>
-            <p className="text-violet-200 text-xs mt-0.5 flex items-center gap-1.5">
+            <p className="text-sky-100 text-xs mt-0.5 flex items-center gap-1.5">
               <Users size={10} /> {photo.faceCount} face(s)
               {photo.location && <><span>·</span><MapPin size={10} />{photo.location.split(",")[0]}</>}
             </p>
@@ -284,7 +293,7 @@ function getGroupKey(photo: FacePhoto): string {
 function FacesSkeleton() {
   return (
     <div className="animate-pulse space-y-4">
-      <div className="h-36 bg-gradient-to-br from-violet-200 to-indigo-200 rounded-3xl" />
+      <div className="h-36 bg-gradient-to-br from-sky-200 to-blue-200 rounded-3xl" />
       <div className="h-12 bg-slate-100 rounded-2xl" />
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {[0,1,2,3,4,5].map((i) => (
@@ -304,30 +313,42 @@ export default function FacesPage() {
   const [storedPhotos,    setStoredPhotos]    = useState<FacePhoto[]>([]);
   const [loading,         setLoading]         = useState(true);
   const [activeTab,       setActiveTab]       = useState<"people" | "photos">("people");
-  const [threshold,       setThreshold]       = useState(0.50);
   const [selectedPhoto,   setSelectedPhoto]   = useState<FacePhoto | null>(null);
   const [selectedCluster, setSelectedCluster] = useState<{ cluster: PersonCluster; idx: number } | null>(null);
   const [customLabels,    setCustomLabels]    = useState<Record<string, string>>({});
   const [editingId,       setEditingId]       = useState<string | null>(null);
   const [editDraft,       setEditDraft]       = useState("");
+  const [uid,             setUid]             = useState<string | null>(null);
+  const [threshold,       setThreshold]       = useState(0.45);
+  const router = useRouter();
 
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser();
-      const uid = user?.id ?? "guest";
-      const stored: FacePhoto[] = JSON.parse(localStorage.getItem(`faces-${uid}`) ?? "[]");
-      setStoredPhotos(stored);
+      const u = user?.id ?? "guest";
+      setUid(u);
+
+      const rawFaces: FacePhoto[] = JSON.parse(localStorage.getItem(`faces-${u}`) ?? "[]");
+
+      const rawLabels: Record<string, string> = JSON.parse(localStorage.getItem(`face-labels-${u}`) ?? "{}");
+      // Discard labels stored in old pX format (cluster IDs are now photoId_boxIndex)
+      const validLabels = Object.fromEntries(
+        Object.entries(rawLabels).filter(([k]) => !k.match(/^p\d+$/))
+      );
+      setCustomLabels(validLabels);
+      setStoredPhotos(rawFaces);
       setLoading(false);
     }
     load();
   }, []);
 
+  useEffect(() => {
+    if (!uid) return;
+    localStorage.setItem(`face-labels-${uid}`, JSON.stringify(customLabels));
+  }, [customLabels, uid]);
+
   async function handleDelete(id: string) {
-    const { data: { user } } = await supabase.auth.getUser();
-    const uid = user?.id ?? "guest";
-    const key = `faces-${uid}`;
-    const photos: FacePhoto[] = JSON.parse(localStorage.getItem(key) ?? "[]");
-    localStorage.setItem(key, JSON.stringify(photos.filter((p) => p.id !== id)));
+    await deletePhotoEverywhere(id);
     setStoredPhotos((prev) => prev.filter((p) => p.id !== id));
   }
 
@@ -347,7 +368,7 @@ export default function FacesPage() {
       <div className="max-w-2xl mx-auto">
 
         {/* ── Hero header ── */}
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-700 p-6 mb-5 shadow-xl shadow-violet-200">
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-sky-500 via-blue-500 to-blue-600 p-6 mb-5 shadow-xl shadow-blue-200">
           <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full" />
           <div className="absolute -bottom-6 -left-6 w-28 h-28 bg-white/10 rounded-full" />
           <div className="relative">
@@ -357,7 +378,7 @@ export default function FacesPage() {
               </div>
               <div>
                 <h1 className="text-2xl font-black text-white tracking-tight leading-none">Faces</h1>
-                <p className="text-violet-200 text-xs mt-0.5">AI-powered face detection & clustering</p>
+                <p className="text-sky-100 text-xs mt-0.5">AI-powered face detection & clustering</p>
               </div>
             </div>
             <div className="grid grid-cols-3 gap-2">
@@ -367,9 +388,9 @@ export default function FacesPage() {
                 { label: "Photos",  value: loading ? "—" : storedPhotos.length,    icon: ImageIcon },
               ].map(({ label, value, icon: Icon }) => (
                 <div key={label} className="bg-white/15 rounded-2xl p-3 text-center backdrop-blur-sm">
-                  <Icon size={14} className="text-violet-200 mx-auto mb-1" />
+                  <Icon size={14} className="text-sky-100 mx-auto mb-1" />
                   <p className="text-xl font-black text-white leading-none">{value}</p>
-                  <p className="text-violet-300 text-[10px] font-semibold mt-0.5">{label}</p>
+                  <p className="text-sky-100 text-[10px] font-semibold mt-0.5">{label}</p>
                 </div>
               ))}
             </div>
@@ -380,8 +401,8 @@ export default function FacesPage() {
 
           /* ── Empty state ── */
           <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-14 text-center">
-            <div className="w-20 h-20 bg-gradient-to-br from-violet-100 to-indigo-100 rounded-3xl flex items-center justify-center mx-auto mb-5 shadow-inner">
-              <Users size={32} className="text-violet-300" />
+            <div className="w-20 h-20 bg-gradient-to-br from-sky-100 to-blue-100 rounded-3xl flex items-center justify-center mx-auto mb-5 shadow-inner">
+              <Users size={32} className="text-blue-300" />
             </div>
             <p className="font-black text-slate-700 text-lg mb-1">No face photos yet</p>
             <p className="text-slate-400 text-sm leading-relaxed">
@@ -401,7 +422,7 @@ export default function FacesPage() {
                 <button key={key} onClick={() => setActiveTab(key)}
                   className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${
                     activeTab === key
-                      ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-md shadow-violet-200"
+                      ? "bg-gradient-to-r from-sky-500 to-blue-600 text-white shadow-md shadow-blue-200"
                       : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                   }`}>
                   <Icon size={14} />
@@ -433,28 +454,30 @@ export default function FacesPage() {
                 ) : (
                   <>
                     {/* Threshold slider */}
-                    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 mb-5">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <SlidersHorizontal size={14} className="text-violet-500" />
-                          <span className="text-sm font-bold text-slate-700">Similarity Threshold</span>
-                        </div>
-                        <span className="text-xs font-black text-violet-700 bg-violet-50 border border-violet-200 px-2.5 py-0.5 rounded-full">
-                          {clusters.length} {clusters.length === 1 ? "person" : "people"}
+                    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 mb-4">
+                      <div className="flex items-center justify-between mb-2.5">
+                        <p className="text-sm font-bold text-slate-700">Match Sensitivity</p>
+                        <span className="text-sm font-black text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full tabular-nums">
+                          {threshold.toFixed(2)}
                         </span>
                       </div>
-                      <input type="range" min={0.3} max={0.7} step={0.01} value={threshold}
+                      <input
+                        type="range"
+                        min="0.30"
+                        max="0.70"
+                        step="0.05"
+                        value={threshold}
                         onChange={(e) => setThreshold(parseFloat(e.target.value))}
-                        className="w-full accent-violet-600" />
-                      <div className="flex justify-between text-[10px] text-slate-400 mt-1.5 font-medium">
-                        <span>← Strict</span>
-                        <span className="text-slate-500 font-bold">{threshold.toFixed(2)}</span>
-                        <span>Loose →</span>
+                        className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-blue-500 bg-slate-200"
+                      />
+                      <div className="flex justify-between text-[10px] text-slate-400 mt-1.5">
+                        <span>← Strict · more groups</span>
+                        <span>Loose · fewer groups →</span>
                       </div>
                     </div>
 
                     {clusters.length === 0 ? (
-                      <p className="text-center text-slate-400 py-12 text-sm">Adjust the threshold to cluster faces.</p>
+                      <p className="text-center text-slate-400 py-12 text-sm">No faces detected yet. Upload photos with people to see clusters.</p>
                     ) : (
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                         {clusters.map((cluster, idx) => {
@@ -487,11 +510,11 @@ export default function FacesPage() {
                                       if (e.key === "Enter") { setCustomLabels((prev) => ({ ...prev, [cluster.id]: editDraft.trim() || cluster.label })); setEditingId(null); }
                                       if (e.key === "Escape") setEditingId(null);
                                     }}
-                                    className="flex-1 text-xs font-bold text-slate-800 border border-violet-300 rounded-lg px-2 py-1 outline-none text-center min-w-0"
+                                    className="flex-1 text-xs font-bold text-slate-800 border border-blue-300 rounded-lg px-2 py-1 outline-none text-center min-w-0"
                                   />
                                   <button
                                     onClick={(e) => { e.stopPropagation(); setCustomLabels((prev) => ({ ...prev, [cluster.id]: editDraft.trim() || cluster.label })); setEditingId(null); }}
-                                    className="w-6 h-6 flex items-center justify-center bg-violet-500 rounded-lg text-white flex-shrink-0">
+                                    className="w-6 h-6 flex items-center justify-center bg-blue-500 rounded-lg text-white flex-shrink-0">
                                     <Check size={12} />
                                   </button>
                                 </div>
@@ -500,7 +523,7 @@ export default function FacesPage() {
                                   <p className="font-black text-slate-800 text-sm">{displayLabel}</p>
                                   <button
                                     onClick={(e) => { e.stopPropagation(); setEditDraft(displayLabel); setEditingId(cluster.id); }}
-                                    className="w-5 h-5 flex items-center justify-center text-slate-300 hover:text-violet-500 transition-colors">
+                                    className="w-5 h-5 flex items-center justify-center text-slate-300 hover:text-blue-500 transition-colors">
                                     <Pencil size={11} />
                                   </button>
                                 </div>
@@ -508,6 +531,16 @@ export default function FacesPage() {
                               <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full mt-1.5 ${color.bg} ${color.text}`}>
                                 {cluster.faces.length} appearance{cluster.faces.length !== 1 ? "s" : ""}
                               </span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const names = [...new Set(cluster.faces.map(f => f.photo.fileName))].join(",");
+                                  router.push(`/albums?faceNames=${encodeURIComponent(names)}&personLabel=${encodeURIComponent(displayLabel)}`);
+                                }}
+                                className="mt-1.5 w-full flex items-center justify-center gap-1 text-[10px] font-bold text-blue-500 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-full transition-colors"
+                              >
+                                <Images size={9} /> See in Albums
+                              </button>
                             </div>
                           );
                         })}

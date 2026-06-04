@@ -55,6 +55,7 @@ export default function PhotoPreview({
       ) : (
         <div className="mt-6 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={photo.previewUrl}
               alt={photo.fileName}

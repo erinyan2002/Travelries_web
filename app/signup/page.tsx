@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Eye, EyeOff, AlertCircle, UserPlus, CheckCircle2, Mail } from "lucide-react";
+import { Eye, EyeOff, AlertCircle, UserPlus, CheckCircle2, Mail, RefreshCw } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import AppLogo from "@/components/AppLogo";
 
@@ -18,7 +18,12 @@ export default function SignUpPage() {
   const [showConfirm,     setShowConfirm]     = useState(false);
   const [error,           setError]           = useState("");
   const [loading,         setLoading]         = useState(false);
-  const [state,           setState]           = useState<"form" | "success" | "confirm_email">("form");
+  const [state,           setState]           = useState<"form" | "otp" | "success">("form");
+
+  // OTP 입력 (6자리)
+  const [otp,        setOtp]        = useState(["", "", "", "", "", ""]);
+  const [resending,  setResending]  = useState(false);
+  const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   function validate(): string {
     if (!name.trim())                               return "Please enter your full name.";
@@ -50,8 +55,7 @@ export default function SignUpPage() {
     }
 
     if (data.user && data.session) {
-      // Email confirmation is disabled — user is immediately signed in.
-      // Create the profile row now (no trigger needed).
+      // 이메일 확인이 꺼진 경우 — 바로 로그인
       await supabase.from("profiles").upsert(
         { id: data.user.id, name: name.trim() },
         { onConflict: "id" }
@@ -59,9 +63,72 @@ export default function SignUpPage() {
       setState("success");
       setTimeout(() => router.push("/"), 1200);
     } else {
-      // Email confirmation is enabled — they must confirm before signing in.
-      setState("confirm_email");
+      // 이메일 확인이 켜진 경우 — OTP 입력 화면으로
+      setState("otp");
     }
+  }
+
+  function handleOtpChange(index: number, value: string) {
+    if (!/^\d*$/.test(value)) return; // 숫자만 허용
+    const next = [...otp];
+    next[index] = value.slice(-1); // 마지막 한 글자만
+    setOtp(next);
+    if (value && index < 5) {
+      otpRefs.current[index + 1]?.focus();
+    }
+  }
+
+  function handleOtpKeyDown(index: number, e: React.KeyboardEvent) {
+    if (e.key === "Backspace" && !otp[index] && index > 0) {
+      otpRefs.current[index - 1]?.focus();
+    }
+  }
+
+  function handleOtpPaste(e: React.ClipboardEvent) {
+    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    if (pasted.length === 6) {
+      setOtp(pasted.split(""));
+      otpRefs.current[5]?.focus();
+    }
+    e.preventDefault();
+  }
+
+  async function handleOtpSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const code = otp.join("");
+    if (code.length !== 6) { setError("Please enter all 6 digits of the code."); return; }
+
+    setError("");
+    setLoading(true);
+    const { data, error: verifyError } = await supabase.auth.verifyOtp({
+      email: email.trim(),
+      token: code,
+      type: "signup",
+    });
+    setLoading(false);
+
+    if (verifyError) {
+      setError("Invalid or expired code. Please check your email and try again.");
+      return;
+    }
+
+    if (data.user) {
+      await supabase.from("profiles").upsert(
+        { id: data.user.id, name: name.trim() },
+        { onConflict: "id" }
+      );
+    }
+    setState("success");
+    setTimeout(() => router.push("/"), 1200);
+  }
+
+  async function handleResend() {
+    setResending(true);
+    setError("");
+    await supabase.auth.resend({ type: "signup", email: email.trim() });
+    setResending(false);
+    setOtp(["", "", "", "", "", ""]);
+    otpRefs.current[0]?.focus();
   }
 
   return (
@@ -77,7 +144,9 @@ export default function SignUpPage() {
           <h1 className="text-3xl font-black tracking-tight text-slate-900 mb-1">
             Travel<span className="bg-gradient-to-r from-blue-600 to-indigo-500 bg-clip-text text-transparent">ries</span>
           </h1>
-          <p className="text-slate-500 text-sm">Create your account</p>
+          <p className="text-slate-500 text-sm">
+            {state === "otp" ? "Email verification" : "Create your account"}
+          </p>
         </div>
 
         {/* Card */}
@@ -91,20 +160,64 @@ export default function SignUpPage() {
               <p className="text-lg font-bold text-slate-800">Account created!</p>
               <p className="text-sm text-slate-500">Taking you to the app…</p>
             </div>
-          ) : state === "confirm_email" ? (
-            <div className="flex flex-col items-center gap-3 py-6 text-center">
-              <div className="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center">
-                <Mail size={28} className="text-blue-600" />
+
+          ) : state === "otp" ? (
+            <form onSubmit={handleOtpSubmit} className="space-y-6">
+              <div className="flex flex-col items-center gap-3 text-center">
+                <div className="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center">
+                  <Mail size={28} className="text-blue-600" />
+                </div>
+                <p className="text-lg font-bold text-slate-800">Enter verification code</p>
+                <p className="text-sm text-slate-500">
+                  We sent a 6-digit code to <strong>{email}</strong>.<br />
+                  Check your inbox and enter the code below.
+                </p>
               </div>
-              <p className="text-lg font-bold text-slate-800">Check your email</p>
-              <p className="text-sm text-slate-500">
-                We sent a confirmation link to <strong>{email}</strong>.<br />
-                Click it to activate your account, then sign in.
-              </p>
-              <Link href="/login" className="mt-2 text-sm font-semibold text-blue-600 hover:text-blue-700">
-                Back to sign in
-              </Link>
-            </div>
+
+              {/* OTP 6자리 입력 */}
+              <div className="flex justify-center gap-2" onPaste={handleOtpPaste}>
+                {otp.map((digit, i) => (
+                  <input
+                    key={i}
+                    ref={(el) => { otpRefs.current[i] = el; }}
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={1}
+                    value={digit}
+                    onChange={(e) => handleOtpChange(i, e.target.value)}
+                    onKeyDown={(e) => handleOtpKeyDown(i, e)}
+                    className="w-12 h-14 text-center text-xl font-bold rounded-xl border-2 border-slate-200 bg-slate-50 text-slate-900 outline-none focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 transition-all"
+                  />
+                ))}
+              </div>
+
+              {error && (
+                <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-700 text-sm font-medium">
+                  <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="submit" disabled={loading}
+                className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-white text-sm font-bold tracking-wide transition-all ${
+                  loading ? "bg-blue-300 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200 active:scale-[0.98]"
+                }`}
+              >
+                {loading ? "Verifying…" : "Verify"}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={resending}
+                className="w-full flex items-center justify-center gap-2 py-2 text-sm text-slate-500 hover:text-blue-600 transition-colors"
+              >
+                <RefreshCw size={14} className={resending ? "animate-spin" : ""} />
+                {resending ? "Resending…" : "Resend code"}
+              </button>
+            </form>
+
           ) : (
             <form onSubmit={handleSubmit} noValidate className="space-y-5">
 

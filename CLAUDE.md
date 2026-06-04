@@ -12,8 +12,8 @@ npm start          # serve production build
 npm run lint       # ESLint check
 npx tsc --noEmit   # TypeScript type check (no test suite exists)
 
-# Deploy to production server (uses pnpm + SFTP)
-npm run deploy     # runs _scripts/deploy.sh — sets NEXT_PUBLIC_API_TARGET=prod, builds, SFTPs to iubns.net
+# Deploy to production server (uses pnpm + SFTP to iubns.net)
+npm run deploy     # runs _scripts/deploy.sh — sets NEXT_PUBLIC_API_TARGET=prod, builds static export (out/), SFTPs to iubns.net
 
 # Backend (optional Python FastAPI — only needed for nearby-places feature)
 cd backend
@@ -36,7 +36,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 
 ## Architecture
 
-**TravelLens** is a travel photo app: upload photos (one or many) → extract GPS + EXIF → run client-side face detection → save to map/albums. It is a PWA (`app/manifest.ts`, `/pwa-icon` route).
+**Travelries** is a travel photo app: upload photos (one or many) → extract GPS + EXIF → run client-side face detection → save to map/albums. It is a PWA (`app/manifest.ts`, `/pwa-icon` route).
 
 ### Data storage split
 
@@ -44,6 +44,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 - **Photo data (personal)**: `localStorage` keyed by user ID — `map-<uid>` (MapPhoto[]), `faces-<uid>` (FacePhoto[]), `saved-<uid>` (string[] of saved photo IDs).
 - **Images (personal)**: stored as base64 data URLs inside the localStorage JSON (created via `canvas.toDataURL` in `createThumbnailDataUrl`).
 - **Supabase DB tables** (for social features):
+  - `profiles` — display name + join date per user; auto-created on first profile page load if missing
   - `notifications` — per-user notifications, queried via `lib/notificationUtils.ts`
   - `collab_albums`, `collab_members`, `collab_photos` — collaborative albums, managed via `lib/collabUtils.ts`
   - `shares` — public photo share links, managed via `lib/shareUtils.ts`
@@ -87,6 +88,13 @@ Two execution modes depending on whether the Python backend is running:
 Result stored in `FacePhoto` with normalized bounding boxes (`x_norm`, `y_norm`, `w_norm`, `h_norm`).
 
 `app/faces/page.tsx` clusters descriptors by Euclidean distance (DBSCAN on the backend, Euclidean threshold in-browser) to group same-person appearances — no server involved for the clustering step.
+
+### Other pages
+
+- **`app/saved/page.tsx`**: Grid of photos starred via `toggleSaved`. Downloads are triggered via a temporary `<a>` element against the base64 data URL.
+- **`app/stats/page.tsx`**: Aggregated read-only view computed from `map-<uid>` and `faces-<uid>` localStorage on mount — no Supabase queries.
+- **`app/profile/page.tsx`**: Reads/writes `profiles` table; validates old password via a re-`signInWithPassword` call before calling `updateUser`.
+- **`app/collab/join/page.tsx`**: Accepts an invite code and calls `joinAlbumByCode` (RPC). Redirects to `/collab` on success.
 
 ### Albums (`app/albums/page.tsx`)
 

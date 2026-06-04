@@ -2,28 +2,137 @@
 
 import { useEffect, useMemo, useState } from "react";
 import BottomNav from "@/components/BottomNav";
-import { toggleSaved, getSavedIds } from "@/lib/savedUtils";
+import { toggleSaved, getSavedIds, deletePhotoEverywhere } from "@/lib/savedUtils";
 import { supabase } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
 import {
-  Images, MapPin, Users, Image, Star, Download, Trash2,
-  X, CalendarDays, SlidersHorizontal, Search, Calendar, Share2, Loader2,
+  Images, Users, Image as ImageIcon, Star, Download, Trash2,
+  X, CalendarDays, SlidersHorizontal, Search, Calendar, Share2, Loader2, MapPin,
 } from "lucide-react";
 import { sharePhoto } from "@/lib/shareUtils";
 
-type Filter    = "전체" | "인물 사진" | "일반 사진";
+type Filter    = "All" | "With People" | "Scenery";
 type DateRange = "all" | "week" | "month" | "year";
 
-const FILTERS: Filter[] = ["전체", "인물 사진", "일반 사진"];
+type Trip = {
+  id: string;
+  name: string;
+  dateRange: string;
+  photos: MapPhoto[];
+  locations: string[];
+};
+
+function getPhotoDate(p: MapPhoto): Date {
+  const raw = (p.captureDate && p.captureDate !== "Not available" && p.captureDate !== "날짜 없음")
+    ? p.captureDate : p.uploadedAt;
+  if (!raw) return new Date(0);
+  let d = new Date(raw);
+  if (isNaN(d.getTime())) {
+    const m = raw.match(/(\d{4})[.\-\s]+(\d{1,2})[.\-\s]+(\d{1,2})/);
+    if (m) d = new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+  }
+  return isNaN(d.getTime()) ? new Date(0) : d;
+}
+
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function clusterByGps(photos: MapPhoto[], radiusKm = 1.5): { centLat: number; centLng: number; photos: MapPhoto[]; name: string }[] {
+  const clusters: { centLat: number; centLng: number; photos: MapPhoto[]; name: string }[] = [];
+  const noGps: MapPhoto[] = [];
+
+  for (const photo of photos) {
+    if (!photo.lat || !photo.lng) { noGps.push(photo); continue; }
+    let nearest: typeof clusters[0] | null = null;
+    let minDist = Infinity;
+    for (const c of clusters) {
+      const d = haversineKm(photo.lat, photo.lng, c.centLat, c.centLng);
+      if (d < minDist) { minDist = d; nearest = c; }
+    }
+    if (nearest && minDist <= radiusKm) {
+      const n = nearest.photos.length + 1;
+      nearest.centLat = (nearest.centLat * (n - 1) + photo.lat) / n;
+      nearest.centLng = (nearest.centLng * (n - 1) + photo.lng) / n;
+      nearest.photos.push(photo);
+    } else {
+      clusters.push({ centLat: photo.lat, centLng: photo.lng, photos: [photo], name: photo.location?.split(",")[0]?.trim() || "Unknown" });
+    }
+  }
+
+  if (noGps.length > 0) {
+    if (clusters.length > 0) {
+      clusters.reduce((a, b) => a.photos.length >= b.photos.length ? a : b).photos.push(...noGps);
+    } else {
+      clusters.push({ centLat: 0, centLng: 0, photos: noGps, name: "Unknown location" });
+    }
+  }
+
+  return clusters.sort((a, b) => b.photos.length - a.photos.length);
+}
+
+function detectTrips(photos: MapPhoto[], gapDays = 4): Trip[] {
+  if (photos.length === 0) return [];
+  const dated = photos
+    .map(p => ({ photo: p, date: getPhotoDate(p) }))
+    .filter(({ date }) => date.getTime() > 0)
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
+  if (dated.length === 0) return [];
+
+  // Step 1: group by date gap
+  const dateGroups: { photo: MapPhoto; date: Date }[][] = [];
+  let current: { photo: MapPhoto; date: Date }[] = [];
+  for (const item of dated) {
+    if (current.length === 0) { current.push(item); continue; }
+    const gap = (item.date.getTime() - current[current.length - 1].date.getTime()) / 86400000;
+    if (gap > gapDays) { dateGroups.push(current); current = [item]; }
+    else current.push(item);
+  }
+  if (current.length > 0) dateGroups.push(current);
+
+  const fmt = (d: Date) =>
+    `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
+
+  const trips: Trip[] = [];
+
+  // Step 2: within each date group, split by GPS location clusters
+  for (const group of dateGroups) {
+    const ps = group.map(g => g.photo);
+    const ds = group.map(g => g.date);
+    const start = ds[0], end = ds[ds.length - 1];
+    const range = fmt(start) === fmt(end) ? fmt(start) : `${fmt(start)} – ${fmt(end)}`;
+
+    const locClusters = clusterByGps(ps);
+
+    for (const lc of locClusters) {
+      const clusterDates = lc.photos.map(p => getPhotoDate(p)).filter(d => d.getTime() > 0).sort((a, b) => a.getTime() - b.getTime());
+      const cStart = clusterDates[0] ?? start;
+      const cEnd = clusterDates[clusterDates.length - 1] ?? end;
+      const cRange = locClusters.length === 1
+        ? range
+        : fmt(cStart) === fmt(cEnd) ? fmt(cStart) : `${fmt(cStart)} – ${fmt(cEnd)}`;
+      const locs = [...new Set(lc.photos.map(p => p.location?.split(",")[0]?.trim()).filter(Boolean))] as string[];
+      trips.push({ id: `trip-${trips.length}`, name: lc.name, dateRange: cRange, photos: lc.photos, locations: locs });
+    }
+  }
+
+  return trips.reverse();
+}
+
+const FILTERS: Filter[] = ["All", "With People", "Scenery"];
 const filterIcons: Record<Filter, React.ElementType> = {
-  "전체": SlidersHorizontal, "인물 사진": Users, "일반 사진": Image,
+  "All": SlidersHorizontal, "With People": Users, "Scenery": ImageIcon,
 };
 
 const DATE_RANGES: { value: DateRange; label: string }[] = [
-  { value: "all",   label: "전체 기간" },
-  { value: "week",  label: "이번 주"   },
-  { value: "month", label: "이번 달"   },
-  { value: "year",  label: "이번 년도" },
+  { value: "all",   label: "All Time"   },
+  { value: "week",  label: "This Week"  },
+  { value: "month", label: "This Month" },
+  { value: "year",  label: "This Year"  },
 ];
 
 function isInDateRange(photo: MapPhoto, range: DateRange): boolean {
@@ -95,7 +204,7 @@ function PhotoModal({
           <div className="min-w-0">
             <p className="font-bold text-slate-900 text-sm truncate">{photo.fileName}</p>
             <p className="text-xs text-slate-400 mt-0.5">
-              {photo.location?.split(",")[0] || "위치 정보 없음"} · {photo.captureDate || photo.uploadedAt?.slice(0, 10) || ""}
+              {photo.location?.split(",")[0] || "Unknown location"} · {photo.captureDate || photo.uploadedAt?.slice(0, 10) || ""}
             </p>
           </div>
           <button onClick={onClose} className="ml-4 text-slate-400 hover:text-slate-700 transition-colors p-1">
@@ -105,9 +214,9 @@ function PhotoModal({
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={photo.imageUrl} alt={photo.fileName} className="w-full max-h-[420px] object-contain bg-slate-100" />
         <div className="p-4 grid grid-cols-2 gap-2">
-          {photo.captureDate && photo.captureDate !== "Not available" && <InfoChip label="촬영일" value={photo.captureDate} />}
-          {photo.location && <div className="col-span-2"><InfoChip label="위치" value={photo.location} /></div>}
-          <InfoChip label="AI 분류" value={(photo.faceCount ?? 0) > 0 ? `인물 사진 (${photo.faceCount}명)` : "일반 사진"} />
+          {photo.captureDate && photo.captureDate !== "Not available" && <InfoChip label="Taken" value={photo.captureDate} />}
+          {photo.location && <div className="col-span-2"><InfoChip label="Location" value={photo.location} /></div>}
+          <InfoChip label="AI label" value={(photo.faceCount ?? 0) > 0 ? `With people (${photo.faceCount})` : "Scenery"} />
         </div>
         <div className="flex gap-2 px-4 py-3 border-t border-slate-100">
           <button onClick={() => onShare(photo)} disabled={sharing}
@@ -116,16 +225,56 @@ function PhotoModal({
           </button>
           <button onClick={() => onDownload(photo)}
             className="flex-1 flex items-center justify-center gap-2 bg-slate-900 text-white py-2.5 rounded-xl text-sm font-bold hover:bg-slate-700 transition-colors">
-            <Download size={15} /> 다운로드
+            <Download size={15} /> Download
           </button>
-          <button onClick={() => { onDelete(photo.id); onClose(); }}
+          <button onClick={() => { onClose(); onDelete(photo.id); }}
             className="flex-1 flex items-center justify-center gap-2 bg-red-500 text-white py-2.5 rounded-xl text-sm font-bold hover:bg-red-600 transition-colors">
-            <Trash2 size={15} /> 삭제
+            <Trash2 size={15} /> Delete
           </button>
         </div>
       </div>
     </div>
   );
+}
+
+function DeleteConfirmModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[4000] flex items-center justify-center p-4" onClick={onCancel}>
+      <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <Trash2 size={22} className="text-red-500" />
+        </div>
+        <h2 className="text-lg font-black text-slate-900 text-center mb-1">Delete this photo?</h2>
+        <p className="text-sm text-slate-500 text-center mb-6">This cannot be undone.</p>
+        <div className="flex gap-3">
+          <button onClick={onCancel}
+            className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50 transition-colors">
+            Cancel
+          </button>
+          <button onClick={onConfirm}
+            className="flex-1 py-2.5 rounded-xl bg-red-500 text-white font-bold text-sm hover:bg-red-600 transition-colors">
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+function formatPhotoDate(raw: string | null | undefined): string {
+  if (!raw || raw === "Not available" || raw === "날짜 없음") return "No date";
+  let date = new Date(raw);
+  if (isNaN(date.getTime())) {
+    const m = raw.match(/(\d{4})[.\-\s]+(\d{1,2})[.\-\s]+(\d{1,2})/);
+    if (m) date = new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+  }
+  if (!date || isNaN(date.getTime())) return raw;
+  const y = date.getFullYear();
+  const mo = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}.${mo}.${d}`;
 }
 
 function AlbumsSkeleton() {
@@ -157,15 +306,20 @@ function AlbumsSkeleton() {
 }
 
 export default function AlbumsPage() {
-  const [photos,         setPhotos]         = useState<MapPhoto[]>([]);
-  const [loading,        setLoading]        = useState(true);
-  const [filter,         setFilter]         = useState<Filter>("전체");
-  const [dateRange,      setDateRange]      = useState<DateRange>("all");
-  const [searchQuery,    setSearchQuery]    = useState("");
-  const [selectedPhoto,  setSelectedPhoto]  = useState<MapPhoto | null>(null);
-  const [savedIds,       setSavedIds]       = useState<Set<string>>(new Set());
-  const [sharingId,      setSharingId]      = useState<string | null>(null);
-  const [shareResultUrl, setShareResultUrl] = useState<string | null>(null);
+  const [photos,           setPhotos]           = useState<MapPhoto[]>([]);
+  const [loading,          setLoading]          = useState(true);
+  const [filter,           setFilter]           = useState<Filter>("All");
+  const [dateRange,        setDateRange]        = useState<DateRange>("all");
+  const [searchQuery,      setSearchQuery]      = useState("");
+  const [selectedPhoto,    setSelectedPhoto]    = useState<MapPhoto | null>(null);
+  const [savedIds,         setSavedIds]         = useState<Set<string>>(new Set());
+  const [sharingId,        setSharingId]        = useState<string | null>(null);
+  const [shareResultUrl,   setShareResultUrl]   = useState<string | null>(null);
+  const [confirmDeleteId,  setConfirmDeleteId]  = useState<string | null>(null);
+  const [personFilterNames, setPersonFilterNames] = useState<Set<string> | null>(null);
+  const [personFilterLabel, setPersonFilterLabel] = useState<string | null>(null);
+  const [viewMode,          setViewMode]          = useState<"monthly" | "trips">("monthly");
+  const [expandedTripId,    setExpandedTripId]    = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -175,6 +329,12 @@ export default function AlbumsPage() {
       setPhotos(stored);
       setSavedIds(await getSavedIds());
       setLoading(false);
+      const params = new URLSearchParams(window.location.search);
+      const faceNames = params.get("faceNames");
+      if (faceNames) {
+        setPersonFilterNames(new Set(faceNames.split(",")));
+        setPersonFilterLabel(params.get("personLabel"));
+      }
     }
     load();
   }, []);
@@ -190,13 +350,9 @@ export default function AlbumsPage() {
   }
 
   async function handleDelete(id: string) {
-    const { data: { user } } = await supabase.auth.getUser();
-    const uid = user?.id ?? "guest";
-    const mapKey = `map-${uid}`;
-    const stored: MapPhoto[] = JSON.parse(localStorage.getItem(mapKey) ?? "[]");
-    localStorage.setItem(mapKey, JSON.stringify(stored.filter((p) => p.id !== id)));
+    await deletePhotoEverywhere(id);
     setPhotos((prev) => prev.filter((p) => p.id !== id));
-    if (selectedPhoto?.id === id) setSelectedPhoto(null);
+    setConfirmDeleteId(null);
   }
 
   function handleDownload(photo: MapPhoto) {
@@ -212,7 +368,7 @@ export default function AlbumsPage() {
       const url = await sharePhoto(photo);
       setShareResultUrl(url);
     } catch (err) {
-      alert(`공유 링크 생성 실패:\n${err instanceof Error ? err.message : String(err)}`);
+      alert(`Failed to create share link:\n${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setSharingId(null);
     }
@@ -220,22 +376,23 @@ export default function AlbumsPage() {
 
   function clearAllFilters() {
     setSearchQuery("");
-    setFilter("전체");
+    setFilter("All");
     setDateRange("all");
   }
 
   const counts = useMemo(() => ({
-    "전체":    photos.length,
-    "인물 사진": photos.filter((p) => (p.faceCount ?? 0) > 0).length,
-    "일반 사진": photos.filter((p) => (p.faceCount ?? 0) === 0).length,
+    "All":         photos.length,
+    "With People": photos.filter((p) => (p.faceCount ?? 0) > 0).length,
+    "Scenery":     photos.filter((p) => (p.faceCount ?? 0) === 0).length,
   }), [photos]);
 
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return photos.filter((p) => {
-      if (filter === "인물 사진" && (p.faceCount ?? 0) === 0) return false;
-      if (filter === "일반 사진" && (p.faceCount ?? 0) > 0)  return false;
+      if (filter === "With People" && (p.faceCount ?? 0) === 0) return false;
+      if (filter === "Scenery"     && (p.faceCount ?? 0) > 0)  return false;
       if (!isInDateRange(p, dateRange)) return false;
+      if (personFilterNames && !personFilterNames.has(p.fileName)) return false;
       if (q) {
         const inName     = p.fileName.toLowerCase().includes(q);
         const inLocation = (p.location ?? "").toLowerCase().includes(q);
@@ -243,19 +400,33 @@ export default function AlbumsPage() {
       }
       return true;
     });
-  }, [photos, filter, dateRange, searchQuery]);
+  }, [photos, filter, dateRange, searchQuery, personFilterNames]);
+
+  const trips = useMemo(() => detectTrips(filtered), [filtered]);
 
   const grouped = useMemo(() => {
-    const map = new Map<string, MapPhoto[]>();
+    const map = new Map<string, { photos: MapPhoto[]; sortDate: number }>();
     for (const photo of filtered) {
-      const key = (photo.location || "위치 정보 없음").split(",")[0].trim();
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(photo);
+      const raw = (photo.captureDate && photo.captureDate !== "Not available" && photo.captureDate !== "날짜 없음")
+        ? photo.captureDate
+        : photo.uploadedAt;
+      let date = raw ? new Date(raw) : null;
+      if (date && isNaN(date.getTime())) {
+        const m = raw!.match(/(\d{4})[.\-\s]+(\d{1,2})[.\-\s]+(\d{1,2})/);
+        if (m) date = new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+      }
+      const valid = date && !isNaN(date.getTime()) && date.getFullYear() > 1970;
+      const key = valid ? `${MONTHS[date!.getMonth()]} ${date!.getFullYear()}` : "Unknown date";
+      const sortDate = valid ? new Date(date!.getFullYear(), date!.getMonth(), 1).getTime() : 0;
+      if (!map.has(key)) map.set(key, { photos: [], sortDate });
+      map.get(key)!.photos.push(photo);
     }
-    return Array.from(map.entries());
+    return Array.from(map.entries())
+      .sort((a, b) => b[1].sortDate - a[1].sortDate)
+      .map(([key, { photos }]) => [key, photos] as [string, MapPhoto[]]);
   }, [filtered]);
 
-  const isFiltering = searchQuery.trim() !== "" || filter !== "전체" || dateRange !== "all";
+  const isFiltering = searchQuery.trim() !== "" || filter !== "All" || dateRange !== "all";
 
   return (
     <main className="min-h-screen bg-slate-50 px-6 py-8 pb-28">
@@ -263,14 +434,33 @@ export default function AlbumsPage() {
 
         {/* Header */}
         <div className="flex items-center gap-3 mb-5">
-          <div className="w-10 h-10 bg-violet-600 rounded-xl flex items-center justify-center shadow-md shadow-violet-200">
+          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-md shadow-blue-200">
             <Images size={22} className="text-white" />
           </div>
           <div>
             <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Albums</h1>
-            <p className="text-slate-500 text-sm">지도에 저장된 사진을 위치별로 묶어서 보여줍니다.</p>
+            <p className="text-slate-500 text-sm">Browse your saved travel photos by date.</p>
           </div>
         </div>
+
+        {/* Person filter banner */}
+        {personFilterNames && (
+          <div className="flex items-center gap-2 mb-4 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3">
+            <Users size={14} className="text-blue-600 flex-shrink-0" />
+            <p className="text-sm font-bold text-blue-700 flex-1">
+              Photos of <span className="text-blue-900">{personFilterLabel || "person"}</span>
+            </p>
+            <button
+              onClick={() => {
+                setPersonFilterNames(null);
+                setPersonFilterLabel(null);
+                window.history.replaceState({}, "", "/albums");
+              }}
+              className="text-blue-400 hover:text-blue-600 transition-colors p-1">
+              <X size={15} />
+            </button>
+          </div>
+        )}
 
         {/* Search bar */}
         <div className="relative mb-4">
@@ -279,7 +469,7 @@ export default function AlbumsPage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="파일명 또는 위치로 검색..."
+            placeholder="Search by filename or location..."
             className="w-full pl-10 pr-10 py-3 rounded-2xl border border-slate-200 bg-white text-sm text-slate-800 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition-all shadow-sm"
           />
           {searchQuery && (
@@ -315,7 +505,7 @@ export default function AlbumsPage() {
             return (
               <button key={value} onClick={() => setDateRange(value)}
                 className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                  active ? "bg-violet-600 text-white shadow-lg shadow-violet-200" : "bg-white text-slate-500 border border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                  active ? "bg-blue-600 text-white shadow-lg shadow-blue-200" : "bg-white text-slate-500 border border-slate-200 hover:border-slate-300 hover:bg-slate-50"
                 }`}>
                 <Calendar size={12} />
                 {label}
@@ -324,26 +514,43 @@ export default function AlbumsPage() {
           })}
         </div>
 
+        {/* View mode toggle */}
+        <div className="flex gap-1.5 mb-4 bg-white rounded-2xl p-1.5 border border-slate-100 shadow-sm">
+          {([
+            { key: "monthly" as const, label: "By Month", icon: CalendarDays },
+            { key: "trips"   as const, label: "Trips",    icon: MapPin       },
+          ]).map(({ key, label, icon: Icon }) => (
+            <button key={key} onClick={() => setViewMode(key)}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                viewMode === key
+                  ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md shadow-blue-200"
+                  : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+              }`}>
+              <Icon size={14} /> {label}
+            </button>
+          ))}
+        </div>
+
         {/* Result count + clear */}
         {photos.length > 0 && (
           <div className="flex items-center justify-between mb-4">
             <p className="text-sm text-slate-400">
               {isFiltering
-                ? <><strong className="text-slate-700">{filtered.length}</strong>장 검색됨 (전체 {photos.length}장)</>
-                : <><strong className="text-slate-700">{photos.length}</strong>장</>
+                ? <><strong className="text-slate-700">{filtered.length}</strong> found (total {photos.length})</>
+                : <><strong className="text-slate-700">{photos.length}</strong> photos</>
               }
             </p>
             {isFiltering && (
               <button onClick={clearAllFilters}
                 className="flex items-center gap-1.5 text-xs font-semibold text-violet-600 hover:text-violet-800 transition-colors">
-                <X size={12} /> 필터 초기화
+                <X size={12} /> Clear filters
               </button>
             )}
           </div>
         )}
 
         {/* Grid, skeleton, or empty state */}
-        {loading ? <AlbumsSkeleton /> : grouped.length === 0 ? (
+        {loading ? <AlbumsSkeleton /> : filtered.length === 0 ? (
           <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-16 text-center">
             <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
               {isFiltering
@@ -352,23 +559,135 @@ export default function AlbumsPage() {
               }
             </div>
             <p className="font-bold text-slate-700 mb-1">
-              {isFiltering ? "검색 결과가 없습니다" : filter === "전체" ? "아직 저장된 사진이 없습니다" : `${filter}이 없습니다`}
+              {isFiltering ? "No results found" : filter === "All" ? "No photos yet" : filter === "With People" ? "No photos with people" : "No scenery photos"}
             </p>
             <p className="text-slate-400 text-sm">
               {isFiltering
-                ? <button onClick={clearAllFilters} className="text-violet-500 font-semibold hover:underline">필터를 초기화</button>
-                : "홈에서 사진을 업로드하고 지도에 저장해보세요."
+                ? <button onClick={clearAllFilters} className="text-violet-500 font-semibold hover:underline">reset filters</button>
+                : "Upload photos from the home screen."
               }
             </p>
           </div>
+        ) : viewMode === "trips" ? (
+          trips.length === 0 ? (
+            <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-12 text-center">
+              <MapPin size={28} className="text-slate-300 mx-auto mb-3" />
+              <p className="font-bold text-slate-700 mb-1">No trips detected</p>
+              <p className="text-slate-400 text-sm">Photos need date info to be grouped into trips.</p>
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {trips.map((trip) => {
+                const isExpanded = expandedTripId === trip.id;
+                const n = trip.photos.length;
+                const photoWord = n === 1 ? "photo" : "photos";
+                return (
+                <div key={trip.id} className="rounded-3xl overflow-hidden shadow-md bg-white border border-slate-100">
+
+                  {/* ── Cover collage with gradient overlay ── */}
+                  <div className="relative h-52 overflow-hidden cursor-pointer"
+                    onClick={() => trip.photos[0] && setSelectedPhoto(trip.photos[0])}>
+                    {n >= 4 ? (
+                      <div className="grid grid-cols-2 h-full gap-0.5">
+                        {trip.photos.slice(0, 4).map((photo, i) => (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img key={i} src={photo.imageUrl} alt="" onClick={(e) => { e.stopPropagation(); setSelectedPhoto(photo); }}
+                            className="w-full h-full object-cover hover:brightness-95 transition-all" />
+                        ))}
+                      </div>
+                    ) : n >= 2 ? (
+                      <div className="flex h-full gap-0.5">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={trip.photos[0].imageUrl} alt="" onClick={(e) => { e.stopPropagation(); setSelectedPhoto(trip.photos[0]); }}
+                          className="flex-[2] h-full object-cover hover:brightness-95 transition-all" />
+                        <div className="flex flex-col gap-0.5 flex-1">
+                          {trip.photos.slice(1, 3).map((photo, i) => (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img key={i} src={photo.imageUrl} alt="" onClick={(e) => { e.stopPropagation(); setSelectedPhoto(photo); }}
+                              className="flex-1 w-full object-cover hover:brightness-95 transition-all" />
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={trip.photos[0].imageUrl} alt=""
+                        className="w-full h-full object-cover" />
+                    )}
+
+                    {/* Gradient overlay */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent pointer-events-none" />
+
+                    {/* Photo count badge top-right */}
+                    <div className="absolute top-3.5 right-3.5 bg-black/40 backdrop-blur-sm text-white text-xs font-bold px-3 py-1 rounded-full pointer-events-none">
+                      {n} {photoWord}
+                    </div>
+
+                    {/* Location + date at bottom */}
+                    <div className="absolute bottom-0 left-0 right-0 px-4 pb-4 pointer-events-none">
+                      <div className="flex items-end justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <MapPin size={14} className="text-white/90 flex-shrink-0" />
+                            <h2 className="font-black text-white text-lg leading-tight truncate drop-shadow">{trip.name}</h2>
+                          </div>
+                          {trip.locations.length > 1 && (
+                            <p className="text-white/70 text-xs ml-[22px] truncate">{trip.locations.slice(1, 3).join(" · ")}</p>
+                          )}
+                        </div>
+                        <p className="text-white/70 text-xs flex-shrink-0 text-right leading-snug">{trip.dateRange}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ── View all toggle ── */}
+                  <button
+                    onClick={() => setExpandedTripId(isExpanded ? null : trip.id)}
+                    className="w-full flex items-center justify-center gap-1.5 text-sm font-bold text-blue-500 hover:text-blue-700 hover:bg-blue-50 py-3 transition-colors">
+                    {isExpanded
+                      ? <><span className="text-xs">▲</span> Hide</>
+                      : <><span className="text-xs">▼</span> View all {n} {photoWord}</>
+                    }
+                  </button>
+
+                  {/* ── Expanded grid ── */}
+                  {isExpanded && (
+                    <div className="px-3 pb-3 grid grid-cols-3 gap-2 border-t border-slate-100 pt-3">
+                      {trip.photos.map((photo) => (
+                        <div key={photo.id} onClick={() => setSelectedPhoto(photo)}
+                          className="cursor-pointer rounded-xl overflow-hidden group">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={photo.imageUrl} alt={photo.fileName}
+                            className="w-full h-28 object-cover group-hover:brightness-90 transition-all" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                );
+              })}
+            </div>
+          )
         ) : (
+          <>
+            {grouped.length > 1 && (
+              <div className="flex gap-2 overflow-x-auto pb-1 mb-4" style={{ scrollbarWidth: "none" }}>
+                {grouped.map(([groupName]) => (
+                  <button key={groupName}
+                    onClick={() => document.getElementById(`group-${groupName}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                    className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-white border border-slate-200 text-slate-600 hover:border-blue-400 hover:text-blue-600 transition-all whitespace-nowrap shadow-sm">
+                    <CalendarDays size={11} />
+                    {groupName}
+                  </button>
+                ))}
+              </div>
+            )}
           <div className="space-y-5">
             {grouped.map(([groupName, items]) => (
-              <section key={groupName} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <section key={groupName} id={`group-${groupName}`} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="flex items-center gap-2 px-5 py-3.5 border-b border-slate-100 bg-slate-50">
-                  <MapPin size={16} className="text-blue-500 flex-shrink-0" />
+                  <CalendarDays size={16} className="text-blue-500 flex-shrink-0" />
                   <h2 className="font-bold text-slate-800 text-base flex-1">{groupName}</h2>
-                  <span className="text-xs text-slate-400 bg-slate-200 px-2 py-0.5 rounded-full">{items.length}장</span>
+                  <span className="text-xs text-slate-400 bg-slate-200 px-2 py-0.5 rounded-full">{items.length} photos</span>
                 </div>
                 <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                   {items.map((photo) => {
@@ -382,12 +701,12 @@ export default function AlbumsPage() {
                           <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full mb-1.5 ${
                             isPortrait ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"
                           }`}>
-                            {isPortrait ? <Users size={9} /> : <Image size={9} />}
-                            {isPortrait ? "인물" : "일반"}
+                            {isPortrait ? <Users size={9} /> : <ImageIcon size={9} />}
+                            {isPortrait ? "Person" : "Scene"}
                           </span>
                           <p className="font-bold text-slate-800 text-xs truncate">{photo.fileName}</p>
                           <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
-                            <CalendarDays size={9} />{photo.captureDate || "날짜 없음"}
+                            <CalendarDays size={9} />{formatPhotoDate(photo.captureDate)}
                           </p>
                           <div className="flex gap-1.5 mt-2">
                             <button onClick={(e) => handleToggleSaved(e, photo)}
@@ -404,7 +723,7 @@ export default function AlbumsPage() {
                               className="flex-1 flex items-center justify-center py-1.5 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">
                               <Download size={11} />
                             </button>
-                            <button onClick={(e) => { e.stopPropagation(); handleDelete(photo.id); }}
+                            <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(photo.id); }}
                               className="flex-1 flex items-center justify-center py-1.5 rounded-lg text-[10px] font-bold bg-red-50 text-red-500 hover:bg-red-100 transition-colors">
                               <Trash2 size={11} />
                             </button>
@@ -417,6 +736,7 @@ export default function AlbumsPage() {
               </section>
             ))}
           </div>
+          </>
         )}
       </div>
 
@@ -424,10 +744,16 @@ export default function AlbumsPage() {
         <PhotoModal
           photo={selectedPhoto}
           onClose={() => setSelectedPhoto(null)}
-          onDelete={handleDelete}
+          onDelete={(id) => { setSelectedPhoto(null); setConfirmDeleteId(id); }}
           onDownload={handleDownload}
           onShare={handleShare}
           sharing={sharingId === selectedPhoto.id}
+        />
+      )}
+      {confirmDeleteId && (
+        <DeleteConfirmModal
+          onConfirm={() => handleDelete(confirmDeleteId)}
+          onCancel={() => setConfirmDeleteId(null)}
         />
       )}
       {shareResultUrl && <ShareLinkModal url={shareResultUrl} onClose={() => setShareResultUrl(null)} />}

@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { MapPhoto, FacePhoto } from "@/lib/types";
 import {
   BarChart2, Camera, Users, MapPin, Star,
-  TrendingUp, Image, CalendarDays, Clock,
+  TrendingUp, Image as ImageIcon, CalendarDays, Clock,
 } from "lucide-react";
 
 type Stats = {
@@ -21,6 +21,7 @@ type Stats = {
   recentPhotos: MapPhoto[];
   mostFacesPhoto: MapPhoto | null;
   totalFacesDetected: number;
+  monthlyUploads: { label: string; count: number }[];
 };
 
 function StatCard({
@@ -44,20 +45,64 @@ function StatCard({
   );
 }
 
-function BarRow({ label, count, total, color }: { label: string; count: number; total: number; color: string }) {
-  const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+function MonthlyBarChart({ data }: { data: { label: string; count: number }[] }) {
+  const max = Math.max(...data.map(d => d.count), 1);
   return (
-    <div>
-      <div className="flex justify-between items-center mb-1.5">
-        <span className="text-sm font-semibold text-slate-700">{label}</span>
-        <span className="text-sm font-bold text-slate-900">{count}장 <span className="text-slate-400 font-normal">({pct}%)</span></span>
+    <div className="flex items-end gap-1 mt-3" style={{ height: "100px" }}>
+      {data.map(({ label, count }) => {
+        const h = count > 0 ? Math.max(Math.round((count / max) * 72), 6) : 2;
+        return (
+          <div key={label} className="flex-1 flex flex-col items-center justify-end gap-0.5 h-full min-w-0">
+            <span className="text-[8px] text-slate-400 font-bold leading-none">{count > 0 ? count : ""}</span>
+            <div className={`w-full rounded-t transition-all duration-700 ${count > 0 ? "bg-blue-400 hover:bg-blue-500" : "bg-slate-100"}`}
+              style={{ height: `${h}px` }} />
+            <span className="text-[8px] text-slate-400 truncate w-full text-center leading-none mt-0.5">{label}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DonutChart({ portrait, scenery, total }: { portrait: number; scenery: number; total: number }) {
+  if (total === 0) return <p className="text-slate-400 text-sm text-center py-8">No photos yet</p>;
+  const r = 32;
+  const circ = 2 * Math.PI * r;
+  const arc = (portrait / total) * circ;
+  return (
+    <div className="flex items-center gap-5 mt-2">
+      <div className="relative flex-shrink-0">
+        <svg viewBox="0 0 80 80" width="80" height="80">
+          <circle cx="40" cy="40" r={r} fill="none" stroke="#f1f5f9" strokeWidth="12" />
+          {portrait > 0 && (
+            <circle cx="40" cy="40" r={r} fill="none" stroke="#3b82f6" strokeWidth="12"
+              strokeDasharray={`${arc} ${circ - arc}`}
+              style={{ transform: "rotate(-90deg)", transformOrigin: "40px 40px" }} />
+          )}
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-base font-extrabold text-slate-800 leading-none">{total}</span>
+          <span className="text-[9px] text-slate-400">total</span>
+        </div>
       </div>
-      <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
-        <div className={`h-full rounded-full transition-all duration-700 ${color}`} style={{ width: `${pct}%` }} />
+      <div className="space-y-3 flex-1">
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-blue-500 flex-shrink-0" />
+          <span className="text-sm text-slate-600 flex-1">With People</span>
+          <span className="text-sm font-extrabold text-slate-900">{portrait}</span>
+          <span className="text-xs text-slate-400 w-9 text-right">{Math.round(portrait/total*100)}%</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-slate-200 flex-shrink-0" />
+          <span className="text-sm text-slate-600 flex-1">Scenery</span>
+          <span className="text-sm font-extrabold text-slate-900">{scenery}</span>
+          <span className="text-xs text-slate-400 w-9 text-right">{Math.round(scenery/total*100)}%</span>
+        </div>
       </div>
     </div>
   );
 }
+
 
 export default function StatsPage() {
   const [stats, setStats] = useState<Stats | null>(null);
@@ -99,6 +144,33 @@ export default function StatsPage() {
       // total faces detected across all face_photos
       const totalFacesDetected = facePhotos.reduce((sum, p) => sum + (p.faceCount ?? 0), 0);
 
+      // Monthly uploads — last 12 months
+      const now = new Date();
+      const monthlyData: { key: string; label: string; count: number }[] = [];
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        monthlyData.push({
+          key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+          label: d.toLocaleDateString("en-US", { month: "short" }),
+          count: 0,
+        });
+      }
+      mapPhotos.forEach((p) => {
+        const raw = (p.captureDate && p.captureDate !== "Not available" && p.captureDate !== "날짜 없음")
+          ? p.captureDate : p.uploadedAt;
+        if (!raw) return;
+        let d = new Date(raw);
+        if (isNaN(d.getTime())) {
+          const mx = raw.match(/(\d{4})[.\-\s]+(\d{1,2})[.\-\s]+(\d{1,2})/);
+          if (mx) d = new Date(parseInt(mx[1]), parseInt(mx[2]) - 1, parseInt(mx[3]));
+        }
+        if (isNaN(d.getTime())) return;
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        const slot = monthlyData.find(s => s.key === key);
+        if (slot) slot.count++;
+      });
+      const monthlyUploads = monthlyData.map(({ label, count }) => ({ label, count }));
+
       setStats({
         totalPhotos: mapPhotos.length,
         totalFaces: facePhotos.length,
@@ -111,6 +183,7 @@ export default function StatsPage() {
         recentPhotos: mapPhotos.slice(0, 6),
         mostFacesPhoto,
         totalFacesDetected,
+        monthlyUploads,
       });
     }
     load();
@@ -119,7 +192,7 @@ export default function StatsPage() {
   if (!stats) {
     return (
       <main className="min-h-screen bg-slate-50 px-6 py-8 pb-28 flex items-center justify-center">
-        <p className="text-slate-400">불러오는 중...</p>
+        <p className="text-slate-400">Loading...</p>
         <BottomNav />
       </main>
     );
@@ -131,44 +204,36 @@ export default function StatsPage() {
 
         {/* Header */}
         <div className="flex items-center gap-3 mb-8">
-          <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-md shadow-indigo-200">
+          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-md shadow-blue-200">
             <BarChart2 size={22} className="text-white" />
           </div>
           <div>
             <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Statistics</h1>
-            <p className="text-slate-500 text-sm">내 사진 활동 요약</p>
+            <p className="text-slate-500 text-sm">Summary of your photo activity</p>
           </div>
         </div>
 
         {/* Stat cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-          <StatCard icon={Camera}   label="저장된 사진"     value={stats.totalPhotos}         color="bg-blue-500"   sub="지도에 저장됨" />
-          <StatCard icon={Users}    label="얼굴 사진"       value={stats.totalFacePhotos}     color="bg-rose-500"   sub={`${stats.totalFacesDetected}명 감지`} />
-          <StatCard icon={MapPin}   label="방문한 장소"     value={stats.totalLocations}      color="bg-emerald-500" sub="고유 위치" />
-          <StatCard icon={Star}     label="즐겨찾기"        value={stats.totalSaved}          color="bg-amber-400"  sub="저장된 사진" />
+          <StatCard icon={Camera}   label="Photos"          value={stats.totalPhotos}         color="bg-blue-500"   sub="saved to map" />
+          <StatCard icon={Users}    label="Face Photos"     value={stats.totalFacePhotos}     color="bg-blue-500"   sub={`${stats.totalFacesDetected} detected`} />
+          <StatCard icon={MapPin}   label="Places Visited"  value={stats.totalLocations}      color="bg-blue-500"   sub="unique locations" />
+          <StatCard icon={Star}     label="Favorites"       value={stats.totalSaved}          color="bg-blue-500"   sub="saved photos" />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
 
           {/* Photo type breakdown */}
           <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-            <div className="flex items-center gap-2 mb-5">
+            <div className="flex items-center gap-2 mb-4">
               <TrendingUp size={17} className="text-indigo-500" />
-              <h2 className="font-bold text-slate-800">사진 분류</h2>
+              <h2 className="font-bold text-slate-800">Photo Types</h2>
             </div>
-            {stats.totalPhotos === 0 ? (
-              <p className="text-slate-400 text-sm text-center py-6">저장된 사진이 없습니다</p>
-            ) : (
-              <div className="space-y-4">
-                <BarRow label="인물 사진" count={stats.portraitCount} total={stats.totalPhotos} color="bg-blue-500" />
-                <BarRow label="일반 사진" count={stats.generalCount}  total={stats.totalPhotos} color="bg-slate-400" />
-                <div className="pt-2 border-t border-slate-100 flex justify-between text-xs text-slate-400">
-                  <span>전체 {stats.totalPhotos}장</span>
-                  {stats.mostFacesPhoto && (
-                    <span>최다 얼굴: {stats.mostFacesPhoto.faceCount}명</span>
-                  )}
-                </div>
-              </div>
+            <DonutChart portrait={stats.portraitCount} scenery={stats.generalCount} total={stats.totalPhotos} />
+            {stats.mostFacesPhoto && stats.totalPhotos > 0 && (
+              <p className="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-100 text-right">
+                Max faces in one photo: <strong className="text-slate-600">{stats.mostFacesPhoto.faceCount}</strong>
+              </p>
             )}
           </section>
 
@@ -176,10 +241,10 @@ export default function StatsPage() {
           <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
             <div className="flex items-center gap-2 mb-5">
               <MapPin size={17} className="text-emerald-500" />
-              <h2 className="font-bold text-slate-800">많이 간 장소 Top 5</h2>
+              <h2 className="font-bold text-slate-800">Top 5 Locations</h2>
             </div>
             {stats.topLocations.length === 0 ? (
-              <p className="text-slate-400 text-sm text-center py-6">위치 정보가 있는 사진이 없습니다</p>
+              <p className="text-slate-400 text-sm text-center py-6">No photos with location data</p>
             ) : (
               <div className="space-y-3">
                 {stats.topLocations.map((loc, i) => (
@@ -192,7 +257,7 @@ export default function StatsPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-center mb-1">
                         <span className="text-sm font-semibold text-slate-700 truncate">{loc.name}</span>
-                        <span className="text-xs text-slate-400 ml-2 flex-shrink-0">{loc.count}장</span>
+                        <span className="text-xs text-slate-400 ml-2 flex-shrink-0">{loc.count}</span>
                       </div>
                       <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
                         <div className="h-full bg-emerald-400 rounded-full"
@@ -206,21 +271,31 @@ export default function StatsPage() {
           </section>
         </div>
 
+        {/* Monthly uploads chart */}
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 mb-5">
+          <div className="flex items-center gap-2 mb-1">
+            <TrendingUp size={17} className="text-blue-500" />
+            <h2 className="font-bold text-slate-800">Monthly Uploads</h2>
+            <span className="text-xs text-slate-400 ml-auto">Last 12 months</span>
+          </div>
+          <MonthlyBarChart data={stats.monthlyUploads} />
+        </section>
+
         {/* Recent uploads */}
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="flex items-center gap-2 px-5 py-3.5 border-b border-slate-100 bg-slate-50">
             <Clock size={16} className="text-slate-400" />
-            <h2 className="font-bold text-slate-800">최근 업로드</h2>
+            <h2 className="font-bold text-slate-800">Recent Uploads</h2>
             <span className="text-xs text-slate-400 bg-slate-200 px-2 py-0.5 rounded-full ml-auto">
-              최근 {stats.recentPhotos.length}장
+              Last {stats.recentPhotos.length}
             </span>
           </div>
           {stats.recentPhotos.length === 0 ? (
             <div className="p-10 text-center">
               <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
-                <Image size={24} className="text-slate-300" />
+                <ImageIcon size={24} className="text-slate-300" />
               </div>
-              <p className="text-slate-400 text-sm">아직 저장된 사진이 없습니다</p>
+              <p className="text-slate-400 text-sm">No photos yet</p>
             </div>
           ) : (
             <div className="p-4 grid grid-cols-3 sm:grid-cols-6 gap-3">
@@ -236,7 +311,7 @@ export default function StatsPage() {
                     </p>
                     {(photo.faceCount ?? 0) > 0 && (
                       <span className="inline-flex items-center gap-0.5 text-[8px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full mt-1">
-                        <Users size={7} /> {photo.faceCount}명
+                        <Users size={7} /> {photo.faceCount}
                       </span>
                     )}
                   </div>
