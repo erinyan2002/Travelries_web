@@ -1152,9 +1152,6 @@ export default function HomePage() {
                 <span className="text-sky-500 font-bold text-lg leading-none">✦</span>
                 <h2 className="text-lg font-bold text-slate-800">Analysis Result</h2>
               </div>
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-sky-50 border border-sky-200 text-sky-600 text-xs font-bold rounded-full">
-                <Sparkles size={10} /> AI Powered
-              </span>
             </div>
 
             <div className="p-5">
