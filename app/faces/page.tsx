@@ -317,6 +317,8 @@ export default function FacesPage() {
   const [selectedCluster, setSelectedCluster] = useState<{ cluster: PersonCluster; idx: number } | null>(null);
   const [customLabels,    setCustomLabels]    = useState<Record<string, string>>({});
   const [editingId,       setEditingId]       = useState<string | null>(null);
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [editDraft,       setEditDraft]       = useState("");
   const [uid,             setUid]             = useState<string | null>(null);
   const [threshold,       setThreshold]       = useState(0.45);
@@ -350,6 +352,19 @@ export default function FacesPage() {
   async function handleDelete(id: string) {
     await deletePhotoEverywhere(id);
     setStoredPhotos((prev) => prev.filter((p) => p.id !== id));
+    setConfirmDeleteId(null);
+  }
+
+  async function handleClearAll() {
+    if (!uid) return;
+    for (const p of storedPhotos) {
+      await deletePhotoEverywhere(p.id);
+    }
+    localStorage.removeItem(`faces-${uid}`);
+    localStorage.removeItem(`face-labels-${uid}`);
+    setStoredPhotos([]);
+    setCustomLabels({});
+    setConfirmClearAll(false);
   }
 
   const clusters      = useMemo(() => clusterByPerson(storedPhotos, threshold), [storedPhotos, threshold]);
@@ -376,10 +391,18 @@ export default function FacesPage() {
               <div className="w-11 h-11 bg-white/20 rounded-2xl flex items-center justify-center shadow-inner">
                 <Scan size={20} className="text-white" />
               </div>
-              <div>
+              <div className="flex-1">
                 <h1 className="text-2xl font-black text-white tracking-tight leading-none">Faces</h1>
                 <p className="text-sky-100 text-xs mt-0.5">AI-powered face detection & clustering</p>
               </div>
+              {storedPhotos.length > 0 && (
+                <button
+                  onClick={() => setConfirmClearAll(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-red-500/80 text-white text-xs font-bold rounded-xl transition-all border border-white/20"
+                >
+                  <Trash2 size={12} /> Clear All
+                </button>
+              )}
             </div>
             <div className="grid grid-cols-3 gap-2">
               {[
@@ -595,7 +618,7 @@ export default function FacesPage() {
 
                             {/* Delete */}
                             <button
-                              onClick={(e) => { e.stopPropagation(); if (confirm("Delete this photo?")) handleDelete(photo.id); }}
+                              onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(photo.id); }}
                               className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-all">
                               <Trash2 size={12} />
                             </button>
@@ -647,6 +670,52 @@ export default function FacesPage() {
         )}
       </div>
       <BottomNav />
+
+      {/* ── Clear All confirm modal ── */}
+      {confirmClearAll && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[3000] flex items-center justify-center p-6">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6 text-center">
+            <div className="w-14 h-14 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <Trash2 size={26} className="text-red-500" />
+            </div>
+            <h3 className="text-lg font-extrabold text-slate-900 mb-1">Clear all face data?</h3>
+            <p className="text-sm text-slate-500 mb-5">모든 얼굴 인식 데이터와 사진이 삭제됩니다. 복구할 수 없습니다.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmClearAll(false)}
+                className="flex-1 py-3 rounded-2xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50 transition-colors">
+                Back
+              </button>
+              <button onClick={handleClearAll}
+                className="flex-1 py-3 rounded-2xl bg-red-500 hover:bg-red-600 text-white font-bold text-sm transition-colors">
+                Delete All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Single photo confirm modal ── */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[3000] flex items-center justify-center p-6">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6 text-center">
+            <div className="w-14 h-14 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <Trash2 size={26} className="text-red-500" />
+            </div>
+            <h3 className="text-lg font-extrabold text-slate-900 mb-1">Delete this photo?</h3>
+            <p className="text-sm text-slate-500 mb-5">삭제하면 복구할 수 없습니다.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmDeleteId(null)}
+                className="flex-1 py-3 rounded-2xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50 transition-colors">
+                Back
+              </button>
+              <button onClick={() => handleDelete(confirmDeleteId)}
+                className="flex-1 py-3 rounded-2xl bg-red-500 hover:bg-red-600 text-white font-bold text-sm transition-colors">
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
