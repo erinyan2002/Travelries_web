@@ -9,8 +9,8 @@ import { MapPhoto } from "@/lib/types";
 import {
   Camera, Upload, MapPin, Users, CalendarDays, Clock,
   FileImage, Ruler, CheckCircle2, Loader2, AlertTriangle,
-  Search, Navigation, X, Check, Wifi,
-  Coffee, Utensils, Wine, Sparkles, Trash2, Globe, Map,
+  Search, Navigation, X, Check,
+  Coffee, Utensils, Wine, Sparkles, Trash2, Map,
 } from "lucide-react";
 import AppLogo from "@/components/AppLogo";
 
@@ -995,19 +995,6 @@ export default function HomePage() {
                 </div>
                 <h2 className="text-lg font-bold text-slate-800">Upload Photo</h2>
               </div>
-              <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-semibold ${
-                backendStatus === "online"
-                  ? "bg-sky-50 border-sky-200 text-sky-600"
-                  : backendStatus === "offline"
-                    ? "bg-slate-50 border-slate-200 text-slate-500"
-                    : "bg-amber-50 border-amber-200 text-amber-600"
-              }`}>
-                {backendStatus === "online"
-                  ? <><Wifi size={11} /> API Connected</>
-                  : backendStatus === "offline"
-                    ? <><Globe size={11} /> Browser Mode</>
-                    : "Checking..."}
-              </div>
             </div>
 
             <div className="p-5 space-y-4">
@@ -1056,13 +1043,6 @@ export default function HomePage() {
                 </div>
               )}
 
-              {/* Face detection message */}
-              {faceMessage && (
-                <div className="flex items-start gap-3 bg-sky-50 border border-sky-200 rounded-xl px-4 py-3">
-                  <Users size={16} className="text-sky-600 mt-0.5 flex-shrink-0" />
-                  <p className="text-sm font-semibold text-sky-700">{faceMessage}</p>
-                </div>
-              )}
 
               {/* GPS missing — manual location input */}
               {photoInfo && photoInfo.lat === null && (
@@ -1162,25 +1142,6 @@ export default function HomePage() {
                 </div>
               )}
 
-              {/* AI mode pill */}
-              {isModelLoaded && (
-                <div className="flex justify-center pt-1">
-                  <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border ${
-                    hasExtraModels
-                      ? "bg-sky-50 text-sky-600 border-sky-200"
-                      : modelType === "ssd"
-                        ? "bg-emerald-50 text-emerald-600 border-emerald-200"
-                        : "bg-amber-50 text-amber-600 border-amber-200"
-                  }`}>
-                    <Sparkles size={10} />
-                    {hasExtraModels
-                      ? "Premium Mode (SSD + Age/Gender + Expression)"
-                      : modelType === "ssd"
-                        ? "Advanced Mode (SSD + Face Recognition)"
-                        : "Basic Mode (Multi-scale)"}
-                  </div>
-                </div>
-              )}
             </div>
           </section>
 
