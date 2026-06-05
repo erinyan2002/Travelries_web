@@ -44,6 +44,15 @@ type BatchFile = {
   name: string;
   status: "pending" | "processing" | "done" | "error";
   info: string;
+  photoId?: string;
+  imageUrl?: string;
+  faceCount?: number;
+  location?: string;
+  captureDate?: string;
+  captureTime?: string;
+  lat?: number;
+  lng?: number;
+  editName?: string;
 };
 
 type PhotoInfo = {
@@ -637,10 +646,23 @@ export default function HomePage() {
         const infoParts: string[] = [];
         if (faceCount > 0) infoParts.push(`${faceCount} face(s)`);
         infoParts.push(location ? location.split(",")[0] : "No GPS");
-        items[i] = { name: file.name, status: "done", info: infoParts.join(" · ") };
+        items[i] = {
+          ...items[i],
+          status: "done",
+          info: infoParts.join(" · "),
+          photoId,
+          imageUrl,
+          faceCount,
+          location,
+          captureDate,
+          captureTime,
+          lat,
+          lng,
+          editName: file.name,
+        };
       } catch (err) {
         console.error(`Batch error [${file.name}]:`, err);
-        items[i] = { name: file.name, status: "error", info: "Failed" };
+        items[i] = { ...items[i], status: "error", info: "Failed" };
       }
       setBatchItems([...items]);
     }
@@ -650,6 +672,21 @@ export default function HomePage() {
   function resetBatch() {
     setBatchActive(false);
     setBatchItems([]);
+  }
+
+  async function handleBatchRename(photoId: string, newName: string) {
+    if (!newName.trim() || !photoId) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    const uid = user?.id ?? "guest";
+    const trimmed = newName.trim();
+
+    const mapPhotos: MapPhoto[] = JSON.parse(localStorage.getItem(`map-${uid}`) ?? "[]");
+    const mi = mapPhotos.findIndex(p => p.id === photoId);
+    if (mi >= 0) { mapPhotos[mi].fileName = trimmed; localStorage.setItem(`map-${uid}`, JSON.stringify(mapPhotos)); }
+
+    const facePhotos: FacePhoto[] = JSON.parse(localStorage.getItem(`faces-${uid}`) ?? "[]");
+    const fi = facePhotos.findIndex(p => p.id === photoId);
+    if (fi >= 0) { facePhotos[fi].fileName = trimmed; localStorage.setItem(`faces-${uid}`, JSON.stringify(facePhotos)); }
   }
 
   function clearSelection() {
@@ -820,32 +857,125 @@ export default function HomePage() {
                 </div>
                 <p className="text-xs text-slate-400 mt-1.5">{total > 0 ? Math.round((done / total) * 100) : 0}% complete</p>
               </div>
-              <div className="px-6 pb-4 space-y-2 max-h-72 overflow-y-auto">
-                {batchItems.map((item, i) => (
-                  <div key={i} className="flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
-                    {item.status === "pending"    && <div className="w-5 h-5 rounded-full border-2 border-slate-300 flex-shrink-0" />}
-                    {item.status === "processing" && <Loader2 size={18} className="text-blue-500 animate-spin flex-shrink-0" />}
-                    {item.status === "done"       && <CheckCircle2 size={18} className="text-emerald-500 flex-shrink-0" />}
-                    {item.status === "error"      && <AlertTriangle size={18} className="text-red-400 flex-shrink-0" />}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-slate-800 truncate">{item.name}</p>
-                      <p className={`text-xs mt-0.5 ${item.status === "error" ? "text-red-400" : "text-slate-400"}`}>
-                        {item.info || (item.status === "pending" ? "Waiting..." : item.status === "processing" ? "Processing..." : "")}
-                      </p>
+              {/* 처리 중: 간단한 목록 */}
+              {!allDone && (
+                <div className="px-6 pb-4 space-y-2 max-h-60 overflow-y-auto">
+                  {batchItems.map((item, i) => (
+                    <div key={i} className="flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
+                      {item.status === "pending"    && <div className="w-5 h-5 rounded-full border-2 border-slate-300 flex-shrink-0" />}
+                      {item.status === "processing" && <Loader2 size={18} className="text-blue-500 animate-spin flex-shrink-0" />}
+                      {item.status === "done"       && <CheckCircle2 size={18} className="text-emerald-500 flex-shrink-0" />}
+                      {item.status === "error"      && <AlertTriangle size={18} className="text-red-400 flex-shrink-0" />}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-slate-800 truncate">{item.name}</p>
+                        <p className={`text-xs mt-0.5 ${item.status === "error" ? "text-red-400" : "text-slate-400"}`}>
+                          {item.info || (item.status === "pending" ? "Waiting..." : "Processing...")}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 완료 후: 사진 카드 리뷰 */}
               {allDone && (
-                <div className="px-6 pb-5">
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-center gap-3">
+                <div className="px-6 pb-6">
+                  {/* 완료 배너 */}
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-center gap-3 mb-4">
                     <CheckCircle2 size={18} className="text-emerald-500 flex-shrink-0" />
                     <div>
                       <p className="text-sm font-bold text-emerald-700">{saved} photo(s) saved!</p>
                       {totalFacesFound > 0 && (
-                        <p className="text-xs text-emerald-600 mt-0.5">{totalFacesFound} face(s) detected and saved to Faces album.</p>
+                        <p className="text-xs text-emerald-600 mt-0.5">{totalFacesFound} face(s) detected · tap a photo to rename</p>
                       )}
                     </div>
+                  </div>
+
+                  {/* 사진 카드 그리드 */}
+                  <div className="space-y-3">
+                    {batchItems.filter(b => b.status === "done" && b.imageUrl).map((item, i) => (
+                      <div key={i} className="flex gap-3 bg-slate-50 rounded-2xl border border-slate-100 overflow-hidden">
+                        {/* 썸네일 */}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={item.imageUrl} alt={item.name}
+                          className="w-24 h-24 object-cover flex-shrink-0 bg-slate-200" />
+
+                        {/* 정보 + 이름 변경 */}
+                        <div className="flex-1 min-w-0 py-3 pr-3">
+                          {/* 분석 뱃지들 */}
+                          <div className="flex flex-wrap gap-1.5 mb-2">
+                            {(item.faceCount ?? 0) > 0 ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                                <Users size={9} /> {item.faceCount} face{(item.faceCount ?? 0) > 1 ? "s" : ""}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
+                                <FileImage size={9} /> Scenery
+                              </span>
+                            )}
+                            {item.captureDate && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
+                                <CalendarDays size={9} /> {item.captureDate}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* 위치 */}
+                          {item.location && (
+                            <p className="text-[10px] text-slate-400 flex items-center gap-1 mb-2 truncate">
+                              <MapPin size={9} className="flex-shrink-0" />
+                              {item.location.split(",")[0]}
+                            </p>
+                          )}
+
+                          {/* 이름 변경 인풋 + 확인 버튼 */}
+                          <div className="flex gap-1.5">
+                            <input
+                              value={item.editName ?? item.name}
+                              onChange={(e) => {
+                                const updated = [...batchItems];
+                                updated[i] = { ...updated[i], editName: e.target.value };
+                                setBatchItems(updated);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && item.photoId) {
+                                  handleBatchRename(item.photoId, item.editName ?? item.name);
+                                  const updated = [...batchItems];
+                                  updated[i] = { ...updated[i], name: item.editName ?? item.name };
+                                  setBatchItems(updated);
+                                  (e.target as HTMLInputElement).blur();
+                                }
+                              }}
+                              className="flex-1 min-w-0 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-all"
+                              placeholder="파일 이름 변경..."
+                            />
+                            <button
+                              onClick={() => {
+                                if (!item.photoId) return;
+                                handleBatchRename(item.photoId, item.editName ?? item.name);
+                                const updated = [...batchItems];
+                                updated[i] = { ...updated[i], name: item.editName ?? item.name };
+                                setBatchItems(updated);
+                              }}
+                              className="w-8 h-8 flex items-center justify-center bg-blue-500 hover:bg-blue-600 text-white rounded-lg flex-shrink-0 transition-colors"
+                            >
+                              <Check size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* 에러 항목 */}
+                    {batchItems.filter(b => b.status === "error").map((item, i) => (
+                      <div key={`err-${i}`} className="flex items-center gap-3 bg-red-50 rounded-xl px-4 py-3 border border-red-100">
+                        <AlertTriangle size={16} className="text-red-400 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-red-700 truncate">{item.name}</p>
+                          <p className="text-xs text-red-400">Failed to process</p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
