@@ -13,3 +13,4 @@ insightface
 onnxruntime
 # AI travel diary + landmark recognition (needs ANTHROPIC_API_KEY, see utils/claude_utils.py)
 anthropic
+python-dotenv

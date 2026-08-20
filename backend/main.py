@@ -9,6 +9,12 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 try:
+    from dotenv import load_dotenv
+    load_dotenv()  # reads backend/.env (e.g. ANTHROPIC_API_KEY) into the environment
+except Exception:
+    pass
+
+try:
     from utils.face_utils import detect_faces as ssd_detect_faces
     from utils.exif_utils import extract_exif_info
     _UTILS_OK = True
