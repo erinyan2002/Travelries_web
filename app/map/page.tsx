@@ -2,13 +2,14 @@
 
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
+import "leaflet.heat";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { MapContainer, Marker, TileLayer } from "react-leaflet";
+import { MapContainer, Marker, Polyline, TileLayer, useMap } from "react-leaflet";
 import BottomNav from "@/components/BottomNav";
 import { supabase } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
-import { MapPin, ArrowLeft, Trash2, X, CalendarDays, ChevronLeft, ChevronRight, Share2, Loader2 } from "lucide-react";
+import { MapPin, ArrowLeft, Trash2, X, CalendarDays, ChevronLeft, ChevronRight, Share2, Loader2, Route, Flame } from "lucide-react";
 import { sharePhoto } from "@/lib/shareUtils";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -32,6 +33,18 @@ function makeClusterIcon(photo: MapPhoto, count: number): L.DivIcon {
     </div>`,
     className: "", iconSize: [52, 52], iconAnchor: [26, 26],
   });
+}
+
+function HeatmapLayer({ points }: { points: [number, number, number][] }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (points.length === 0) return;
+    const layer = L.heatLayer(points, { radius: 30, blur: 22, maxZoom: 12 }).addTo(map);
+    return () => { map.removeLayer(layer); };
+  }, [map, points]);
+
+  return null;
 }
 
 function InfoChip({ label, value }: { label: string; value: string }) {
@@ -166,6 +179,8 @@ export default function MapPage() {
   const [photos,        setPhotos]        = useState<MapPhoto[]>([]);
   const [activeCluster, setActiveCluster] = useState<Cluster | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showRoute,   setShowRoute]   = useState(false);
+  const [showHeatmap, setShowHeatmap] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -191,6 +206,23 @@ export default function MapPage() {
     if (photos.length === 0) return [36.5, 127.8];
     return [photos[0].lat!, photos[0].lng!];
   }, [photos]);
+
+  // captureDate/captureTime are locale-formatted display strings and aren't reliably
+  // sortable — captureTimestamp (ISO) is the real chronological key, falling back to
+  // uploadedAt for photos saved before that field existed.
+  const routePositions = useMemo<[number, number][]>(() => {
+    const sorted = [...photos].sort((a, b) => {
+      const ta = a.captureTimestamp ?? a.uploadedAt ?? "";
+      const tb = b.captureTimestamp ?? b.uploadedAt ?? "";
+      return ta.localeCompare(tb);
+    });
+    return sorted.map((p) => [p.lat!, p.lng!]);
+  }, [photos]);
+
+  const heatPoints = useMemo<[number, number, number][]>(
+    () => photos.map((p) => [p.lat!, p.lng!, 1]),
+    [photos]
+  );
 
   async function handleClear() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -228,10 +260,31 @@ export default function MapPage() {
           </div>
         </div>
 
+        {photos.length > 1 && (
+          <div className="flex gap-2 mb-3">
+            <button onClick={() => setShowRoute((v) => !v)}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors ${
+                showRoute ? "bg-blue-500 border-blue-500 text-white" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+              }`}>
+              <Route size={14} /> Route
+            </button>
+            <button onClick={() => setShowHeatmap((v) => !v)}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors ${
+                showHeatmap ? "bg-orange-500 border-orange-500 text-white" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+              }`}>
+              <Flame size={14} /> Heatmap
+            </button>
+          </div>
+        )}
+
         <div className="h-[380px] w-full rounded-2xl overflow-hidden shadow-sm border border-slate-200 mb-6">
           <MapContainer center={center} zoom={7} scrollWheelZoom={true} style={{ height: "100%", width: "100%" }}>
             <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            {clusters.map((cluster) => (
+            {showRoute && routePositions.length > 1 && (
+              <Polyline positions={routePositions} pathOptions={{ color: "#2563eb", weight: 3, opacity: 0.75, dashArray: "6 8" }} />
+            )}
+            {showHeatmap && <HeatmapLayer points={heatPoints} />}
+            {!showHeatmap && clusters.map((cluster) => (
               <Marker key={cluster.key} position={[cluster.lat, cluster.lng]}
                 icon={makeClusterIcon(cluster.photos[0], cluster.photos.length)}
                 eventHandlers={{ click: () => setActiveCluster(cluster) }} />

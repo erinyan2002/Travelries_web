@@ -9,6 +9,7 @@ export type MapPhoto = {
   location?: string;
   captureDate?: string;
   captureTime?: string;
+  captureTimestamp?: string; // ISO 8601, for chronological sorting — captureDate/captureTime are locale-formatted display strings and aren't reliably sortable
   uploadedAt?: string;
   faceCount?: number;
   image_path?: string; // storage path, used for deletion
@@ -46,6 +47,7 @@ export function rowToMapPhoto(
     location: (row.location as string) ?? undefined,
     captureDate: (row.capture_date as string) ?? undefined,
     captureTime: (row.capture_time as string) ?? undefined,
+    captureTimestamp: (row.capture_timestamp as string) ?? undefined,
     uploadedAt: row.uploaded_at as string,
     faceCount: (row.face_count as number) ?? 0,
     image_path: row.image_path as string,
@@ -65,6 +67,10 @@ export function rowToFacePhoto(
     uploadedAt: row.uploaded_at as string,
     boxes: (row.boxes as FacePhoto["boxes"]) ?? undefined,
     descriptors: (row.descriptors as number[][]) ?? undefined,
+    confidences: (row.confidences as number[]) ?? undefined,
+    ages: (row.ages as number[]) ?? undefined,
+    genders: (row.genders as string[]) ?? undefined,
+    expressions: (row.expressions as string[]) ?? undefined,
     lat: (row.lat as number) ?? undefined,
     lng: (row.lng as number) ?? undefined,
     location: (row.location as string) ?? undefined,

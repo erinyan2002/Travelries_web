@@ -63,6 +63,7 @@ type PhotoInfo = {
   uploadedAt: string;
   captureDate: string;
   captureTime: string;
+  captureTimestamp: string | null;
   location: string;
   lat: number | null;
   lng: number | null;
@@ -401,6 +402,7 @@ export default function HomePage() {
       let lng: number | null = null;
       let captureDate = "Not available";
       let captureTime = "Not available";
+      let captureTimestamp: string | null = null;
       let location    = "No GPS data";
       let detectedFaceCount = 0;
       let faceBoxes: Array<{ x: number; y: number; width: number; height: number }> = [];
@@ -416,6 +418,9 @@ export default function HomePage() {
         lng           = data.longitude  ?? null;
         captureDate   = data.captureDate ?? "Not available";
         captureTime   = data.captureTime ?? "Not available";
+        captureTimestamp = data.captureDate && data.captureTime
+          ? new Date(`${data.captureDate}T${data.captureTime}`).toISOString()
+          : null;
         location      = data.location ?? (lat !== null ? `${lat.toFixed(6)}, ${lng?.toFixed(6)}` : "No GPS data");
         detectedFaceCount = data.faceCount ?? 0;
         faceBoxes         = (data.faceBoxes ?? []).map((b) => ({ x: b.x_norm, y: b.y_norm, width: b.w_norm, height: b.h_norm }));
@@ -435,6 +440,7 @@ export default function HomePage() {
           const d = new Date(takenAt);
           captureDate = d.toLocaleDateString();
           captureTime = d.toLocaleTimeString();
+          captureTimestamp = d.toISOString();
         }
         if (lat !== null && lng !== null) {
           const addr = await reverseGeocode(lat, lng);
@@ -461,7 +467,7 @@ export default function HomePage() {
       setPhotoInfo({
         fileName: file.name, fileType: file.type || "unknown",
         fileSize: formatBytes(file.size), uploadedAt: new Date().toLocaleString(),
-        captureDate, captureTime, location, lat, lng,
+        captureDate, captureTime, captureTimestamp, location, lat, lng,
         faceCount: detectedFaceCount, category,
       });
 
@@ -587,12 +593,14 @@ export default function HomePage() {
         const lng = typeof gpsData?.longitude === "number" ? gpsData.longitude : undefined;
         let captureDate: string | undefined;
         let captureTime: string | undefined;
+        let captureTimestamp: string | undefined;
         let location:    string | undefined;
         const takenAt = exifData?.DateTimeOriginal || exifData?.CreateDate || null;
         if (takenAt) {
           const d = new Date(takenAt);
           captureDate = d.toLocaleDateString();
           captureTime = d.toLocaleTimeString();
+          captureTimestamp = d.toISOString();
         }
         if (lat !== undefined && lng !== undefined) {
           const addr = await reverseGeocode(lat, lng);
@@ -630,7 +638,7 @@ export default function HomePage() {
         }
 
         const mapPhotos: MapPhoto[] = JSON.parse(localStorage.getItem(mapKey) ?? "[]");
-        mapPhotos.unshift({ id: photoId, fileName: file.name, imageUrl, lat, lng, location, captureDate, captureTime, uploadedAt: new Date().toISOString(), faceCount });
+        mapPhotos.unshift({ id: photoId, fileName: file.name, imageUrl, lat, lng, location, captureDate, captureTime, captureTimestamp, uploadedAt: new Date().toISOString(), faceCount });
         localStorage.setItem(mapKey, JSON.stringify(mapPhotos));
         if (faceCount > 0) {
           const allFacePhotos: FacePhoto[] = JSON.parse(localStorage.getItem(facesKey) ?? "[]");
@@ -766,6 +774,7 @@ export default function HomePage() {
         location: manualCoords?.name ?? photoInfo.location,
         captureDate: photoInfo.captureDate !== "Not available" ? photoInfo.captureDate : undefined,
         captureTime: photoInfo.captureTime !== "Not available" ? photoInfo.captureTime : undefined,
+        captureTimestamp: photoInfo.captureTimestamp ?? undefined,
         uploadedAt: new Date().toISOString(),
         faceCount: photoInfo.faceCount,
       };
