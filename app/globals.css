@@ -38,3 +38,11 @@ input[type="range"] {
   transform: translateY(-2px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
 }
+
+/* Travel route line on the map — flowing dashes to read as a direction of travel */
+@keyframes route-flow {
+  to { stroke-dashoffset: -28; }
+}
+.route-flow-line {
+  animation: route-flow 1.1s linear infinite;
+}

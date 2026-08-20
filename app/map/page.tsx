@@ -35,6 +35,52 @@ function makeClusterIcon(photo: MapPhoto, count: number): L.DivIcon {
   });
 }
 
+function bearingDeg(a: [number, number], b: [number, number]): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const [lat1, lon1] = [toRad(a[0]), toRad(a[1])];
+  const [lat2, lon2] = [toRad(b[0]), toRad(b[1])];
+  const dLon = lon2 - lon1;
+  const y = Math.sin(dLon) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+  return (Math.atan2(y, x) * 180) / Math.PI;
+}
+
+function makeArrowIcon(bearing: number): L.DivIcon {
+  return L.divIcon({
+    html: `<div style="width:24px;height:24px;transform:rotate(${bearing}deg);filter:drop-shadow(0 1px 2px rgba(0,0,0,0.35));">
+      <svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 3 L19 20 L12 15.5 L5 20 Z" fill="#2563eb" stroke="white" stroke-width="1.6" stroke-linejoin="round" /></svg>
+    </div>`,
+    className: "", iconSize: [24, 24], iconAnchor: [12, 12],
+  });
+}
+
+function RouteLayer({ positions }: { positions: [number, number][] }) {
+  const segments = useMemo(() => {
+    const segs: { key: string; mid: [number, number]; bearing: number }[] = [];
+    for (let i = 0; i < positions.length - 1; i++) {
+      const a = positions[i], b = positions[i + 1];
+      if (a[0] === b[0] && a[1] === b[1]) continue; // same spot, no arrow needed
+      segs.push({
+        key: `${i}`,
+        mid: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2],
+        bearing: bearingDeg(a, b),
+      });
+    }
+    return segs;
+  }, [positions]);
+
+  return (
+    <>
+      {/* White casing underneath so the route reads clearly against any tile color */}
+      <Polyline positions={positions} pathOptions={{ color: "#ffffff", weight: 8, opacity: 0.9, lineCap: "round", lineJoin: "round" }} interactive={false} />
+      <Polyline positions={positions} pathOptions={{ color: "#2563eb", weight: 4, opacity: 1, lineCap: "round", lineJoin: "round", dashArray: "14 12", className: "route-flow-line" }} interactive={false} />
+      {segments.map((seg) => (
+        <Marker key={seg.key} position={seg.mid} icon={makeArrowIcon(seg.bearing)} interactive={false} />
+      ))}
+    </>
+  );
+}
+
 function HeatmapLayer({ points }: { points: [number, number, number][] }) {
   const map = useMap();
 
@@ -280,9 +326,7 @@ export default function MapPage() {
         <div className="h-[380px] w-full rounded-2xl overflow-hidden shadow-sm border border-slate-200 mb-6">
           <MapContainer center={center} zoom={7} scrollWheelZoom={true} style={{ height: "100%", width: "100%" }}>
             <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            {showRoute && routePositions.length > 1 && (
-              <Polyline positions={routePositions} pathOptions={{ color: "#2563eb", weight: 3, opacity: 0.75, dashArray: "6 8" }} />
-            )}
+            {showRoute && routePositions.length > 1 && <RouteLayer positions={routePositions} />}
             {showHeatmap && <HeatmapLayer points={heatPoints} />}
             {!showHeatmap && clusters.map((cluster) => (
               <Marker key={cluster.key} position={[cluster.lat, cluster.lng]}
