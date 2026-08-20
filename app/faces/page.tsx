@@ -37,6 +37,9 @@ function euclidean(a: number[], b: number[]): number {
   return Math.sqrt(s);
 }
 
+// Fixed after tuning — 0.55 gave the most accurate person grouping in testing.
+const MATCH_THRESHOLD = 0.55;
+
 function clusterByPerson(photos: FacePhoto[], threshold: number): PersonCluster[] {
   const clusters: PersonCluster[] = [];
   // Sort oldest-first so the seed face of each cluster is stable when new photos are added later
@@ -321,7 +324,6 @@ export default function FacesPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [editDraft,       setEditDraft]       = useState("");
   const [uid,             setUid]             = useState<string | null>(null);
-  const [threshold,       setThreshold]       = useState(0.55);
   const router = useRouter();
 
   useEffect(() => {
@@ -339,13 +341,6 @@ export default function FacesPage() {
       );
       setCustomLabels(validLabels);
       setStoredPhotos(rawFaces);
-
-      const rawThreshold = localStorage.getItem(`face-threshold-${u}`);
-      if (rawThreshold) {
-        const parsed = parseFloat(rawThreshold);
-        if (!Number.isNaN(parsed)) setThreshold(parsed);
-      }
-
       setLoading(false);
     }
     load();
@@ -355,11 +350,6 @@ export default function FacesPage() {
     if (!uid) return;
     localStorage.setItem(`face-labels-${uid}`, JSON.stringify(customLabels));
   }, [customLabels, uid]);
-
-  useEffect(() => {
-    if (!uid) return;
-    localStorage.setItem(`face-threshold-${uid}`, String(threshold));
-  }, [threshold, uid]);
 
   async function handleDelete(id: string) {
     await deletePhotoEverywhere(id);
@@ -379,7 +369,7 @@ export default function FacesPage() {
     setConfirmClearAll(false);
   }
 
-  const clusters      = useMemo(() => clusterByPerson(storedPhotos, threshold), [storedPhotos, threshold]);
+  const clusters      = useMemo(() => clusterByPerson(storedPhotos, MATCH_THRESHOLD), [storedPhotos]);
   const hasDescriptors = storedPhotos.some((p) => p.descriptors?.length);
   const totalFaces    = storedPhotos.reduce((s, p) => s + (p.faceCount ?? 0), 0);
 
@@ -488,29 +478,6 @@ export default function FacesPage() {
                   </div>
                 ) : (
                   <>
-                    {/* Threshold slider */}
-                    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 mb-4">
-                      <div className="flex items-center justify-between mb-2.5">
-                        <p className="text-sm font-bold text-slate-700">Match Sensitivity</p>
-                        <span className="text-sm font-black text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full tabular-nums">
-                          {threshold.toFixed(2)}
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0.30"
-                        max="0.70"
-                        step="0.05"
-                        value={threshold}
-                        onChange={(e) => setThreshold(parseFloat(e.target.value))}
-                        className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-blue-500 bg-slate-200"
-                      />
-                      <div className="flex justify-between text-[10px] text-slate-400 mt-1.5">
-                        <span>← Strict · more groups</span>
-                        <span>Loose · fewer groups →</span>
-                      </div>
-                    </div>
-
                     {clusters.length === 0 ? (
                       <p className="text-center text-slate-400 py-12 text-sm">No faces detected yet. Upload photos with people to see clusters.</p>
                     ) : (
