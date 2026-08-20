@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useState, useEffect } from "react";
+import { ChangeEvent, useState, useEffect, useRef } from "react";
 import * as exifr from "exifr";
 import * as faceapi from "face-api.js";
 import BottomNav from "@/components/BottomNav";
@@ -47,6 +47,7 @@ type BatchFile = {
   photoId?: string;
   imageUrl?: string;
   faceCount?: number;
+  fileSize?: string;
   location?: string;
   captureDate?: string;
   captureTime?: string;
@@ -297,6 +298,7 @@ function InfoRow({ label, value, icon: Icon }: {
 
 // ── Main Component ──────────────────────────────
 export default function HomePage() {
+  const uploadRequestIdRef = useRef(0);
   const [selectedFile,   setSelectedFile]   = useState<File | null>(null);
   const [previewUrl,     setPreviewUrl]     = useState("");
   const [photoInfo,      setPhotoInfo]      = useState<PhotoInfo | null>(null);
@@ -376,6 +378,7 @@ export default function HomePage() {
     if (files.length === 0) return;
     if (files.length > 1) { processBatch(files); return; }
     const file = files[0];
+    const requestId = ++uploadRequestIdRef.current;
 
     setSavedMessage("");
     setFaceMessage("");
@@ -450,6 +453,10 @@ export default function HomePage() {
         }
       }
 
+      // A newer file was selected while this one was still being analyzed — drop this
+      // stale result instead of overwriting the preview/analysis panel for the new file.
+      if (requestId !== uploadRequestIdRef.current) return;
+
       const category = detectedFaceCount > 0 ? "Portrait" : "Scenery";
       setPhotoInfo({
         fileName: file.name, fileType: file.type || "unknown",
@@ -506,7 +513,7 @@ export default function HomePage() {
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (requestId === uploadRequestIdRef.current) setLoading(false);
     }
   }
 
@@ -653,6 +660,7 @@ export default function HomePage() {
           photoId,
           imageUrl,
           faceCount,
+          fileSize: formatBytes(file.size),
           location,
           captureDate,
           captureTime,
@@ -918,13 +926,29 @@ export default function HomePage() {
                                 <CalendarDays size={9} /> {item.captureDate}
                               </span>
                             )}
+                            {item.captureTime && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
+                                <Clock size={9} /> {item.captureTime}
+                              </span>
+                            )}
+                            {item.fileSize && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
+                                <Ruler size={9} /> {item.fileSize}
+                              </span>
+                            )}
                           </div>
 
-                          {/* 위치 */}
+                          {/* 위치 + 좌표 */}
                           {item.location && (
-                            <p className="text-[10px] text-slate-400 flex items-center gap-1 mb-2 truncate">
+                            <p className="text-[10px] text-slate-400 flex items-center gap-1 mb-1 truncate">
                               <MapPin size={9} className="flex-shrink-0" />
                               {item.location.split(",")[0]}
+                            </p>
+                          )}
+                          {item.lat !== undefined && item.lng !== undefined && (
+                            <p className="text-[10px] text-slate-400 flex items-center gap-1 mb-2 truncate">
+                              <Navigation size={9} className="flex-shrink-0" />
+                              {item.lat.toFixed(6)}, {item.lng.toFixed(6)}
                             </p>
                           )}
 
@@ -1007,7 +1031,7 @@ export default function HomePage() {
 
                 {/* Inner drop zone */}
                 <label className="relative flex flex-col items-center justify-center border-2 border-dashed border-sky-200 rounded-xl py-10 px-6 cursor-pointer bg-white/60 hover:bg-white/80 hover:border-sky-400 transition-all duration-200 group overflow-hidden">
-                  <input type="file" accept="image/*" multiple onChange={handleFileChange} className="hidden" />
+                  <input type="file" accept="image/*" multiple onChange={handleFileChange} disabled={loading} className="hidden" />
 
                   {/* Sparkles inside box, around the icon */}
                   <span className="absolute left-[28%] top-[35%] text-sky-400 opacity-70 text-sm select-none pointer-events-none">✦</span>
