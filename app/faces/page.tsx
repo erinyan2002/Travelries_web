@@ -321,7 +321,7 @@ export default function FacesPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [editDraft,       setEditDraft]       = useState("");
   const [uid,             setUid]             = useState<string | null>(null);
-  const [threshold,       setThreshold]       = useState(0.45);
+  const [threshold,       setThreshold]       = useState(0.55);
   const router = useRouter();
 
   useEffect(() => {
@@ -339,6 +339,13 @@ export default function FacesPage() {
       );
       setCustomLabels(validLabels);
       setStoredPhotos(rawFaces);
+
+      const rawThreshold = localStorage.getItem(`face-threshold-${u}`);
+      if (rawThreshold) {
+        const parsed = parseFloat(rawThreshold);
+        if (!Number.isNaN(parsed)) setThreshold(parsed);
+      }
+
       setLoading(false);
     }
     load();
@@ -348,6 +355,11 @@ export default function FacesPage() {
     if (!uid) return;
     localStorage.setItem(`face-labels-${uid}`, JSON.stringify(customLabels));
   }, [customLabels, uid]);
+
+  useEffect(() => {
+    if (!uid) return;
+    localStorage.setItem(`face-threshold-${uid}`, String(threshold));
+  }, [threshold, uid]);
 
   async function handleDelete(id: string) {
     await deletePhotoEverywhere(id);
