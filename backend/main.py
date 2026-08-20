@@ -1,10 +1,12 @@
 from pathlib import Path
+import os
 import uuid
 import shutil
 
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 try:
     from utils.face_utils import detect_faces as ssd_detect_faces
@@ -18,6 +20,12 @@ try:
     _PLACES_OK = True
 except Exception:
     _PLACES_OK = False
+
+try:
+    from utils.claude_utils import generate_travel_diary, recognize_landmark
+    _CLAUDE_OK = True
+except Exception:
+    _CLAUDE_OK = False
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -49,7 +57,12 @@ def root():
 @app.get("/health")
 def health():
     """Frontend polls this to decide whether to use API mode or browser mode."""
-    return {"status": "ok", "utils_available": _UTILS_OK, "places_available": _PLACES_OK}
+    return {
+        "status": "ok",
+        "utils_available": _UTILS_OK,
+        "places_available": _PLACES_OK,
+        "claude_available": _CLAUDE_OK and bool(os.environ.get("ANTHROPIC_API_KEY")),
+    }
 
 
 @app.get("/nearby-places")
@@ -106,6 +119,48 @@ async def analyze_photo(file: UploadFile = File(...)):
         "genders":     faces.get("genders", []),
         "confidences": faces.get("confidences", []),
     }
+
+
+class DiaryEntry(BaseModel):
+    fileName: str
+    location: str | None = None
+    captureDate: str | None = None
+    captureTime: str | None = None
+    faceCount: int | None = None
+
+
+class DiaryRequest(BaseModel):
+    entries: list[DiaryEntry]
+    language: str = "ko"
+
+
+@app.post("/generate-diary")
+def generate_diary(body: DiaryRequest):
+    """AI-generated travel diary entry summarizing a set of photos (by metadata only)."""
+    if not _CLAUDE_OK:
+        return {"diary": None, "error": "anthropic package not installed — run: pip install -r requirements.txt"}
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        return {"diary": None, "error": "ANTHROPIC_API_KEY not set — see utils/claude_utils.py"}
+    try:
+        diary = generate_travel_diary([e.model_dump() for e in body.entries], language=body.language)
+        return {"diary": diary}
+    except Exception as e:
+        return {"diary": None, "error": str(e)}
+
+
+@app.post("/recognize-landmark")
+async def recognize_landmark_endpoint(file: UploadFile = File(...), lat: float | None = None, lng: float | None = None):
+    """AI landmark recognition for a single photo, via Claude Vision."""
+    if not _CLAUDE_OK:
+        return {"landmark": None, "error": "anthropic package not installed — run: pip install -r requirements.txt"}
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        return {"landmark": None, "error": "ANTHROPIC_API_KEY not set — see utils/claude_utils.py"}
+    try:
+        image_bytes = await file.read()
+        result = recognize_landmark(image_bytes, file.content_type or "image/jpeg", lat, lng)
+        return result.model_dump()
+    except Exception as e:
+        return {"landmark": None, "error": str(e)}
 
 
 
