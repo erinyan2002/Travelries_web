@@ -12,8 +12,10 @@ npm start          # serve production build
 npm run lint       # ESLint check
 npx tsc --noEmit   # TypeScript type check (no test suite exists)
 
-# Deploy to production server (uses pnpm + SFTP to iubns.net)
-npm run deploy     # runs _scripts/deploy.sh — sets NEXT_PUBLIC_API_TARGET=prod, builds static export (out/), SFTPs to iubns.net
+# Deploy — Vercel (auto-deploy on push), which handles the dynamic routes
+# (/share/[id], /collab/[id]) via SSR. next.config.ts has no `output: "export"` —
+# don't add one without also solving those two routes, since static export can't
+# serve IDs that are created at runtime and can't be enumerated at build time.
 
 # Backend (optional Python FastAPI — only needed for nearby-places feature)
 cd backend
@@ -31,8 +33,6 @@ bash _scripts/download-models.sh
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 ```
-
-`NEXT_PUBLIC_API_TARGET=prod` is set automatically by the deploy script and may affect backend URL resolution at build time.
 
 ## Architecture
 
@@ -67,7 +67,7 @@ Single-file upload OR multi-file batch upload. On file select:
 3. Thumbnail created via `canvas.toDataURL`
 4. Result saved to `map-<uid>` and `faces-<uid>` in localStorage
 
-**Batch upload**: selecting multiple files queues them into a `BatchFile[]` state and processes them sequentially via `processBatch()`. A live progress panel shows per-file status icons and a progress bar. Stats refresh after the batch completes.
+**Batch upload**: selecting multiple files queues them into a `BatchFile[]` state and processes them sequentially via `processBatch()`. A live progress panel shows per-file status icons and a progress bar. Once all files finish, the panel switches to a review grid (one card per uploaded photo, with face-count/scenery badges) where tapping a photo lets you rename it before dismissing. Stats refresh after the batch completes.
 
 **Dashboard stat cards**: total photos saved, unique locations visited, total faces detected — read live from `map-<uid>` localStorage.
 
@@ -87,7 +87,7 @@ Two execution modes depending on whether the Python backend is running:
 
 Result stored in `FacePhoto` with normalized bounding boxes (`x_norm`, `y_norm`, `w_norm`, `h_norm`).
 
-`app/faces/page.tsx` clusters descriptors by Euclidean distance (DBSCAN on the backend, Euclidean threshold in-browser) to group same-person appearances — no server involved for the clustering step.
+`app/faces/page.tsx` clusters descriptors by Euclidean distance (DBSCAN on the backend, Euclidean threshold in-browser) to group same-person appearances — no server involved for the clustering step. Deleting a photo (single, via a per-photo confirm modal, or all at once via "Clear All") goes through `deletePhotoEverywhere` in `lib/savedUtils.ts`, which removes it from `map-<uid>`, `faces-<uid>`, and `saved-<uid>` together (matching by id or, for faces, by `fileName` since the two stores may have assigned different UUIDs to the same upload), and also deletes any matching row from `collab_photos` in Supabase.
 
 ### Other pages
 

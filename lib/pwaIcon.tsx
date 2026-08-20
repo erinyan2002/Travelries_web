@@ -1,10 +1,6 @@
 import { ImageResponse } from "next/og";
-import { NextRequest } from "next/server";
 
-export const runtime = "edge";
-
-export function GET(request: NextRequest) {
-  const s = Math.min(512, Math.max(16, parseInt(request.nextUrl.searchParams.get("s") ?? "512")));
+export function renderPwaIcon(s: number) {
   const r = Math.round(s * 0.22);
   const sw = Math.max(1.5, s * 0.03); // stroke width scales with icon size
 
