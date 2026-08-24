@@ -46,15 +46,15 @@ ANTHROPIC_API_KEY=...
 ### Data storage split
 
 - **Auth**: Supabase Auth (`lib/supabase.ts`) — login, signup, session management, password reset.
-- **Photo data (personal)**: `localStorage` keyed by user ID — `map-<uid>` (MapPhoto[]), `faces-<uid>` (FacePhoto[]), `saved-<uid>` (string[] of saved photo IDs).
-- **Images (personal)**: stored as base64 data URLs inside the localStorage JSON (created via `canvas.toDataURL` in `createThumbnailDataUrl`).
+- **Photo data (personal)**: Supabase `photos` table via `lib/photosApi.ts` (see Key shared types below) — replaced the old `map-<uid>`/`faces-<uid>`/`saved-<uid>` localStorage arrays. `face-labels-<uid>` (Faces page person-name labels) is the one thing still on localStorage.
+- **Images (personal)**: uploaded to the `user-photos` Storage bucket (`uploadToUserPhotos` in `app/page.tsx`, path `<uid>/<photoId>.<ext>`); the row's `image_url` stores the resulting public URL directly. Falls back to a base64 data URL inline in the row if the Storage upload fails.
 - **Supabase DB tables** (for social features):
   - `profiles` — display name + join date per user; auto-created on first profile page load if missing
   - `notifications` — per-user notifications, queried via `lib/notificationUtils.ts`
   - `collab_albums`, `collab_members`, `collab_photos` — collaborative albums, managed via `lib/collabUtils.ts`
   - `shares` — public photo share links, managed via `lib/shareUtils.ts`
   - RPC: `join_collab_album(p_invite_code)`, `record_share_view(p_share_id)`
-- **Supabase Storage buckets**: `collab-photos` (collab album images), `shares` (shared photo images). Base64 data URLs are uploaded as blobs before inserting the record.
+- **Supabase Storage buckets**: `user-photos` (personal photos), `collab-photos` (collab album images), `shares` (shared photo images).
 
 ### Auth flow
 
@@ -70,11 +70,11 @@ Single-file upload OR multi-file batch upload. On file select:
 1. EXIF + GPS extracted via `exifr`
 2. Face detection runs in browser (`face-api.js`)
 3. Thumbnail created via `canvas.toDataURL`
-4. Result saved to `map-<uid>` and `faces-<uid>` in localStorage
+4. Face-detection result upserted into Supabase `photos` (`is_face_photo: true`) via `lib/photosApi.ts`; clicking "Save to Map" afterward reuses that same row's id and adds `is_map_photo: true` + location fields, rather than creating a second row — see Key shared types below for why that matters.
 
 **Batch upload**: selecting multiple files queues them into a `BatchFile[]` state and processes them sequentially via `processBatch()`. A live progress panel shows per-file status icons and a progress bar. Once all files finish, the panel switches to a review grid (one card per uploaded photo, with face-count/scenery badges) where tapping a photo lets you rename it before dismissing. Stats refresh after the batch completes.
 
-**Dashboard stat cards**: total photos saved, unique locations visited, total faces detected — read live from `map-<uid>` localStorage.
+**Dashboard stat cards**: total photos saved, unique locations visited, total faces detected — read live via `fetchMapPhotos`/`fetchFacePhotos` (`lib/photosApi.ts`).
 
 **Highlights section**: most recent upload and photo with the most faces detected.
 
@@ -92,12 +92,12 @@ Two execution modes depending on whether the Python backend is running:
 
 Result stored in `FacePhoto` with normalized bounding boxes (`x_norm`, `y_norm`, `w_norm`, `h_norm`).
 
-`app/faces/page.tsx` clusters descriptors by Euclidean distance (DBSCAN on the backend, Euclidean threshold in-browser) to group same-person appearances — no server involved for the clustering step. The in-browser threshold is a fixed constant (`MATCH_THRESHOLD = 0.55` in that file, tuned empirically) — there is intentionally no UI to change it; a previous adjustable slider was removed because it kept resetting/drifting. Deleting a photo (single, via a per-photo confirm modal, or all at once via "Clear All") goes through `deletePhotoEverywhere` in `lib/savedUtils.ts`, which removes it from `map-<uid>`, `faces-<uid>`, and `saved-<uid>` together (matching by id or, for faces, by `fileName` since the two stores may have assigned different UUIDs to the same upload), and also deletes any matching row from `collab_photos` in Supabase.
+`app/faces/page.tsx` clusters descriptors by Euclidean distance (DBSCAN on the backend, Euclidean threshold in-browser) to group same-person appearances — no server involved for the clustering step. The in-browser threshold is a fixed constant (`MATCH_THRESHOLD = 0.55` in that file, tuned empirically) — there is intentionally no UI to change it; a previous adjustable slider was removed because it kept resetting/drifting. Deleting a photo (single, via a per-photo confirm modal, or all at once via "Clear All") goes through `deletePhotoEverywhere` in `lib/savedUtils.ts` (thin wrapper over `photosApi.deletePhotoEverywhere`), which deletes the `photos` row outright — a deliberate simplification from the old per-view (map vs. faces) independent delete — and any matching `collab_photos` row by filename. `saved_photos` rows cascade automatically via its FK.
 
 ### Other pages
 
-- **`app/saved/page.tsx`**: Grid of photos starred via `toggleSaved`. Downloads are triggered via a temporary `<a>` element against the base64 data URL.
-- **`app/stats/page.tsx`**: Aggregated read-only view computed from `map-<uid>` and `faces-<uid>` localStorage on mount — no Supabase queries.
+- **`app/saved/page.tsx`**: Grid of photos starred via `toggleSaved`. Downloads are triggered via a temporary `<a>` element against the image URL.
+- **`app/stats/page.tsx`**: Aggregated read-only view computed from `fetchAllPhotos`/`getSavedIds` (`lib/photosApi.ts`) on mount.
 - **`app/profile/page.tsx`**: Reads/writes `profiles` table; validates old password via a re-`signInWithPassword` call before calling `updateUser`.
 - **`app/collab/join/page.tsx`**: Accepts an invite code and calls `joinAlbumByCode` (RPC). Redirects to `/collab` on success.
 
@@ -107,6 +107,8 @@ Photos grouped by location string. Filters:
 - **Search bar**: matches filename or location (case-insensitive substring)
 - **Date range chips**: All / This Week / This Month / This Year — filters by `captureDate` or `uploadedAt`
 - Both filters compose: category → date range → search
+
+**Trips view** (`viewMode === "trips"`, via `detectTrips()`) groups photos into trip cards by date gap. Each trip card has an **"AI Diary"** button — POSTs the trip's photo metadata to the backend's `/generate-diary` and shows the result in `DiaryModal`. The single-photo detail modal (`PhotoModal`) has an **"Identify Landmark"** button — fetches the photo's own `imageUrl` as a blob and POSTs it to `/recognize-landmark`. Both are no-ops with a Korean error message if the backend is offline or `ANTHROPIC_API_KEY` isn't set (the endpoints return `{error: "..."}` for that rather than a 500).
 
 ### Notifications (`lib/notificationUtils.ts`)
 
@@ -128,17 +130,17 @@ Key backend files:
 - `backend/utils/face_utils.py` — two-tier face pipeline (InsightFace Tier 1, SSD+dlib Tier 2). InsightFace downloads `buffalo_l` (~200 MB) to `~/.insightface/models/buffalo_l/` on first run.
 - `backend/utils/exif_utils.py` — EXIF extraction + reverse geocoding
 - `backend/utils/places_utils.py` — Overpass API for nearby POIs
-- `backend/utils/claude_utils.py` — Claude API (Anthropic SDK, model `claude-opus-5`) wrappers behind `/generate-diary` (photo metadata → short first-person travel diary, `client.messages.create`) and `/recognize-landmark` (photo → landmark name/confidence via `client.messages.parse` + a Pydantic `LandmarkResult` schema). Both require `ANTHROPIC_API_KEY`; there is no frontend UI calling these yet.
+- `backend/utils/claude_utils.py` — Claude API (Anthropic SDK, model `claude-opus-5`) wrappers behind `/generate-diary` (photo metadata → short first-person travel diary, `client.messages.create`) and `/recognize-landmark` (photo → landmark name/confidence via `client.messages.parse` + a Pydantic `LandmarkResult` schema). Both require `ANTHROPIC_API_KEY`. Called from `app/albums/page.tsx` (Trips view "AI Diary" button, photo modal "Identify Landmark" button).
 
 To install InsightFace tier: `pip install insightface onnxruntime` (already in `backend/requirements.txt`).
 
 ### Key shared types
 
-`lib/types.ts` — `MapPhoto` (`lat?`/`lng?` are optional; photos without GPS still appear in Albums but are filtered out of the map) and `FacePhoto`. `rowToMapPhoto` / `rowToFacePhoto` are kept for a future Supabase DB migration but currently unused for personal photos — personal photo data stays localStorage-only for now (see Data storage split above). Both converters read from the *same* live `public.photos` table (already created in the Supabase project — one unified table with `is_map_photo`/`is_face_photo` boolean flags per row, not a `photos`/`face_photos` split; a `saved_photos` join table backs favorites). `image_url` is stored directly on the row as the full Storage public URL (bucket `user-photos`) — there's no separate path column. `supabase/migrations/0001_add_missing_photo_columns.sql` only adds columns the app's types need that the live table didn't have yet (`capture_timestamp`, `confidences`, `ages`, `genders`, `expressions`) — it does not create tables. Before writing any new migration against `photos`/`saved_photos`, check the live schema in the Supabase dashboard (Table Editor) rather than assuming — an earlier session drafted a competing two-table schema without checking first and had to throw it away.
+`lib/types.ts` — `MapPhoto` (`lat?`/`lng?` are optional; photos without GPS still appear in Albums but are filtered out of the map) and `FacePhoto`. `rowToMapPhoto` / `rowToFacePhoto` convert a `public.photos` row into each — that table is a *single unified table* (one row can be a map photo, a face photo, or both, via `is_map_photo`/`is_face_photo` booleans), not a `photos`/`face_photos` split; a `saved_photos` join table backs favorites. `image_url` is stored directly on the row as the full Storage public URL (bucket `user-photos`) — there's no separate path column. Before writing any new migration against `photos`/`saved_photos`, check the live schema in the Supabase dashboard (Table Editor) rather than assuming — an earlier session drafted a competing two-table schema without checking first and had to throw it away.
 
 `MapPhoto.captureTimestamp` is an ISO 8601 string populated alongside the display-only `captureDate`/`captureTime` (which are locale-formatted via `toLocaleDateString()`/`toLocaleTimeString()` and are **not** safe to sort or compare). Anything that needs chronological order — e.g. the map's route line — must sort by `captureTimestamp` (falling back to `uploadedAt` for photos saved before this field existed), never by `captureDate`.
 
-`lib/savedUtils.ts` — `toggleSaved(photoId)` and `getSavedIds()` operate on the `saved-<uid>` localStorage key.
+`lib/photosApi.ts` is the only place that talks to the `photos`/`saved_photos` tables — `fetchMapPhotos`/`fetchFacePhotos`/`fetchAllPhotos` (filter+convert), `fetchSavedIds`/`toggleSavedPhoto`, `upsertPhoto` (insert-or-update by id; only the columns present in the input are written, so a partial update never clobbers unrelated columns already on the row — e.g. adding `is_map_photo: true` to an existing face-only row doesn't touch its `boxes`/`descriptors`), `renamePhoto`, `deletePhotoEverywhere`. `lib/savedUtils.ts` (`toggleSaved`/`getSavedIds`/`deletePhotoEverywhere`) is a thin per-caller wrapper that resolves the current user id and delegates to `photosApi` — pages import from `savedUtils`, not `photosApi`, for those three. Unauthenticated/guest sessions get empty results everywhere rather than an error (in practice unreachable — `AuthGuard` requires login on every page that calls these).
 
 ### Map (`app/map/page.tsx`)
 
