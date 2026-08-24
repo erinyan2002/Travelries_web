@@ -17,10 +17,10 @@ npx tsc --noEmit   # TypeScript type check (no test suite exists)
 # don't add one without also solving those two routes, since static export can't
 # serve IDs that are created at runtime and can't be enumerated at build time.
 
-# Backend (optional Python FastAPI — only needed for nearby-places feature)
+# Backend (optional Python FastAPI — only needed for nearby-places / AI diary / landmark features)
 cd backend
 pip install -r requirements.txt
-uvicorn main:app --reload   # starts at localhost:8000
+uvicorn main:app --reload   # starts at localhost:8000, auto-loads backend/.env (python-dotenv)
 
 # Download face-api.js model weights (~21 MB, run once from project root)
 bash _scripts/download-models.sh
@@ -32,6 +32,11 @@ bash _scripts/download-models.sh
 ```
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+```
+
+`backend/.env` (optional, only for the AI diary/landmark endpoints — see below):
+```
+ANTHROPIC_API_KEY=...
 ```
 
 ## Architecture
@@ -87,7 +92,7 @@ Two execution modes depending on whether the Python backend is running:
 
 Result stored in `FacePhoto` with normalized bounding boxes (`x_norm`, `y_norm`, `w_norm`, `h_norm`).
 
-`app/faces/page.tsx` clusters descriptors by Euclidean distance (DBSCAN on the backend, Euclidean threshold in-browser) to group same-person appearances — no server involved for the clustering step. Deleting a photo (single, via a per-photo confirm modal, or all at once via "Clear All") goes through `deletePhotoEverywhere` in `lib/savedUtils.ts`, which removes it from `map-<uid>`, `faces-<uid>`, and `saved-<uid>` together (matching by id or, for faces, by `fileName` since the two stores may have assigned different UUIDs to the same upload), and also deletes any matching row from `collab_photos` in Supabase.
+`app/faces/page.tsx` clusters descriptors by Euclidean distance (DBSCAN on the backend, Euclidean threshold in-browser) to group same-person appearances — no server involved for the clustering step. The in-browser threshold is a fixed constant (`MATCH_THRESHOLD = 0.55` in that file, tuned empirically) — there is intentionally no UI to change it; a previous adjustable slider was removed because it kept resetting/drifting. Deleting a photo (single, via a per-photo confirm modal, or all at once via "Clear All") goes through `deletePhotoEverywhere` in `lib/savedUtils.ts`, which removes it from `map-<uid>`, `faces-<uid>`, and `saved-<uid>` together (matching by id or, for faces, by `fileName` since the two stores may have assigned different UUIDs to the same upload), and also deletes any matching row from `collab_photos` in Supabase.
 
 ### Other pages
 
@@ -117,24 +122,31 @@ Users create shared albums with an invite code. Others join via `joinAlbumByCode
 
 ### Backend (optional)
 
-`backend/main.py` is a FastAPI server. The frontend polls `GET /health` on load; if it responds the app enters "API mode" (server-side EXIF+face via `/analyze`, POI lookup via `/nearby-places`). If offline, falls back to browser-mode. **Not required** for any core functionality.
+`backend/main.py` is a FastAPI server. The frontend polls `GET /health` on load; if it responds the app enters "API mode" (server-side EXIF+face via `/analyze`, POI lookup via `/nearby-places`). If offline, falls back to browser-mode. **Not required** for any core functionality. `/health`'s response includes `utils_available`, `places_available`, `claude_available` — each backend feature degrades independently (missing deps or an unset `ANTHROPIC_API_KEY` return a JSON `error` field from that endpoint rather than a 500).
 
 Key backend files:
 - `backend/utils/face_utils.py` — two-tier face pipeline (InsightFace Tier 1, SSD+dlib Tier 2). InsightFace downloads `buffalo_l` (~200 MB) to `~/.insightface/models/buffalo_l/` on first run.
 - `backend/utils/exif_utils.py` — EXIF extraction + reverse geocoding
 - `backend/utils/places_utils.py` — Overpass API for nearby POIs
+- `backend/utils/claude_utils.py` — Claude API (Anthropic SDK, model `claude-opus-5`) wrappers behind `/generate-diary` (photo metadata → short first-person travel diary, `client.messages.create`) and `/recognize-landmark` (photo → landmark name/confidence via `client.messages.parse` + a Pydantic `LandmarkResult` schema). Both require `ANTHROPIC_API_KEY`; there is no frontend UI calling these yet.
 
 To install InsightFace tier: `pip install insightface onnxruntime` (already in `backend/requirements.txt`).
 
 ### Key shared types
 
-`lib/types.ts` — `MapPhoto` (`lat?`/`lng?` are optional; photos without GPS still appear in Albums but are filtered out of the map) and `FacePhoto`. `rowToMapPhoto` / `rowToFacePhoto` are kept for a future Supabase DB migration but currently unused for personal photos.
+`lib/types.ts` — `MapPhoto` (`lat?`/`lng?` are optional; photos without GPS still appear in Albums but are filtered out of the map) and `FacePhoto`. `rowToMapPhoto` / `rowToFacePhoto` are kept for a future Supabase DB migration but currently unused for personal photos — personal photo data stays localStorage-only for now (see Data storage split above). Both converters read from the *same* live `public.photos` table (already created in the Supabase project — one unified table with `is_map_photo`/`is_face_photo` boolean flags per row, not a `photos`/`face_photos` split; a `saved_photos` join table backs favorites). `image_url` is stored directly on the row as the full Storage public URL (bucket `user-photos`) — there's no separate path column. `supabase/migrations/0001_add_missing_photo_columns.sql` only adds columns the app's types need that the live table didn't have yet (`capture_timestamp`, `confidences`, `ages`, `genders`, `expressions`) — it does not create tables. Before writing any new migration against `photos`/`saved_photos`, check the live schema in the Supabase dashboard (Table Editor) rather than assuming — an earlier session drafted a competing two-table schema without checking first and had to throw it away.
+
+`MapPhoto.captureTimestamp` is an ISO 8601 string populated alongside the display-only `captureDate`/`captureTime` (which are locale-formatted via `toLocaleDateString()`/`toLocaleTimeString()` and are **not** safe to sort or compare). Anything that needs chronological order — e.g. the map's route line — must sort by `captureTimestamp` (falling back to `uploadedAt` for photos saved before this field existed), never by `captureDate`.
 
 `lib/savedUtils.ts` — `toggleSaved(photoId)` and `getSavedIds()` operate on the `saved-<uid>` localStorage key.
 
 ### Map (`app/map/page.tsx`)
 
 Uses `react-leaflet` with OpenStreetMap tiles (free, no API key). Leaflet default icons overridden with `L.divIcon` showing a circular photo thumbnail + count badge for clustered markers. Loaded client-side only (Leaflet requires `window`). Only photos with `lat` and `lng` defined are shown.
+
+Two optional overlay toggles, mutually exclusive with the marker view when heatmap is on:
+- **Route**: a `RouteLayer` component draws photos as a Polyline in chronological order (sorted by `captureTimestamp`, see above) — a white casing line for contrast against any tile color, an animated flowing dashed line on top (`route-flow-line` keyframe in `app/globals.css`), and a rotated arrow `Marker` at each segment midpoint (bearing computed via `bearingDeg()`) showing travel direction.
+- **Heatmap**: `HeatmapLayer` wraps the `leaflet.heat` plugin (`L.heatLayer`, imperatively added/removed via `useMap()` + `useEffect` since it has no react-leaflet component) — replaces the cluster markers while active.
 
 ### Metadata / Viewport
 
