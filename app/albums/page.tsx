@@ -8,12 +8,14 @@ import { MapPhoto } from "@/lib/types";
 import { fetchMapPhotos } from "@/lib/photosApi";
 import {
   Images, Users, Image as ImageIcon, Star, Download, Trash2,
-  X, CalendarDays, SlidersHorizontal, Search, Calendar, Share2, Loader2, MapPin,
+  X, CalendarDays, SlidersHorizontal, Search, Calendar, Share2, Loader2, MapPin, Sparkles,
 } from "lucide-react";
 import { sharePhoto } from "@/lib/shareUtils";
 
 type Filter    = "All" | "With People" | "Scenery";
 type DateRange = "all" | "week" | "month" | "year";
+
+const BACKEND_URL = "http://localhost:8000";
 
 type Trip = {
   id: string;
@@ -191,6 +193,35 @@ function ShareLinkModal({ url, onClose }: { url: string; onClose: () => void }) 
   );
 }
 
+function DiaryModal({
+  tripName, loading, diary, error, onClose,
+}: { tripName: string; loading: boolean; diary: string | null; error: string | null; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl p-5 max-w-[440px] w-full shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Sparkles size={18} className="text-blue-500" />
+            <p className="font-bold text-slate-900">{tripName}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1"><X size={18} /></button>
+        </div>
+        {loading && (
+          <div className="flex items-center gap-2 text-slate-400 text-sm py-6 justify-center">
+            <Loader2 size={16} className="animate-spin" /> Writing your diary...
+          </div>
+        )}
+        {!loading && error && (
+          <p className="text-sm text-red-500 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5">{error}</p>
+        )}
+        {!loading && diary && (
+          <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{diary}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function PhotoModal({
   photo, onClose, onDelete, onDownload, onShare, sharing,
 }: {
@@ -198,6 +229,31 @@ function PhotoModal({
   onDelete: (id: string) => void; onDownload: (photo: MapPhoto) => void;
   onShare: (photo: MapPhoto) => void; sharing: boolean;
 }) {
+  const [landmarkLoading, setLandmarkLoading] = useState(false);
+  const [landmarkResult,  setLandmarkResult]  = useState<{ landmark: string | null; description: string | null } | null>(null);
+  const [landmarkError,   setLandmarkError]   = useState<string | null>(null);
+
+  async function handleRecognizeLandmark() {
+    setLandmarkLoading(true);
+    setLandmarkResult(null);
+    setLandmarkError(null);
+    try {
+      const imgRes = await fetch(photo.imageUrl);
+      const blob = await imgRes.blob();
+      const form = new FormData();
+      form.append("file", blob, photo.fileName || "photo.jpg");
+      const qs = photo.lat != null && photo.lng != null ? `?lat=${photo.lat}&lng=${photo.lng}` : "";
+      const res = await fetch(`${BACKEND_URL}/recognize-landmark${qs}`, { method: "POST", body: form });
+      const data = await res.json();
+      if (data.error) setLandmarkError(data.error);
+      else setLandmarkResult({ landmark: data.landmark ?? null, description: data.description ?? null });
+    } catch {
+      setLandmarkError("백엔드 서버에 연결할 수 없어요.");
+    } finally {
+      setLandmarkLoading(false);
+    }
+  }
+
   return (
     <div className="fixed inset-0 bg-black/85 z-[2000] flex items-center justify-center p-5" onClick={onClose}>
       <div className="max-w-[520px] w-full bg-white rounded-2xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -218,6 +274,26 @@ function PhotoModal({
           {photo.captureDate && photo.captureDate !== "Not available" && <InfoChip label="Taken" value={photo.captureDate} />}
           {photo.location && <div className="col-span-2"><InfoChip label="Location" value={photo.location} /></div>}
           <InfoChip label="AI label" value={(photo.faceCount ?? 0) > 0 ? `With people (${photo.faceCount})` : "Scenery"} />
+          {!landmarkResult && !landmarkError && (
+            <button onClick={handleRecognizeLandmark} disabled={landmarkLoading}
+              className="flex items-center justify-center gap-1.5 bg-slate-50 hover:bg-blue-50 border border-slate-100 rounded-xl px-3 py-2 text-xs font-bold text-slate-500 hover:text-blue-600 transition-colors disabled:opacity-60">
+              {landmarkLoading
+                ? <><Loader2 size={12} className="animate-spin" /> Checking...</>
+                : <><Sparkles size={12} /> Identify Landmark</>
+              }
+            </button>
+          )}
+          {landmarkError && <div className="col-span-2"><InfoChip label="Landmark" value={landmarkError} /></div>}
+          {landmarkResult && (
+            <div className="col-span-2">
+              <InfoChip
+                label="Landmark"
+                value={landmarkResult.landmark
+                  ? `${landmarkResult.landmark}${landmarkResult.description ? ` — ${landmarkResult.description}` : ""}`
+                  : "No landmark recognized"}
+              />
+            </div>
+          )}
         </div>
         <div className="flex gap-2 px-4 py-3 border-t border-slate-100">
           <button onClick={() => onShare(photo)} disabled={sharing}
@@ -321,6 +397,40 @@ export default function AlbumsPage() {
   const [personFilterLabel, setPersonFilterLabel] = useState<string | null>(null);
   const [viewMode,          setViewMode]          = useState<"monthly" | "trips">("monthly");
   const [expandedTripId,    setExpandedTripId]    = useState<string | null>(null);
+  const [diaryTrip,         setDiaryTrip]         = useState<Trip | null>(null);
+  const [diaryLoading,      setDiaryLoading]      = useState(false);
+  const [diaryText,         setDiaryText]         = useState<string | null>(null);
+  const [diaryError,        setDiaryError]        = useState<string | null>(null);
+
+  async function handleGenerateDiary(trip: Trip) {
+    setDiaryTrip(trip);
+    setDiaryLoading(true);
+    setDiaryText(null);
+    setDiaryError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/generate-diary`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          language: "ko",
+          entries: trip.photos.map((p) => ({
+            fileName: p.fileName,
+            location: p.location,
+            captureDate: p.captureDate,
+            captureTime: p.captureTime,
+            faceCount: p.faceCount ?? 0,
+          })),
+        }),
+      });
+      const data = await res.json();
+      if (data.diary) setDiaryText(data.diary);
+      else setDiaryError(data.error ?? "일기를 만들지 못했어요. 잠시 후 다시 시도해주세요.");
+    } catch {
+      setDiaryError("백엔드 서버에 연결할 수 없어요 (uvicorn이 꺼져있을 수 있어요).");
+    } finally {
+      setDiaryLoading(false);
+    }
+  }
 
   useEffect(() => {
     async function load() {
@@ -641,15 +751,22 @@ export default function AlbumsPage() {
                     </div>
                   </div>
 
-                  {/* ── View all toggle ── */}
-                  <button
-                    onClick={() => setExpandedTripId(isExpanded ? null : trip.id)}
-                    className="w-full flex items-center justify-center gap-1.5 text-sm font-bold text-blue-500 hover:text-blue-700 hover:bg-blue-50 py-3 transition-colors">
-                    {isExpanded
-                      ? <><span className="text-xs">▲</span> Hide</>
-                      : <><span className="text-xs">▼</span> View all {n} {photoWord}</>
-                    }
-                  </button>
+                  {/* ── View all / AI diary ── */}
+                  <div className="flex divide-x divide-slate-100 border-t border-slate-100">
+                    <button
+                      onClick={() => setExpandedTripId(isExpanded ? null : trip.id)}
+                      className="flex-1 flex items-center justify-center gap-1.5 text-sm font-bold text-blue-500 hover:text-blue-700 hover:bg-blue-50 py-3 transition-colors">
+                      {isExpanded
+                        ? <><span className="text-xs">▲</span> Hide</>
+                        : <><span className="text-xs">▼</span> View all {n} {photoWord}</>
+                      }
+                    </button>
+                    <button
+                      onClick={() => handleGenerateDiary(trip)}
+                      className="flex-1 flex items-center justify-center gap-1.5 text-sm font-bold text-slate-500 hover:text-blue-600 hover:bg-blue-50 py-3 transition-colors">
+                      <Sparkles size={14} /> AI Diary
+                    </button>
+                  </div>
 
                   {/* ── Expanded grid ── */}
                   {isExpanded && (
@@ -759,6 +876,15 @@ export default function AlbumsPage() {
         />
       )}
       {shareResultUrl && <ShareLinkModal url={shareResultUrl} onClose={() => setShareResultUrl(null)} />}
+      {diaryTrip && (
+        <DiaryModal
+          tripName={diaryTrip.name}
+          loading={diaryLoading}
+          diary={diaryText}
+          error={diaryError}
+          onClose={() => setDiaryTrip(null)}
+        />
+      )}
       <BottomNav />
     </main>
   );
