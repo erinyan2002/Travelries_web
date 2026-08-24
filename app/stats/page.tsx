@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import BottomNav from "@/components/BottomNav";
 import { supabase } from "@/lib/supabase";
 import { MapPhoto, FacePhoto } from "@/lib/types";
+import { fetchAllPhotos } from "@/lib/photosApi";
+import { getSavedIds } from "@/lib/savedUtils";
 import {
   BarChart2, Camera, Users, MapPin, Star,
   TrendingUp, Image as ImageIcon, CalendarDays, Clock,
@@ -112,9 +114,9 @@ export default function StatsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       const uid = user?.id ?? "guest";
 
-      const mapPhotos: MapPhoto[] = JSON.parse(localStorage.getItem(`map-${uid}`) ?? "[]");
-      const facePhotos: FacePhoto[] = JSON.parse(localStorage.getItem(`faces-${uid}`) ?? "[]");
-      const savedIds: string[] = JSON.parse(localStorage.getItem(`saved-${uid}`) ?? "[]");
+      const { mapPhotos, facePhotos }: { mapPhotos: MapPhoto[]; facePhotos: FacePhoto[] } =
+        uid === "guest" ? { mapPhotos: [], facePhotos: [] } : await fetchAllPhotos(uid);
+      const savedIds = Array.from(await getSavedIds());
 
       const portraitCount = mapPhotos.filter((p) => (p.faceCount ?? 0) > 0).length;
       const generalCount  = mapPhotos.filter((p) => (p.faceCount ?? 0) === 0).length;

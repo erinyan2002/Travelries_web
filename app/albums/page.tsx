@@ -5,6 +5,7 @@ import BottomNav from "@/components/BottomNav";
 import { toggleSaved, getSavedIds, deletePhotoEverywhere } from "@/lib/savedUtils";
 import { supabase } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
+import { fetchMapPhotos } from "@/lib/photosApi";
 import {
   Images, Users, Image as ImageIcon, Star, Download, Trash2,
   X, CalendarDays, SlidersHorizontal, Search, Calendar, Share2, Loader2, MapPin,
@@ -325,7 +326,7 @@ export default function AlbumsPage() {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser();
       const uid = user?.id ?? "guest";
-      const stored: MapPhoto[] = JSON.parse(localStorage.getItem(`map-${uid}`) ?? "[]");
+      const stored = uid === "guest" ? [] : await fetchMapPhotos(uid);
       setPhotos(stored);
       setSavedIds(await getSavedIds());
       setLoading(false);
@@ -350,7 +351,8 @@ export default function AlbumsPage() {
   }
 
   async function handleDelete(id: string) {
-    await deletePhotoEverywhere(id);
+    const fileName = photos.find((p) => p.id === id)?.fileName;
+    await deletePhotoEverywhere(id, fileName);
     setPhotos((prev) => prev.filter((p) => p.id !== id));
     setConfirmDeleteId(null);
   }
