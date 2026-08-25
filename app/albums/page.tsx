@@ -5,7 +5,7 @@ import BottomNav from "@/components/BottomNav";
 import { toggleSaved, getSavedIds, deletePhotoEverywhere } from "@/lib/savedUtils";
 import { supabase } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
-import { fetchMapPhotos } from "@/lib/photosApi";
+import { fetchMapPhotos, saveLandmarkResult, fetchTripDiary, saveTripDiary } from "@/lib/photosApi";
 import {
   Images, Users, Image as ImageIcon, Star, Download, Trash2,
   X, CalendarDays, SlidersHorizontal, Search, Calendar, Share2, Loader2, MapPin, Sparkles,
@@ -16,6 +16,28 @@ type Filter    = "All" | "With People" | "Scenery";
 type DateRange = "all" | "week" | "month" | "year";
 
 const BACKEND_URL = "http://localhost:8000";
+
+// Downscale before sending to Claude — cuts image tokens (and cost) with no
+// meaningful loss for landmark recognition. Server also enforces this as a backstop.
+async function resizeImageForApi(blob: Blob, maxSize = 1024, quality = 0.85): Promise<Blob> {
+  const bitmap = await createImageBitmap(blob);
+  const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return blob;
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  const resized = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+  return resized ?? blob;
+}
+
+// Stable cache key for a trip's diary — the trip grouping itself is recomputed
+// client-side from the currently filtered photo list, so trip.id (an array index)
+// isn't safe to persist against. The sorted photo-id set is.
+function tripKeyOf(trip: Trip): string {
+  return trip.photos.map((p) => p.id).sort().join(",");
+}
 
 type Trip = {
   id: string;
@@ -194,8 +216,11 @@ function ShareLinkModal({ url, onClose }: { url: string; onClose: () => void }) 
 }
 
 function DiaryModal({
-  tripName, loading, diary, error, onClose,
-}: { tripName: string; loading: boolean; diary: string | null; error: string | null; onClose: () => void }) {
+  tripName, loading, diary, error, cached, onClose, onRegenerate,
+}: {
+  tripName: string; loading: boolean; diary: string | null; error: string | null; cached: boolean;
+  onClose: () => void; onRegenerate: () => void;
+}) {
   return (
     <div className="fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl p-5 max-w-[440px] w-full shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -215,7 +240,14 @@ function DiaryModal({
           <p className="text-sm text-red-500 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5">{error}</p>
         )}
         {!loading && diary && (
-          <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{diary}</p>
+          <>
+            <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{diary}</p>
+            {cached && <p className="text-[11px] text-slate-400 mt-2">Saved earlier — no new API call.</p>}
+            <button onClick={onRegenerate}
+              className="mt-3 flex items-center gap-1.5 text-xs font-bold text-blue-500 hover:text-blue-700 transition-colors">
+              <Sparkles size={12} /> Re-generate
+            </button>
+          </>
         )}
       </div>
     </div>
@@ -223,34 +255,66 @@ function DiaryModal({
 }
 
 function PhotoModal({
-  photo, onClose, onDelete, onDownload, onShare, sharing,
+  photo, onClose, onDelete, onDownload, onShare, sharing, uid, onLandmarkSaved,
 }: {
   photo: MapPhoto; onClose: () => void;
   onDelete: (id: string) => void; onDownload: (photo: MapPhoto) => void;
   onShare: (photo: MapPhoto) => void; sharing: boolean;
+  uid: string | null;
+  onLandmarkSaved: (photoId: string, result: { landmarkName: string | null; landmarkConfidence: string | null; landmarkDescription: string | null }) => void;
 }) {
+  const alreadyAnalyzed = !!photo.landmarkAnalyzedAt;
   const [landmarkLoading, setLandmarkLoading] = useState(false);
-  const [landmarkResult,  setLandmarkResult]  = useState<{ landmark: string | null; description: string | null } | null>(null);
+  const [landmarkResult,  setLandmarkResult]  = useState<{ landmark: string | null; description: string | null } | null>(
+    alreadyAnalyzed ? { landmark: photo.landmarkName ?? null, description: photo.landmarkDescription ?? null } : null,
+  );
   const [landmarkError,   setLandmarkError]   = useState<string | null>(null);
+  const [isReanalyzing,   setIsReanalyzing]   = useState(false);
+
+  // A photo already carries its cached landmark_* fields from Supabase — this only
+  // resets local state when the modal is reopened on a *different* photo, not on every
+  // prop change (a fresh analysis already updates local state directly, see above).
+  useEffect(() => {
+    setLandmarkResult(photo.landmarkAnalyzedAt
+      ? { landmark: photo.landmarkName ?? null, description: photo.landmarkDescription ?? null }
+      : null);
+    setLandmarkError(null);
+    setIsReanalyzing(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photo.id]);
 
   async function handleRecognizeLandmark() {
     setLandmarkLoading(true);
-    setLandmarkResult(null);
     setLandmarkError(null);
     try {
       const imgRes = await fetch(photo.imageUrl);
-      const blob = await imgRes.blob();
+      const rawBlob = await imgRes.blob();
+      const resizedBlob = await resizeImageForApi(rawBlob);
       const form = new FormData();
-      form.append("file", blob, photo.fileName || "photo.jpg");
+      form.append("file", resizedBlob, photo.fileName || "photo.jpg");
       const qs = photo.lat != null && photo.lng != null ? `?lat=${photo.lat}&lng=${photo.lng}` : "";
       const res = await fetch(`${BACKEND_URL}/recognize-landmark${qs}`, { method: "POST", body: form });
       const data = await res.json();
-      if (data.error) setLandmarkError(data.error);
-      else setLandmarkResult({ landmark: data.landmark ?? null, description: data.description ?? null });
+      if (data.error) {
+        setLandmarkError(data.error);
+        return;
+      }
+      const result = { landmark: data.landmark ?? null, description: data.description ?? null };
+      setLandmarkResult(result);
+      if (uid) {
+        const saved = {
+          landmarkName: result.landmark,
+          landmarkConfidence: data.confidence ?? null,
+          landmarkDescription: result.description,
+        };
+        await saveLandmarkResult(uid, photo.id, saved);
+        onLandmarkSaved(photo.id, saved);
+      }
     } catch {
       setLandmarkError("백엔드 서버에 연결할 수 없어요.");
     } finally {
       setLandmarkLoading(false);
+      setIsReanalyzing(false);
     }
   }
 
@@ -274,24 +338,33 @@ function PhotoModal({
           {photo.captureDate && photo.captureDate !== "Not available" && <InfoChip label="Taken" value={photo.captureDate} />}
           {photo.location && <div className="col-span-2"><InfoChip label="Location" value={photo.location} /></div>}
           <InfoChip label="AI label" value={(photo.faceCount ?? 0) > 0 ? `With people (${photo.faceCount})` : "Scenery"} />
-          {!landmarkResult && !landmarkError && (
+          {!landmarkResult && (
             <button onClick={handleRecognizeLandmark} disabled={landmarkLoading}
               className="flex items-center justify-center gap-1.5 bg-slate-50 hover:bg-blue-50 border border-slate-100 rounded-xl px-3 py-2 text-xs font-bold text-slate-500 hover:text-blue-600 transition-colors disabled:opacity-60">
               {landmarkLoading
                 ? <><Loader2 size={12} className="animate-spin" /> Checking...</>
-                : <><Sparkles size={12} /> Identify Landmark</>
+                : <><Sparkles size={12} /> {landmarkError ? "Retry" : "Identify Landmark"}</>
               }
             </button>
           )}
-          {landmarkError && <div className="col-span-2"><InfoChip label="Landmark" value={landmarkError} /></div>}
+          {!landmarkResult && landmarkError && <div className="col-span-2"><InfoChip label="Landmark" value={landmarkError} /></div>}
           {landmarkResult && (
-            <div className="col-span-2">
+            <div className="col-span-2 space-y-1.5">
               <InfoChip
                 label="Landmark"
                 value={landmarkResult.landmark
                   ? `${landmarkResult.landmark}${landmarkResult.description ? ` — ${landmarkResult.description}` : ""}`
                   : "No landmark recognized"}
               />
+              <button
+                onClick={() => { setIsReanalyzing(true); handleRecognizeLandmark(); }}
+                disabled={landmarkLoading}
+                className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-blue-600 transition-colors disabled:opacity-60">
+                {isReanalyzing && landmarkLoading
+                  ? <><Loader2 size={10} className="animate-spin" /> Re-analyzing...</>
+                  : <><Sparkles size={10} /> Re-analyze</>
+                }
+              </button>
             </div>
           )}
         </div>
@@ -401,13 +474,25 @@ export default function AlbumsPage() {
   const [diaryLoading,      setDiaryLoading]      = useState(false);
   const [diaryText,         setDiaryText]         = useState<string | null>(null);
   const [diaryError,        setDiaryError]        = useState<string | null>(null);
+  const [diaryCached,       setDiaryCached]       = useState(false);
+  const [uid,               setUid]               = useState<string | null>(null);
 
-  async function handleGenerateDiary(trip: Trip) {
+  async function handleGenerateDiary(trip: Trip, forceRegenerate = false) {
     setDiaryTrip(trip);
     setDiaryLoading(true);
     setDiaryText(null);
     setDiaryError(null);
+    setDiaryCached(false);
+    const key = tripKeyOf(trip);
     try {
+      if (!forceRegenerate && uid) {
+        const cached = await fetchTripDiary(uid, key);
+        if (cached) {
+          setDiaryText(cached);
+          setDiaryCached(true);
+          return; // cache hit — no Claude call
+        }
+      }
       const res = await fetch(`${BACKEND_URL}/generate-diary`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -423,8 +508,12 @@ export default function AlbumsPage() {
         }),
       });
       const data = await res.json();
-      if (data.diary) setDiaryText(data.diary);
-      else setDiaryError(data.error ?? "일기를 만들지 못했어요. 잠시 후 다시 시도해주세요.");
+      if (data.diary) {
+        setDiaryText(data.diary);
+        if (uid) await saveTripDiary(uid, key, data.diary, "ko");
+      } else {
+        setDiaryError(data.error ?? "일기를 만들지 못했어요. 잠시 후 다시 시도해주세요.");
+      }
     } catch {
       setDiaryError("백엔드 서버에 연결할 수 없어요 (uvicorn이 꺼져있을 수 있어요).");
     } finally {
@@ -435,8 +524,9 @@ export default function AlbumsPage() {
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser();
-      const uid = user?.id ?? "guest";
-      const stored = uid === "guest" ? [] : await fetchMapPhotos(uid);
+      const resolvedUid = user?.id ?? "guest";
+      setUid(resolvedUid === "guest" ? null : resolvedUid);
+      const stored = resolvedUid === "guest" ? [] : await fetchMapPhotos(resolvedUid);
       setPhotos(stored);
       setSavedIds(await getSavedIds());
       setLoading(false);
@@ -449,6 +539,18 @@ export default function AlbumsPage() {
     }
     load();
   }, []);
+
+  function handleLandmarkSaved(
+    photoId: string,
+    result: { landmarkName: string | null; landmarkConfidence: string | null; landmarkDescription: string | null },
+  ) {
+    setPhotos((prev) => prev.map((p) => p.id === photoId
+      ? { ...p, landmarkName: result.landmarkName ?? undefined, landmarkConfidence: result.landmarkConfidence ?? undefined, landmarkDescription: result.landmarkDescription ?? undefined, landmarkAnalyzedAt: new Date().toISOString() }
+      : p));
+    setSelectedPhoto((prev) => prev && prev.id === photoId
+      ? { ...prev, landmarkName: result.landmarkName ?? undefined, landmarkConfidence: result.landmarkConfidence ?? undefined, landmarkDescription: result.landmarkDescription ?? undefined, landmarkAnalyzedAt: new Date().toISOString() }
+      : prev);
+  }
 
   async function handleToggleSaved(e: React.MouseEvent, photo: MapPhoto) {
     e.stopPropagation();
@@ -867,6 +969,8 @@ export default function AlbumsPage() {
           onDownload={handleDownload}
           onShare={handleShare}
           sharing={sharingId === selectedPhoto.id}
+          uid={uid}
+          onLandmarkSaved={handleLandmarkSaved}
         />
       )}
       {confirmDeleteId && (
@@ -882,7 +986,9 @@ export default function AlbumsPage() {
           loading={diaryLoading}
           diary={diaryText}
           error={diaryError}
+          cached={diaryCached}
           onClose={() => setDiaryTrip(null)}
+          onRegenerate={() => handleGenerateDiary(diaryTrip, true)}
         />
       )}
       <BottomNav />

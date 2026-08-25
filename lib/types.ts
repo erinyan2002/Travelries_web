@@ -12,6 +12,10 @@ export type MapPhoto = {
   captureTimestamp?: string; // ISO 8601, for chronological sorting — captureDate/captureTime are locale-formatted display strings and aren't reliably sortable
   uploadedAt?: string;
   faceCount?: number;
+  landmarkName?: string | null;
+  landmarkConfidence?: string | null;
+  landmarkDescription?: string | null;
+  landmarkAnalyzedAt?: string; // presence means landmark recognition has already run — skip re-calling the API
 };
 
 export type FacePhoto = {
@@ -50,6 +54,10 @@ export function rowToMapPhoto(row: Record<string, unknown>): MapPhoto {
     captureTimestamp: (row.capture_timestamp as string) ?? undefined,
     uploadedAt: row.uploaded_at as string,
     faceCount: (row.face_count as number) ?? 0,
+    landmarkName: (row.landmark_name as string) ?? undefined,
+    landmarkConfidence: (row.landmark_confidence as string) ?? undefined,
+    landmarkDescription: (row.landmark_description as string) ?? undefined,
+    landmarkAnalyzedAt: (row.landmark_analyzed_at as string) ?? undefined,
   };
 }
 

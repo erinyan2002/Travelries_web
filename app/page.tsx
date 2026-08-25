@@ -490,8 +490,6 @@ export default function HomePage() {
           if (uid === "guest") throw new Error("Not signed in");
           const dataUrl = await createThumbnailDataUrl(file, 1024, 0.90);
           const facePhotoId = crypto.randomUUID();
-          // Remove any previous row with the same filename to avoid duplicates from re-uploading
-          await supabase.from("photos").delete().eq("user_id", uid).eq("file_name", file.name);
           await upsertPhoto(uid, {
             id: facePhotoId,
             fileName: file.name,
@@ -636,8 +634,6 @@ export default function HomePage() {
         }
 
         if (uid !== "guest") {
-          // Remove any previous row with the same filename to avoid duplicates from re-uploading
-          await supabase.from("photos").delete().eq("user_id", uid).eq("file_name", file.name);
           await upsertPhoto(uid, {
             id: photoId,
             fileName: file.name,
@@ -1189,6 +1185,14 @@ export default function HomePage() {
                       <p className="text-xs text-white/70">detected</p>
                     </div>
                   </div>
+
+                  {faceMessage && (
+                    <p className={`text-xs font-medium px-1 ${
+                      faceMessage.includes("Save failed") ? "text-red-500" : "text-emerald-600"
+                    }`}>
+                      {faceMessage}
+                    </p>
+                  )}
 
                   {/* Info grid — all sky blue icons */}
                   <div className="grid grid-cols-2 gap-2">

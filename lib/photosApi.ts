@@ -82,6 +82,10 @@ export type PhotoUpsertInput = {
   ages?: number[];
   genders?: string[];
   expressions?: string[];
+  landmarkName?: string | null;
+  landmarkConfidence?: string | null;
+  landmarkDescription?: string | null;
+  landmarkAnalyzedAt?: string;
 };
 
 // Insert-or-update by id. Only the columns present in `input` are written on an
@@ -109,8 +113,58 @@ export async function upsertPhoto(uid: string, input: PhotoUpsertInput): Promise
   if (input.ages             !== undefined) row.ages = input.ages;
   if (input.genders          !== undefined) row.genders = input.genders;
   if (input.expressions      !== undefined) row.expressions = input.expressions;
+  if (input.landmarkName        !== undefined) row.landmark_name = input.landmarkName;
+  if (input.landmarkConfidence  !== undefined) row.landmark_confidence = input.landmarkConfidence;
+  if (input.landmarkDescription !== undefined) row.landmark_description = input.landmarkDescription;
+  if (input.landmarkAnalyzedAt  !== undefined) row.landmark_analyzed_at = input.landmarkAnalyzedAt;
 
   const { error } = await supabase.from("photos").upsert(row);
+  if (error) throw new Error(error.message);
+}
+
+// Persists a landmark-recognition result so PhotoModal never has to re-call
+// /recognize-landmark for a photo that's already been analyzed.
+export async function saveLandmarkResult(
+  uid: string,
+  photoId: string,
+  result: { landmarkName: string | null; landmarkConfidence: string | null; landmarkDescription: string | null },
+): Promise<void> {
+  const { error } = await supabase
+    .from("photos")
+    .update({
+      landmark_name: result.landmarkName,
+      landmark_confidence: result.landmarkConfidence,
+      landmark_description: result.landmarkDescription,
+      landmark_analyzed_at: new Date().toISOString(),
+    })
+    .eq("id", photoId)
+    .eq("user_id", uid);
+  if (error) throw new Error(error.message);
+}
+
+// trip_key is the sorted, comma-joined list of a trip's photo ids — stable
+// regardless of array index or active filters (see detectTrips() in app/albums/page.tsx).
+export async function fetchTripDiary(uid: string, tripKey: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("trip_diaries")
+    .select("diary_text")
+    .eq("user_id", uid)
+    .eq("trip_key", tripKey)
+    .maybeSingle();
+  if (error) {
+    console.error("fetchTripDiary failed:", error);
+    return null;
+  }
+  return (data?.diary_text as string) ?? null;
+}
+
+export async function saveTripDiary(uid: string, tripKey: string, diaryText: string, language: string): Promise<void> {
+  const { error } = await supabase
+    .from("trip_diaries")
+    .upsert(
+      { user_id: uid, trip_key: tripKey, diary_text: diaryText, language, generated_at: new Date().toISOString() },
+      { onConflict: "user_id,trip_key" },
+    );
   if (error) throw new Error(error.message);
 }
 
