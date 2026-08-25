@@ -118,14 +118,14 @@ export default function UserProfilePage() {
         ) : (
           <div className="grid grid-cols-3 gap-1.5">
             {posts.map((post) => (
-              <div key={post.id} className="relative aspect-square rounded-lg overflow-hidden group">
+              <Link key={post.id} href={`/post/${post.id}`} className="relative aspect-square rounded-lg overflow-hidden group block">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={post.imageUrl} alt="" className="w-full h-full object-cover" />
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100">
                   <span className="flex items-center gap-1 text-white text-xs font-bold"><Heart size={13} className="fill-white" /> {post.likeCount}</span>
                   <span className="flex items-center gap-1 text-white text-xs font-bold"><MessageCircle size={13} /> {post.commentCount}</span>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         )}

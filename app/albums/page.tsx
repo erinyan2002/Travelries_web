@@ -8,9 +8,66 @@ import { MapPhoto } from "@/lib/types";
 import { fetchMapPhotos, saveLandmarkResult, fetchTripDiary, saveTripDiary } from "@/lib/photosApi";
 import {
   Images, Users, Image as ImageIcon, Star, Download, Trash2,
-  X, CalendarDays, SlidersHorizontal, Search, Calendar, Share2, Loader2, MapPin, Sparkles,
+  X, CalendarDays, SlidersHorizontal, Search, Calendar, Share2, Loader2, MapPin, Sparkles, LayoutTemplate,
 } from "lucide-react";
 import { sharePhoto } from "@/lib/shareUtils";
+import ShareCardModal from "@/components/ShareCardModal";
+import { loadImage, drawImageCover } from "@/lib/canvasCard";
+
+// Draws a 1080x1920 Instagram-story-style card for a single photo: the photo
+// itself (cropped to a rounded frame), its location/date beneath it, and a
+// small Travelries watermark — used by the "Story" button in PhotoModal.
+async function drawPhotoStoryCard(ctx: CanvasRenderingContext2D, w: number, h: number, photo: MapPhoto) {
+  const bg = ctx.createLinearGradient(0, 0, 0, h);
+  bg.addColorStop(0, "#0B1220");
+  bg.addColorStop(1, "#1E293B");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, w, h);
+
+  const margin = 56;
+  const photoTop = 130;
+  const photoH = h * 0.6;
+  const photoW = w - margin * 2;
+
+  const img = await loadImage(photo.imageUrl);
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(margin, photoTop, photoW, photoH, 36);
+  ctx.clip();
+  drawImageCover(ctx, img, margin, photoTop, photoW, photoH);
+  ctx.restore();
+
+  ctx.strokeStyle = "rgba(255,255,255,0.12)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(margin, photoTop, photoW, photoH, 36);
+  ctx.stroke();
+
+  let y = photoTop + photoH + 100;
+  ctx.textAlign = "left";
+
+  const loc = photo.location?.split(",")[0]?.trim();
+  if (loc) {
+    ctx.fillStyle = "#93C5FD";
+    ctx.font = "600 36px system-ui, -apple-system, sans-serif";
+    ctx.fillText(`📍 ${loc}`, margin, y);
+    y += 64;
+  }
+
+  const dateLabel = photo.captureDate && photo.captureDate !== "Not available" && photo.captureDate !== "날짜 없음"
+    ? photo.captureDate
+    : (photo.uploadedAt?.slice(0, 10) ?? "");
+  if (dateLabel) {
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "800 52px system-ui, -apple-system, sans-serif";
+    ctx.fillText(dateLabel, margin, y);
+  }
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "rgba(255,255,255,0.55)";
+  ctx.font = "700 36px system-ui, -apple-system, sans-serif";
+  ctx.fillText("✈ Travelries", w / 2, h - 80);
+}
 
 type Filter    = "All" | "With People" | "Scenery";
 type DateRange = "all" | "week" | "month" | "year";
@@ -270,6 +327,7 @@ function PhotoModal({
   );
   const [landmarkError,   setLandmarkError]   = useState<string | null>(null);
   const [isReanalyzing,   setIsReanalyzing]   = useState(false);
+  const [showStoryCard,   setShowStoryCard]   = useState(false);
 
   // A photo already carries its cached landmark_* fields from Supabase — this only
   // resets local state when the modal is reopened on a *different* photo, not on every
@@ -368,11 +426,17 @@ function PhotoModal({
             </div>
           )}
         </div>
-        <div className="flex gap-2 px-4 py-3 border-t border-slate-100">
+        <div className="flex gap-2 px-4 pt-3 border-t border-slate-100">
+          <button onClick={() => setShowStoryCard(true)}
+            className="flex-1 flex items-center justify-center gap-2 bg-violet-500 text-white py-2.5 rounded-xl text-sm font-bold hover:bg-violet-600 transition-colors">
+            <LayoutTemplate size={15} /> Story
+          </button>
           <button onClick={() => onShare(photo)} disabled={sharing}
             className="flex-1 flex items-center justify-center gap-2 bg-blue-500 text-white py-2.5 rounded-xl text-sm font-bold hover:bg-blue-600 transition-colors disabled:opacity-60">
             {sharing ? <Loader2 size={15} className="animate-spin" /> : <Share2 size={15} />} Share
           </button>
+        </div>
+        <div className="flex gap-2 px-4 pt-2 pb-3">
           <button onClick={() => onDownload(photo)}
             className="flex-1 flex items-center justify-center gap-2 bg-slate-900 text-white py-2.5 rounded-xl text-sm font-bold hover:bg-slate-700 transition-colors">
             <Download size={15} /> Download
@@ -383,6 +447,14 @@ function PhotoModal({
           </button>
         </div>
       </div>
+      {showStoryCard && (
+        <ShareCardModal
+          title="Story Card"
+          fileName={`travelries-${photo.id}.png`}
+          onClose={() => setShowStoryCard(false)}
+          draw={(ctx, w, h) => drawPhotoStoryCard(ctx, w, h, photo)}
+        />
+      )}
     </div>
   );
 }

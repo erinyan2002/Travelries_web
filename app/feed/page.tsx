@@ -8,16 +8,17 @@ import { supabase } from "@/lib/supabase";
 import { fetchMapPhotos } from "@/lib/photosApi";
 import { MapPhoto } from "@/lib/types";
 import { sharePhoto } from "@/lib/shareUtils";
+import CommentThread from "@/components/CommentThread";
 import {
   ensureProfile, searchProfiles, getFollowCounts, getFollowingIds,
   followUser, unfollowUser, createPost, deletePost, fetchFeed, toggleLike, createRepost,
-  fetchComments, addComment, deleteComment, tagUserInPost,
+  tagUserInPost,
   fetchFollowingProfiles, fetchFollowerProfiles,
-  Profile, Post, Comment,
+  Profile, Post,
 } from "@/lib/socialUtils";
 import {
   Sparkles, Search, X, Heart, Plus, Loader2, MapPin, CalendarDays, Trash2, Users, UserPlus, UserCheck,
-  MessageCircle, Send, Repeat2, Share2, Check,
+  MessageCircle, Repeat2, Share2, Check,
 } from "lucide-react";
 
 function timeAgo(iso: string): string {
@@ -230,9 +231,6 @@ export default function FeedPage() {
   const [myPhotos, setMyPhotos] = useState<MapPhoto[]>([]);
 
   const [openComments, setOpenComments] = useState<Set<string>>(new Set());
-  const [comments, setComments] = useState<Record<string, Comment[]>>({});
-  const [commentDraft, setCommentDraft] = useState<Record<string, string>>({});
-  const [commentLoading, setCommentLoading] = useState<Set<string>>(new Set());
 
   const [sharingId, setSharingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -357,37 +355,12 @@ export default function FeedPage() {
     await reloadSocial(uid);
   }
 
-  async function toggleComments(postId: string) {
-    const isOpen = openComments.has(postId);
+  function toggleComments(postId: string) {
     setOpenComments((prev) => {
       const next = new Set(prev);
-      if (isOpen) next.delete(postId); else next.add(postId);
+      if (next.has(postId)) next.delete(postId); else next.add(postId);
       return next;
     });
-    if (!isOpen && !comments[postId]) {
-      setCommentLoading((prev) => new Set(prev).add(postId));
-      const list = await fetchComments(postId);
-      setComments((prev) => ({ ...prev, [postId]: list }));
-      setCommentLoading((prev) => { const next = new Set(prev); next.delete(postId); return next; });
-    }
-  }
-
-  async function handleAddComment(postId: string) {
-    if (!uid) return;
-    const text = (commentDraft[postId] ?? "").trim();
-    if (!text) return;
-    await addComment(uid, postId, text);
-    setCommentDraft((prev) => ({ ...prev, [postId]: "" }));
-    const list = await fetchComments(postId);
-    setComments((prev) => ({ ...prev, [postId]: list }));
-    setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, commentCount: list.length } : p));
-  }
-
-  async function handleDeleteComment(postId: string, commentId: string) {
-    if (!uid) return;
-    await deleteComment(uid, commentId);
-    setComments((prev) => ({ ...prev, [postId]: (prev[postId] ?? []).filter((c) => c.id !== commentId) }));
-    setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, commentCount: Math.max(0, p.commentCount - 1) } : p));
   }
 
   if (loading) return null;
@@ -484,8 +457,10 @@ export default function FeedPage() {
                     </button>
                   )}
                 </div>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={post.imageUrl} alt="" className="w-full max-h-96 object-cover" />
+                <Link href={`/post/${post.id}`}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={post.imageUrl} alt="" className="w-full max-h-96 object-cover" />
+                </Link>
                 <div className="px-4 py-3 space-y-1.5">
                   <div className="flex items-center gap-3">
                     <button onClick={() => handleLike(post)} className="flex items-center gap-1.5 text-sm font-bold text-slate-600 hover:text-red-500 transition-colors">
@@ -527,41 +502,13 @@ export default function FeedPage() {
                   )}
                 </div>
 
-                {openComments.has(post.id) && (
-                  <div className="border-t border-slate-100 px-4 py-3 space-y-2.5 bg-slate-50">
-                    {commentLoading.has(post.id) && (
-                      <p className="text-xs text-slate-400 flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Loading comments...</p>
-                    )}
-                    {!commentLoading.has(post.id) && (comments[post.id] ?? []).length === 0 && (
-                      <p className="text-xs text-slate-400">No comments yet.</p>
-                    )}
-                    {(comments[post.id] ?? []).map((c) => (
-                      <div key={c.id} className="flex items-start gap-2">
-                        <div className="mt-0.5"><Avatar name={c.authorName} url={c.authorAvatarUrl} size="sm" /></div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs text-slate-800"><span className="font-bold">{c.authorName}</span> {c.content}</p>
-                          <p className="text-[10px] text-slate-400">{timeAgo(c.createdAt)}</p>
-                        </div>
-                        {c.userId === uid && (
-                          <button onClick={() => handleDeleteComment(post.id, c.id)} className="text-slate-300 hover:text-red-500 transition-colors p-0.5 flex-shrink-0">
-                            <Trash2 size={12} />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                    <div className="flex items-center gap-2 pt-1">
-                      <input
-                        value={commentDraft[post.id] ?? ""}
-                        onChange={(e) => setCommentDraft((prev) => ({ ...prev, [post.id]: e.target.value }))}
-                        onKeyDown={(e) => { if (e.key === "Enter") handleAddComment(post.id); }}
-                        placeholder="Add a comment..."
-                        className="flex-1 text-xs bg-white border border-slate-200 rounded-full px-3 py-2 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
-                      />
-                      <button onClick={() => handleAddComment(post.id)}
-                        className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-full bg-blue-600 text-white hover:bg-blue-700 transition-colors">
-                        <Send size={13} />
-                      </button>
-                    </div>
+                {openComments.has(post.id) && uid && (
+                  <div className="border-t border-slate-100 px-4 py-3 bg-slate-50">
+                    <CommentThread
+                      uid={uid}
+                      postId={post.id}
+                      onCountChange={(count) => setPosts((prev) => prev.map((p) => p.id === post.id ? { ...p, commentCount: count } : p))}
+                    />
                   </div>
                 )}
               </div>

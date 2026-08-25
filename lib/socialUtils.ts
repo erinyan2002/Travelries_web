@@ -35,6 +35,11 @@ export type Comment = {
   authorAvatarUrl: string | null;
   content: string;
   createdAt: string;
+  // null for a top-level comment; the parent comment's id for a reply. Replies
+  // are one level deep only — a reply can't itself be replied to.
+  parentCommentId: string | null;
+  likeCount: number;
+  likedByMe: boolean;
 };
 
 export async function searchProfiles(query: string, excludeUid: string): Promise<Profile[]> {
@@ -209,6 +214,19 @@ export async function fetchUserPosts(uid: string, authorId: string): Promise<Pos
   return enrichPosts(uid, postRows ?? []);
 }
 
+// Single post lookup, used by the post detail page (/post/[id]) reached from
+// notifications ("who liked/commented on your post") and from a profile's post
+// grid. Same enrichment as fetchFeed/fetchUserPosts, so like/comment counts and
+// tagged users come back consistent with the feed. RLS naturally returns no row
+// (rather than an error) if the current user can't see this post (not the
+// author and not following them), which the page treats as "not found".
+export async function fetchPostById(uid: string, postId: string): Promise<Post | null> {
+  const { data: row, error } = await supabase.from("posts").select("*").eq("id", postId).maybeSingle();
+  if (error || !row) return null;
+  const posts = await enrichPosts(uid, [row]);
+  return posts[0] ?? null;
+}
+
 async function enrichPosts(uid: string, rows: Record<string, unknown>[]): Promise<Post[]> {
   if (rows.length === 0) return [];
 
@@ -282,8 +300,9 @@ export async function toggleLike(uid: string, postId: string, currentlyLiked: bo
 
 // Comments are loaded per-post on demand (not batched into fetchFeed), so
 // author names are joined in with a small follow-up query scoped to just this
-// post's commenters, same "Traveler" fallback pattern as fetchFeed.
-export async function fetchComments(postId: string): Promise<Comment[]> {
+// post's commenters, same "Traveler" fallback pattern as fetchFeed. `uid` is
+// needed (unlike before comment likes existed) to resolve "did I like this".
+export async function fetchComments(uid: string, postId: string): Promise<Comment[]> {
   const { data: rows, error } = await supabase
     .from("post_comments")
     .select("*")
@@ -296,9 +315,20 @@ export async function fetchComments(postId: string): Promise<Comment[]> {
   const commentRows = rows ?? [];
   if (commentRows.length === 0) return [];
 
+  const commentIds = commentRows.map((r) => r.id as string);
   const authorIds = [...new Set(commentRows.map((r) => r.user_id as string))];
-  const { data: profileRows } = await supabase.from("profiles").select("id, name, avatar_url").in("id", authorIds);
+  const [{ data: profileRows }, { data: likeRows }] = await Promise.all([
+    supabase.from("profiles").select("id, name, avatar_url").in("id", authorIds),
+    supabase.from("comment_likes").select("comment_id, user_id").in("comment_id", commentIds),
+  ]);
   const profilesByAuthor = new Map((profileRows ?? []).map((p) => [p.id as string, p]));
+  const likeCounts = new Map<string, number>();
+  const likedByMe = new Set<string>();
+  for (const like of likeRows ?? []) {
+    const cid = like.comment_id as string;
+    likeCounts.set(cid, (likeCounts.get(cid) ?? 0) + 1);
+    if (like.user_id === uid) likedByMe.add(cid);
+  }
 
   return commentRows.map((r) => ({
     id: r.id as string,
@@ -308,19 +338,34 @@ export async function fetchComments(postId: string): Promise<Comment[]> {
     authorAvatarUrl: (profilesByAuthor.get(r.user_id as string)?.avatar_url as string) ?? null,
     content: r.content as string,
     createdAt: r.created_at as string,
+    parentCommentId: (r.parent_comment_id as string) ?? null,
+    likeCount: likeCounts.get(r.id as string) ?? 0,
+    likedByMe: likedByMe.has(r.id as string),
   }));
 }
 
-export async function addComment(uid: string, postId: string, content: string): Promise<void> {
+export async function addComment(uid: string, postId: string, content: string, parentCommentId?: string): Promise<void> {
   const trimmed = content.trim();
   if (!trimmed) return;
-  const { error } = await supabase.from("post_comments").insert({ post_id: postId, user_id: uid, content: trimmed });
+  const { error } = await supabase.from("post_comments").insert({
+    post_id: postId, user_id: uid, content: trimmed, parent_comment_id: parentCommentId ?? null,
+  });
   if (error) throw new Error(error.message);
 }
 
 export async function deleteComment(uid: string, commentId: string): Promise<void> {
   const { error } = await supabase.from("post_comments").delete().eq("id", commentId).eq("user_id", uid);
   if (error) throw new Error(error.message);
+}
+
+// Returns the comment's new liked state (true = now liked) — same pattern as toggleLike.
+export async function toggleCommentLike(uid: string, commentId: string, currentlyLiked: boolean): Promise<boolean> {
+  if (currentlyLiked) {
+    await supabase.from("comment_likes").delete().eq("comment_id", commentId).eq("user_id", uid);
+    return false;
+  }
+  await supabase.from("comment_likes").insert({ comment_id: commentId, user_id: uid });
+  return true;
 }
 
 // Tagging writes a notification for the TAGGED user, not the caller — `notifications`
