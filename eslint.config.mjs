@@ -13,6 +13,8 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     "backend/**",
+    // Vendored MediaPipe WASM runtime, copied verbatim from node_modules — not our code.
+    "public/mediapipe-wasm/**",
   ]),
 ]);
 

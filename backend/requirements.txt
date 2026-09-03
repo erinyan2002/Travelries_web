@@ -11,6 +11,11 @@ requests
 # InsightFace — primary face detection/recognition/age/gender engine
 insightface
 onnxruntime
+# MediaPipe BlazeFace — optional second detector for the /analyze/compare picker UI
+# Pinned to 0.10.21: 1.0.x's FaceDetector task fatally crashes the whole process on
+# macOS (Check failed: service_ Service is unavailable., in TensorsToDetectionsCalculator)
+# even with delegate=CPU explicitly set — a known upstream issue, not fixable from here.
+mediapipe==0.10.21
 # AI travel diary + landmark recognition (needs ANTHROPIC_API_KEY, see utils/claude_utils.py)
 anthropic
 python-dotenv

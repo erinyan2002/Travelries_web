@@ -216,6 +216,17 @@ except ImportError:
     _face_recognition_lib = None  # type: ignore[assignment]
     _DLIB_OK = False
 
+try:
+    import mediapipe as mp
+    from mediapipe.tasks import python as mp_python
+    from mediapipe.tasks.python import vision as mp_vision
+    _MEDIAPIPE_OK = True
+except ImportError:
+    mp = None  # type: ignore[assignment]
+    _MEDIAPIPE_OK = False
+
+MEDIAPIPE_AVAILABLE = _MEDIAPIPE_OK
+
 
 def _run_ssd(image: np.ndarray) -> list[tuple[int, int, int, int, float]]:
     h, w = image.shape[:2]
@@ -285,6 +296,90 @@ def _detect_ssd_dlib(image: np.ndarray) -> dict:
     }
 
 
+# ── Tier 3 (optional, comparison only): MediaPipe BlazeFace ───────────────────
+# Not part of the automatic detect_faces() pipeline — used by detect_faces_multi()
+# to give the frontend a second detector to compare against the primary result.
+_mp_detector    = None
+_mediapipe_ok   = None   # None = not yet tried
+_MP_MODEL_PATH  = _MODEL_DIR / "mediapipe" / "blaze_face_short_range.tflite"
+_MP_MODEL_URL   = (
+    "https://storage.googleapis.com/mediapipe-models/face_detector/"
+    "blaze_face_short_range/float16/latest/blaze_face_short_range.tflite"
+)
+
+
+def _get_mediapipe_detector():
+    global _mp_detector, _mediapipe_ok
+    if _mediapipe_ok is not None:
+        return _mp_detector
+    if not _MEDIAPIPE_OK:
+        _mediapipe_ok = False
+        return None
+    try:
+        _MP_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+        if not _MP_MODEL_PATH.exists():
+            import requests
+            resp = requests.get(_MP_MODEL_URL, timeout=30)
+            resp.raise_for_status()
+            _MP_MODEL_PATH.write_bytes(resp.content)
+        # delegate=CPU is required here — the GPU/Metal delegate crashes the whole
+        # process (fatal MediaPipe C++ abort, not a catchable Python exception) on
+        # at least some macOS setups.
+        base_options = mp_python.BaseOptions(
+            model_asset_path=str(_MP_MODEL_PATH),
+            delegate=mp_python.BaseOptions.Delegate.CPU,
+        )
+        options = mp_vision.FaceDetectorOptions(base_options=base_options)
+        _mp_detector = mp_vision.FaceDetector.create_from_options(options)
+        _mediapipe_ok = True
+        print("[face_utils] MediaPipe BlazeFace loaded ✓")
+    except Exception as exc:
+        _mediapipe_ok = False
+        _mp_detector = None
+        print(f"[face_utils] MediaPipe unavailable ({exc})")
+    return _mp_detector
+
+
+def _detect_mediapipe(image: np.ndarray) -> dict:
+    detector = _get_mediapipe_detector()
+    if detector is None:
+        return {"facesDetected": 0, "faceBoxes": [], "descriptors": [],
+                "ages": [], "genders": [], "confidences": []}
+
+    h, w = image.shape[:2]
+    rgb  = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+    result = detector.detect(mp_image)
+
+    face_boxes, descriptors, confidences = [], [], []
+    for det in result.detections:
+        bbox = det.bounding_box
+        x, y = max(0, bbox.origin_x), max(0, bbox.origin_y)
+        bw = min(w - x, bbox.width)
+        bh = min(h - y, bbox.height)
+        if bw < MIN_FACE_PX or bh < MIN_FACE_PX:
+            continue
+        score = det.categories[0].score if det.categories else 1.0
+
+        face_boxes.append({
+            "x": x, "y": y, "w": bw, "h": bh,
+            "confidence": round(score, 4),
+            "x_norm": round(x / w, 6), "y_norm": round(y / h, 6),
+            "w_norm": round(bw / w, 6), "h_norm": round(bh / h, 6),
+        })
+        descriptors.append(_compute_descriptor_dlib(rgb, x, y, bw, bh))
+        confidences.append(round(score, 4))
+
+    return {
+        "facesDetected": len(face_boxes),
+        "faceBoxes":     face_boxes,
+        "descriptors":   descriptors,
+        "ages":          [],
+        "genders":       [],
+        "confidences":   confidences,
+    }
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 def detect_faces(file_path: str) -> dict:
     """
@@ -314,6 +409,43 @@ def detect_faces(file_path: str) -> dict:
 
     image = _apply_exif_rotation(image, file_path)
     return _detect_insightface(image)
+
+
+def detect_faces_multi(file_path: str) -> dict:
+    """
+    Like detect_faces(), but also runs the MediaPipe BlazeFace detector on the
+    same (EXIF-rotated) image so the frontend can show both results and let the
+    user pick whichever looks best for that photo. The primary result is exactly
+    what detect_faces() would have returned (InsightFace, or SSD+dlib if
+    InsightFace isn't installed); "mediapipe" is None if MediaPipe isn't
+    installed or its model failed to load.
+
+    Returns
+    -------
+    {
+        "primary":   {"engine": "insightface" | "ssd_dlib" | None, **detect_faces() shape},
+        "mediapipe": {"engine": "mediapipe", **detect_faces() shape} | None,
+    }
+    """
+    empty = {"facesDetected": 0, "faceBoxes": [], "descriptors": [],
+             "ages": [], "genders": [], "confidences": []}
+
+    image = cv2.imread(file_path)
+    if image is None:
+        return {"primary": {"engine": None, **empty}, "mediapipe": None}
+
+    image = _apply_exif_rotation(image, file_path)
+
+    primary_result = _detect_insightface(image)
+    primary_engine = "insightface" if _insightface_ok else "ssd_dlib"
+
+    mp_detector = _get_mediapipe_detector()
+    mediapipe_result = {"engine": "mediapipe", **_detect_mediapipe(image)} if mp_detector else None
+
+    return {
+        "primary":   {"engine": primary_engine, **primary_result},
+        "mediapipe": mediapipe_result,
+    }
 
 
 def match_face(

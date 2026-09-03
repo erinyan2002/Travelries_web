@@ -3,6 +3,7 @@
 import { ChangeEvent, useState, useEffect, useRef } from "react";
 import * as exifr from "exifr";
 import * as faceapi from "face-api.js";
+import { detectFacesMediaPipe, loadMediaPipeDetector } from "@/lib/mediapipeDetector";
 import BottomNav from "@/components/BottomNav";
 import { supabase } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
@@ -70,6 +71,7 @@ type PhotoInfo = {
   lng: number | null;
   faceCount: number;
   category: string;
+  faceBoxes: Array<{ x: number; y: number; width: number; height: number }>;
 };
 
 const BACKEND_URL = "http://localhost:8000";
@@ -209,13 +211,70 @@ function boxIoU(
 
 async function runFaceDetection(
   imgEl: HTMLImageElement,
-  modelType: "ssd" | "tiny",
+  modelType: "mediapipe" | "ssd" | "tiny",
   hasExtra: boolean,
 ): Promise<DetectionResult> {
   const MIN_PX = 20;
   const W = imgEl.naturalWidth, H = imgEl.naturalHeight;
   const normBox = (b: { x: number; y: number; width: number; height: number }) =>
     ({ x: b.x / W, y: b.y / H, width: b.width / W, height: b.height / H });
+
+  if (modelType === "mediapipe") {
+    const rawBoxes = (await detectFacesMediaPipe(imgEl)).filter(
+      (b) => b.width >= MIN_PX && b.height >= MIN_PX
+    );
+
+    const boxes: DetectionResult["boxes"] = [];
+    const descriptors: number[][] = [];
+    const confidences: number[] = [];
+    const ages: number[] = [];
+    const genders: string[] = [];
+    const expressions: string[] = [];
+
+    for (const box of rawBoxes) {
+      // Pad the MediaPipe box ~30% on each side, clamped to image bounds, so
+      // face-api's landmark/recognition nets get enough context to align the face.
+      const padX = box.width * 0.3, padY = box.height * 0.3;
+      const cropX = Math.max(0, box.x - padX);
+      const cropY = Math.max(0, box.y - padY);
+      const cropW = Math.min(W, box.x + box.width + padX) - cropX;
+      const cropH = Math.min(H, box.y + box.height + padY) - cropY;
+
+      const canvas = document.createElement("canvas");
+      canvas.width = cropW;
+      canvas.height = cropH;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) continue;
+      ctx.drawImage(imgEl, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+      const tinyOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.1 });
+
+      if (hasExtra) {
+        const rec = await faceapi
+          .detectSingleFace(canvas, tinyOpts)
+          .withFaceLandmarks()
+          .withFaceDescriptor()
+          .withAgeAndGender()
+          .withFaceExpressions();
+        if (!rec) continue; // MediaPipe already localized it; a miss here is rare
+        boxes.push(normBox(box));
+        descriptors.push(Array.from(rec.descriptor));
+        confidences.push(box.score);
+        ages.push(Math.round(rec.age));
+        genders.push(rec.gender);
+        const e = rec.expressions as unknown as Record<string, number>;
+        expressions.push(Object.entries(e).sort((a, b) => b[1] - a[1])[0][0]);
+      } else {
+        const rec = await faceapi.detectSingleFace(canvas, tinyOpts).withFaceLandmarks().withFaceDescriptor();
+        if (!rec) continue;
+        boxes.push(normBox(box));
+        descriptors.push(Array.from(rec.descriptor));
+        confidences.push(box.score);
+      }
+    }
+
+    return { count: boxes.length, boxes, descriptors, confidences, ages, genders, expressions };
+  }
 
   if (modelType === "ssd") {
     const opts = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
@@ -312,7 +371,7 @@ export default function HomePage() {
   const [isEditingName,  setIsEditingName]  = useState(false);
   const [isModelLoaded,  setIsModelLoaded]  = useState(false);
   const [hasExtraModels, setHasExtraModels] = useState(false);
-  const [modelType,      setModelType]      = useState<"ssd" | "tiny">("tiny");
+  const [modelType,      setModelType]      = useState<"mediapipe" | "ssd" | "tiny">("tiny");
   const [backendStatus,  setBackendStatus]  = useState<"checking" | "online" | "offline">("checking");
   const [locationQuery,  setLocationQuery]  = useState("");
   const [manualCoords,   setManualCoords]   = useState<{ lat: number; lng: number; name: string } | null>(null);
@@ -351,21 +410,41 @@ export default function HomePage() {
 
   useEffect(() => {
     const MODEL_URL = "/models";
-    Promise.all([
-      faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
-      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-    ]).then(() => {
-      setModelType("ssd");
-      setIsModelLoaded(true);
+
+    function loadExtras() {
       Promise.all([
         faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
         faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
       ]).then(() => setHasExtraModels(true)).catch(() => {});
+    }
+
+    function loadSsdFallback() {
+      Promise.all([
+        faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
+        faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+        faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+      ]).then(() => {
+        setModelType("ssd");
+        setIsModelLoaded(true);
+        loadExtras();
+      }).catch(() => {
+        faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL)
+          .then(() => { setModelType("tiny"); setIsModelLoaded(true); })
+          .catch((err) => console.error("AI model load failed", err));
+      });
+    }
+
+    Promise.all([
+      loadMediaPipeDetector(),
+      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+    ]).then(() => {
+      setModelType("mediapipe");
+      setIsModelLoaded(true);
+      loadExtras();
     }).catch(() => {
-      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL)
-        .then(() => { setModelType("tiny"); setIsModelLoaded(true); })
-        .catch((err) => console.error("AI model load failed", err));
+      loadSsdFallback();
     });
   }, []);
 
@@ -374,6 +453,84 @@ export default function HomePage() {
       .then((r) => setBackendStatus(r.ok ? "online" : "offline"))
       .catch(() => setBackendStatus("offline"));
   }, []);
+
+  async function finalizeFaceUpload(
+    file: File,
+    requestId: number,
+    info: {
+      lat: number | null; lng: number | null;
+      captureDate: string; captureTime: string; captureTimestamp: string | null;
+      location: string;
+      detectedFaceCount: number;
+      faceBoxes: Array<{ x: number; y: number; width: number; height: number }>;
+      faceDescriptors: number[][];
+      faceConfidences: number[];
+      faceAges: number[];
+      faceGenders: string[];
+      faceExpressions: string[];
+    }
+  ) {
+    const {
+      lat, lng, captureDate, captureTime, captureTimestamp, location,
+      detectedFaceCount, faceBoxes, faceDescriptors, faceConfidences,
+      faceAges, faceGenders, faceExpressions,
+    } = info;
+
+    // A newer file was selected while this one was still being analyzed — drop this
+    // stale result instead of overwriting the preview/analysis panel for the new file.
+    if (requestId !== uploadRequestIdRef.current) return;
+
+    const category = detectedFaceCount > 0 ? "Portrait" : "Scenery";
+    setPhotoInfo({
+      fileName: file.name, fileType: file.type || "unknown",
+      fileSize: formatBytes(file.size), uploadedAt: new Date().toLocaleString(),
+      captureDate, captureTime, captureTimestamp, location, lat, lng,
+      faceCount: detectedFaceCount, category, faceBoxes,
+    });
+
+    if (lat !== null && lng !== null && backendStatus === "online") {
+      setPlacesLoading(true);
+      fetchNearbyPlaces(lat, lng).then((places) => {
+        setNearbyPlaces(places);
+        setPlacesFetched(true);
+        setPlacesLoading(false);
+      });
+    }
+
+    if (detectedFaceCount > 0) {
+      const topExpr = faceExpressions[0] ? (EXPRESSION_EN[faceExpressions[0]] ?? faceExpressions[0]) : null;
+      setFaceMessage(`${detectedFaceCount} face(s) detected!${topExpr ? ` · ${topExpr}` : ""} Saving...`);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        const uid = user?.id ?? "guest";
+        if (uid === "guest") throw new Error("Not signed in");
+        const dataUrl = await createThumbnailDataUrl(file, 1024, 0.90);
+        const facePhotoId = crypto.randomUUID();
+        await upsertPhoto(uid, {
+          id: facePhotoId,
+          fileName: file.name,
+          imageUrl: dataUrl,
+          faceCount: detectedFaceCount,
+          isFacePhoto: true,
+          isMapPhoto: false,
+          ...(faceBoxes.length > 0       && { boxes: faceBoxes }),
+          ...(faceDescriptors.length > 0 && { descriptors: faceDescriptors }),
+          ...(faceConfidences.length > 0 && { confidences: faceConfidences }),
+          ...(faceAges.length > 0        && { ages: faceAges }),
+          ...(faceGenders.length > 0     && { genders: faceGenders }),
+          ...(faceExpressions.length > 0 && { expressions: faceExpressions }),
+          ...(lat !== null               && { lat }),
+          ...(lng !== null               && { lng }),
+          ...(location !== "No GPS data" && { location }),
+        });
+        setLastFacePhotoId(facePhotoId);
+        setFaceMessage(`${detectedFaceCount} face(s) detected!${topExpr ? ` · ${topExpr}` : ""} Saved to Faces album.`);
+      } catch (saveErr) {
+        console.error("Face photo save failed:", saveErr);
+        setFaceMessage(`${detectedFaceCount} face(s) detected! (Save failed)`);
+      }
+    }
+  }
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []);
@@ -460,60 +617,10 @@ export default function HomePage() {
         }
       }
 
-      // A newer file was selected while this one was still being analyzed — drop this
-      // stale result instead of overwriting the preview/analysis panel for the new file.
-      if (requestId !== uploadRequestIdRef.current) return;
-
-      const category = detectedFaceCount > 0 ? "Portrait" : "Scenery";
-      setPhotoInfo({
-        fileName: file.name, fileType: file.type || "unknown",
-        fileSize: formatBytes(file.size), uploadedAt: new Date().toLocaleString(),
-        captureDate, captureTime, captureTimestamp, location, lat, lng,
-        faceCount: detectedFaceCount, category,
+      await finalizeFaceUpload(file, requestId, {
+        lat, lng, captureDate, captureTime, captureTimestamp, location,
+        detectedFaceCount, faceBoxes, faceDescriptors, faceConfidences, faceAges, faceGenders, faceExpressions,
       });
-
-      if (lat !== null && lng !== null && backendStatus === "online") {
-        setPlacesLoading(true);
-        fetchNearbyPlaces(lat, lng).then((places) => {
-          setNearbyPlaces(places);
-          setPlacesFetched(true);
-          setPlacesLoading(false);
-        });
-      }
-
-      if (detectedFaceCount > 0) {
-        const topExpr = faceExpressions[0] ? (EXPRESSION_EN[faceExpressions[0]] ?? faceExpressions[0]) : null;
-        setFaceMessage(`${detectedFaceCount} face(s) detected!${topExpr ? ` · ${topExpr}` : ""} Saving...`);
-        try {
-          const { data: { user } } = await supabase.auth.getUser();
-          const uid = user?.id ?? "guest";
-          if (uid === "guest") throw new Error("Not signed in");
-          const dataUrl = await createThumbnailDataUrl(file, 1024, 0.90);
-          const facePhotoId = crypto.randomUUID();
-          await upsertPhoto(uid, {
-            id: facePhotoId,
-            fileName: file.name,
-            imageUrl: dataUrl,
-            faceCount: detectedFaceCount,
-            isFacePhoto: true,
-            isMapPhoto: false,
-            ...(faceBoxes.length > 0       && { boxes: faceBoxes }),
-            ...(faceDescriptors.length > 0 && { descriptors: faceDescriptors }),
-            ...(faceConfidences.length > 0 && { confidences: faceConfidences }),
-            ...(faceAges.length > 0        && { ages: faceAges }),
-            ...(faceGenders.length > 0     && { genders: faceGenders }),
-            ...(faceExpressions.length > 0 && { expressions: faceExpressions }),
-            ...(lat !== null               && { lat }),
-            ...(lng !== null               && { lng }),
-            ...(location !== "No GPS data" && { location }),
-          });
-          setLastFacePhotoId(facePhotoId);
-          setFaceMessage(`${detectedFaceCount} face(s) detected!${topExpr ? ` · ${topExpr}` : ""} Saved to Faces album.`);
-        } catch (saveErr) {
-          console.error("Face photo save failed:", saveErr);
-          setFaceMessage(`${detectedFaceCount} face(s) detected! (Save failed)`);
-        }
-      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -1158,12 +1265,26 @@ export default function HomePage() {
             <div className="p-5">
               {photoInfo && previewUrl ? (
                 <div className="space-y-3">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={previewUrl}
-                    alt={customFileName}
-                    className="w-full max-h-60 object-cover rounded-xl border border-slate-100"
-                  />
+                  <div className="relative w-full rounded-xl overflow-hidden border border-slate-100 bg-slate-50">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={previewUrl}
+                      alt={customFileName}
+                      className="w-full h-auto block"
+                    />
+                    {photoInfo.faceBoxes.map((b, i) => (
+                      <div
+                        key={i}
+                        className="absolute border-2 border-sky-400 rounded-sm pointer-events-none"
+                        style={{
+                          left: `${b.x * 100}%`,
+                          top: `${b.y * 100}%`,
+                          width: `${b.width * 100}%`,
+                          height: `${b.height * 100}%`,
+                        }}
+                      />
+                    ))}
+                  </div>
 
                   {/* AI Classification gradient card */}
                   <div className={`flex items-center justify-between rounded-xl px-4 py-4 ${
