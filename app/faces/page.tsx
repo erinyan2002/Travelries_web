@@ -354,20 +354,35 @@ export default function FacesPage() {
 
   async function handleDelete(id: string) {
     const fileName = storedPhotos.find((p) => p.id === id)?.fileName;
-    await deletePhotoEverywhere(id, fileName);
-    setStoredPhotos((prev) => prev.filter((p) => p.id !== id));
-    setConfirmDeleteId(null);
+    try {
+      await deletePhotoEverywhere(id, fileName);
+      setStoredPhotos((prev) => prev.filter((p) => p.id !== id));
+    } catch (err) {
+      console.error("Delete failed:", err);
+      alert("Couldn't delete this photo. Please try again.");
+    } finally {
+      setConfirmDeleteId(null);
+    }
   }
 
   async function handleClearAll() {
     if (!uid) return;
+    const failed: FacePhoto[] = [];
     for (const p of storedPhotos) {
-      await deletePhotoEverywhere(p.id, p.fileName);
+      try {
+        await deletePhotoEverywhere(p.id, p.fileName);
+      } catch (err) {
+        console.error(`Delete failed for ${p.fileName}:`, err);
+        failed.push(p);
+      }
     }
     localStorage.removeItem(`face-labels-${uid}`);
-    setStoredPhotos([]);
+    setStoredPhotos(failed);
     setCustomLabels({});
     setConfirmClearAll(false);
+    if (failed.length > 0) {
+      alert(`${failed.length} photo(s) couldn't be deleted. Please try again.`);
+    }
   }
 
   const clusters      = useMemo(() => clusterByPerson(storedPhotos, MATCH_THRESHOLD), [storedPhotos]);

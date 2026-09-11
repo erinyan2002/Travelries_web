@@ -175,7 +175,12 @@ export async function renamePhoto(uid: string, photoId: string, fileName: string
 // Deletes the photo row (saved_photos cascades via its FK) and any collab_photos
 // row this user added under the same filename.
 export async function deletePhotoEverywhere(uid: string, photoId: string, fileName?: string): Promise<void> {
-  await supabase.from("photos").delete().eq("id", photoId).eq("user_id", uid);
+  // .select("id") forces the delete to report which rows it actually removed — a
+  // plain .delete() reports success even when RLS silently matched zero rows, which
+  // would otherwise leave the row (and its is_face_photo entry) behind with no error.
+  const { data, error } = await supabase.from("photos").delete().eq("id", photoId).eq("user_id", uid).select("id");
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) throw new Error("Photo not found or already deleted");
   if (fileName) {
     await supabase.from("collab_photos").delete().eq("added_by", uid).eq("file_name", fileName);
   }

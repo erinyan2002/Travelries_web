@@ -122,6 +122,41 @@ async function createThumbnailDataUrl(file: File, maxSize: number, quality: numb
   });
 }
 
+// One square, cover-cropped thumbnail per detected face box (normalized 0-1 coords),
+// padded ~20% so the crop isn't a tight box right against the face — used for the
+// "pick who to save" picker when multiple faces are detected in one photo.
+async function cropFaceThumbnails(
+  file: File,
+  boxes: Array<{ x: number; y: number; width: number; height: number }>,
+): Promise<string[]> {
+  const img = new Image();
+  const url = URL.createObjectURL(file);
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = reject;
+    img.src = url;
+  });
+  const W = img.naturalWidth, H = img.naturalHeight;
+  const SIZE = 120;
+  const thumbs = boxes.map((b) => {
+    const padX = b.width * W * 0.2, padY = b.height * H * 0.2;
+    const sx = Math.max(0, b.x * W - padX);
+    const sy = Math.max(0, b.y * H - padY);
+    const sw = Math.min(W - sx, b.width * W + padX * 2);
+    const sh = Math.min(H - sy, b.height * H + padY * 2);
+    const canvas = document.createElement("canvas");
+    canvas.width = SIZE;
+    canvas.height = SIZE;
+    const ctx = canvas.getContext("2d")!;
+    const scale = Math.max(SIZE / sw, SIZE / sh);
+    const dw = sw * scale, dh = sh * scale;
+    ctx.drawImage(img, sx, sy, sw, sh, (SIZE - dw) / 2, (SIZE - dh) / 2, dw, dh);
+    return canvas.toDataURL("image/jpeg", 0.85);
+  });
+  URL.revokeObjectURL(url);
+  return thumbs;
+}
+
 async function reverseGeocode(lat: number, lng: number): Promise<string> {
   try {
     const res = await fetch(
@@ -385,6 +420,14 @@ export default function HomePage() {
   const [batchItems,       setBatchItems]       = useState<BatchFile[]>([]);
   const [batchActive,      setBatchActive]      = useState(false);
   const [isMapSaved,       setIsMapSaved]       = useState(false);
+  const [rawFaces,           setRawFaces]           = useState<{
+    boxes: DetectionResult["boxes"]; descriptors: number[][]; confidences: number[];
+    ages: number[]; genders: string[]; expressions: string[];
+  } | null>(null);
+  const [selectedFaceIndices, setSelectedFaceIndices] = useState<Set<number>>(new Set());
+  const [faceSaveStatus,      setFaceSaveStatus]      = useState<"idle" | "needsSelection" | "saving" | "saved" | "failed">("idle");
+  const [savedFaceCount,      setSavedFaceCount]      = useState(0);
+  const [faceThumbnails,      setFaceThumbnails]      = useState<string[]>([]);
 
   async function refreshStats() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -497,39 +540,104 @@ export default function HomePage() {
       });
     }
 
-    if (detectedFaceCount > 0) {
-      const topExpr = faceExpressions[0] ? (EXPRESSION_EN[faceExpressions[0]] ?? faceExpressions[0]) : null;
-      setFaceMessage(`${detectedFaceCount} face(s) detected!${topExpr ? ` · ${topExpr}` : ""} Saving...`);
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        const uid = user?.id ?? "guest";
-        if (uid === "guest") throw new Error("Not signed in");
-        const dataUrl = await createThumbnailDataUrl(file, 1024, 0.90);
-        const facePhotoId = crypto.randomUUID();
-        await upsertPhoto(uid, {
-          id: facePhotoId,
-          fileName: file.name,
-          imageUrl: dataUrl,
-          faceCount: detectedFaceCount,
-          isFacePhoto: true,
-          isMapPhoto: false,
-          ...(faceBoxes.length > 0       && { boxes: faceBoxes }),
-          ...(faceDescriptors.length > 0 && { descriptors: faceDescriptors }),
-          ...(faceConfidences.length > 0 && { confidences: faceConfidences }),
-          ...(faceAges.length > 0        && { ages: faceAges }),
-          ...(faceGenders.length > 0     && { genders: faceGenders }),
-          ...(faceExpressions.length > 0 && { expressions: faceExpressions }),
-          ...(lat !== null               && { lat }),
-          ...(lng !== null               && { lng }),
-          ...(location !== "No GPS data" && { location }),
-        });
-        setLastFacePhotoId(facePhotoId);
-        setFaceMessage(`${detectedFaceCount} face(s) detected!${topExpr ? ` · ${topExpr}` : ""} Saved to Faces album.`);
-      } catch (saveErr) {
-        console.error("Face photo save failed:", saveErr);
-        setFaceMessage(`${detectedFaceCount} face(s) detected! (Save failed)`);
-      }
+    const faces = {
+      boxes: faceBoxes, descriptors: faceDescriptors, confidences: faceConfidences,
+      ages: faceAges, genders: faceGenders, expressions: faceExpressions,
+    };
+    setRawFaces(faces);
+    setSavedFaceCount(0);
+
+    if (detectedFaceCount === 0) {
+      setFaceSaveStatus("idle");
+      setSelectedFaceIndices(new Set());
+    } else if (detectedFaceCount === 1) {
+      // Nothing to choose between — save the one face straight away, as before.
+      setSelectedFaceIndices(new Set([0]));
+      await saveFacesToAlbum(file, [0], faces, lat, lng, location);
+    } else {
+      // Multiple people in frame — let the user pick who goes into the Faces album
+      // instead of saving every detected face.
+      setSelectedFaceIndices(new Set());
+      setFaceThumbnails([]);
+      setFaceSaveStatus("needsSelection");
+      setFaceMessage(`${detectedFaceCount} faces detected — pick who to save.`);
+      cropFaceThumbnails(file, faceBoxes).then(setFaceThumbnails).catch(() => setFaceThumbnails([]));
     }
+  }
+
+  // Saves only the selected face indices (boxes/descriptors/confidences stay index-aligned
+  // with detection output in both browser and backend paths). Age/gender/expression are only
+  // included when every detected face was selected, since backend results can drop null
+  // entries from those arrays and they'd no longer line up with a partial selection.
+  async function saveFacesToAlbum(
+    file: File,
+    indices: number[],
+    faces: { boxes: DetectionResult["boxes"]; descriptors: number[][]; confidences: number[]; ages: number[]; genders: string[]; expressions: string[] },
+    lat: number | null,
+    lng: number | null,
+    location: string,
+  ) {
+    const boxes       = indices.map((i) => faces.boxes[i]);
+    const descriptors = indices.map((i) => faces.descriptors[i]).filter((d): d is number[] => !!d);
+    const confidences = indices.map((i) => faces.confidences[i]).filter((c): c is number => c !== undefined);
+    const allSelected = indices.length === faces.boxes.length;
+
+    setFaceSaveStatus("saving");
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const uid = user?.id ?? "guest";
+      if (uid === "guest") throw new Error("Not signed in");
+      const dataUrl = await createThumbnailDataUrl(file, 1024, 0.90);
+      // Reuse the id of a row this file was already saved under (e.g. Save to Map
+      // clicked first) so this stays one row with both flags, not two rows.
+      const photoId = lastFacePhotoId ?? crypto.randomUUID();
+      await upsertPhoto(uid, {
+        id: photoId,
+        fileName: file.name,
+        imageUrl: dataUrl,
+        faceCount: boxes.length,
+        isFacePhoto: true,
+        ...(boxes.length > 0       && { boxes }),
+        ...(descriptors.length > 0 && { descriptors }),
+        ...(confidences.length > 0 && { confidences }),
+        ...(allSelected && faces.ages.length > 0        && { ages: faces.ages }),
+        ...(allSelected && faces.genders.length > 0     && { genders: faces.genders }),
+        ...(allSelected && faces.expressions.length > 0 && { expressions: faces.expressions }),
+        ...(lat !== null               && { lat }),
+        ...(lng !== null               && { lng }),
+        ...(location !== "No GPS data" && { location }),
+      });
+      setLastFacePhotoId(photoId);
+      setSavedFaceCount(boxes.length);
+      setFaceSaveStatus("saved");
+      const topExpr = allSelected && faces.expressions[0] ? (EXPRESSION_EN[faces.expressions[0]] ?? faces.expressions[0]) : null;
+      setFaceMessage(`${boxes.length} face(s) saved to Faces album.${topExpr ? ` · ${topExpr}` : ""}`);
+      refreshStats();
+    } catch (saveErr) {
+      console.error("Face photo save failed:", saveErr);
+      setFaceSaveStatus("failed");
+      setFaceMessage("Couldn't save the selected face(s). Please try again.");
+    }
+  }
+
+  function toggleFaceSelection(index: number) {
+    setSelectedFaceIndices((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index); else next.add(index);
+      return next;
+    });
+  }
+
+  async function handleSaveSelectedFaces() {
+    if (!selectedFile || !rawFaces || !photoInfo || selectedFaceIndices.size === 0) return;
+    await saveFacesToAlbum(
+      selectedFile,
+      Array.from(selectedFaceIndices).sort((a, b) => a - b),
+      rawFaces,
+      photoInfo.lat,
+      photoInfo.lng,
+      photoInfo.location,
+    );
   }
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -548,6 +656,11 @@ export default function HomePage() {
     setNearbyPlaces([]);
     setPlacesFetched(false);
     setIsMapSaved(false);
+    setRawFaces(null);
+    setSelectedFaceIndices(new Set());
+    setFaceSaveStatus("idle");
+    setSavedFaceCount(0);
+    setFaceThumbnails([]);
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
     setCustomFileName(file.name);
@@ -812,6 +925,11 @@ export default function HomePage() {
     setNearbyPlaces([]);
     setPlacesFetched(false);
     setIsMapSaved(false);
+    setRawFaces(null);
+    setSelectedFaceIndices(new Set());
+    setFaceSaveStatus("idle");
+    setSavedFaceCount(0);
+    setFaceThumbnails([]);
   }
 
   function startEditName() { setDraftFileName(customFileName); setIsEditingName(true); }
@@ -844,7 +962,7 @@ export default function HomePage() {
       // Reuse the id of the face-detection row this file already got saved under
       // (if any), so this becomes one row with both is_map_photo and is_face_photo
       // set, instead of two rows for the same photo.
-      const photoId = lastFacePhotoId && photoInfo.faceCount > 0 ? lastFacePhotoId : crypto.randomUUID();
+      const photoId = lastFacePhotoId ?? crypto.randomUUID();
       const dataUrl = await createThumbnailDataUrl(selectedFile, 1024, 0.90);
 
       // Upload to Supabase Storage; fall back to base64 if it fails
@@ -865,7 +983,7 @@ export default function HomePage() {
         captureDate: photoInfo.captureDate !== "Not available" ? photoInfo.captureDate : null,
         captureTime: photoInfo.captureTime !== "Not available" ? photoInfo.captureTime : null,
         captureTimestamp: photoInfo.captureTimestamp,
-        faceCount: photoInfo.faceCount,
+        faceCount: savedFaceCount,
         isMapPhoto: true,
       });
 
@@ -1272,18 +1390,35 @@ export default function HomePage() {
                       alt={customFileName}
                       className="w-full h-auto block"
                     />
-                    {photoInfo.faceBoxes.map((b, i) => (
-                      <div
-                        key={i}
-                        className="absolute border-2 border-sky-400 rounded-sm pointer-events-none"
-                        style={{
-                          left: `${b.x * 100}%`,
-                          top: `${b.y * 100}%`,
-                          width: `${b.width * 100}%`,
-                          height: `${b.height * 100}%`,
-                        }}
-                      />
-                    ))}
+                    {photoInfo.faceBoxes.map((b, i) => {
+                      const selectable = faceSaveStatus === "needsSelection";
+                      const selected = selectedFaceIndices.has(i);
+                      return (
+                        <div
+                          key={i}
+                          onClick={selectable ? () => toggleFaceSelection(i) : undefined}
+                          className={`absolute rounded-sm border-2 transition-colors ${
+                            selectable
+                              ? `cursor-pointer ${selected ? "border-emerald-400 bg-emerald-400/10" : "border-sky-400 hover:border-sky-500"}`
+                              : "border-sky-400 pointer-events-none"
+                          }`}
+                          style={{
+                            left: `${b.x * 100}%`,
+                            top: `${b.y * 100}%`,
+                            width: `${b.width * 100}%`,
+                            height: `${b.height * 100}%`,
+                          }}
+                        >
+                          {selectable && (
+                            <span className={`absolute -top-2.5 -left-2.5 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white ${
+                              selected ? "bg-emerald-500" : "bg-sky-500"
+                            }`}>
+                              {i + 1}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
 
                   {/* AI Classification gradient card */}
@@ -1307,9 +1442,66 @@ export default function HomePage() {
                     </div>
                   </div>
 
-                  {faceMessage && (
+                  {faceSaveStatus === "needsSelection" && (
+                    <div className="rounded-xl border border-sky-100 bg-sky-50 p-3 space-y-3">
+                      <p className="text-xs font-semibold text-slate-700">
+                        Who do you want to save? ({selectedFaceIndices.size}/{photoInfo.faceBoxes.length} selected)
+                      </p>
+
+                      <div className="flex gap-3 overflow-x-auto pb-1">
+                        {photoInfo.faceBoxes.map((_, i) => {
+                          const selected = selectedFaceIndices.has(i);
+                          return (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => toggleFaceSelection(i)}
+                              className="flex flex-shrink-0 flex-col items-center gap-1"
+                            >
+                              <div className={`relative h-16 w-16 overflow-hidden rounded-full border-2 ${
+                                selected ? "border-emerald-500 ring-2 ring-emerald-200" : "border-slate-200"
+                              }`}>
+                                {faceThumbnails[i] ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={faceThumbnails[i]} alt={`Person ${i + 1}`} className="h-full w-full object-cover" />
+                                ) : (
+                                  <div className="h-full w-full animate-pulse bg-slate-200" />
+                                )}
+                                {selected && (
+                                  <div className="absolute inset-0 flex items-center justify-center bg-emerald-500/30">
+                                    <Check size={20} className="text-white drop-shadow" />
+                                  </div>
+                                )}
+                              </div>
+                              <span className={`text-[11px] font-semibold ${selected ? "text-emerald-600" : "text-slate-500"}`}>
+                                Person {i + 1}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <button
+                        onClick={handleSaveSelectedFaces}
+                        disabled={selectedFaceIndices.size === 0}
+                        className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-sm transition-all ${
+                          selectedFaceIndices.size === 0
+                            ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                            : "bg-gradient-to-r from-emerald-400 to-emerald-500 hover:from-emerald-500 hover:to-emerald-600 text-white shadow-lg shadow-emerald-100"
+                        }`}>
+                        <Users size={16} />
+                        Save {selectedFaceIndices.size || ""} face{selectedFaceIndices.size === 1 ? "" : "s"} to Faces
+                      </button>
+                    </div>
+                  )}
+
+                  {faceSaveStatus === "saving" && (
+                    <p className="text-xs font-medium px-1 text-slate-500">Saving selected face(s)...</p>
+                  )}
+
+                  {(faceSaveStatus === "saved" || faceSaveStatus === "failed") && faceMessage && (
                     <p className={`text-xs font-medium px-1 ${
-                      faceMessage.includes("Save failed") ? "text-red-500" : "text-emerald-600"
+                      faceSaveStatus === "failed" ? "text-red-500" : "text-emerald-600"
                     }`}>
                       {faceMessage}
                     </p>

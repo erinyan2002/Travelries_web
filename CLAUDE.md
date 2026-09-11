@@ -22,7 +22,7 @@ cd backend
 pip install -r requirements.txt
 uvicorn main:app --reload   # starts at localhost:8000, auto-loads backend/.env (python-dotenv)
 
-# Download face-api.js model weights (~21 MB, run once from project root)
+# Download browser face-detection models (~33 MB: face-api.js weights + MediaPipe model/wasm, run once from project root)
 bash _scripts/download-models.sh
 ```
 
@@ -84,7 +84,7 @@ Single-file upload OR multi-file batch upload. On file select:
 
 Two execution modes depending on whether the Python backend is running:
 
-**Browser mode** (no backend): `app/page.tsx` uses face-api.js — tries SSD MobileNetV1 first (requires weights from `download-models.sh`), falls back to TinyFaceDetector. Returns 128-dim descriptors. No age/gender.
+**Browser mode** (no backend): `app/page.tsx` tries MediaPipe BlazeFace (`lib/mediapipeDetector.ts`, self-hosted model+WASM under `public/mediapipe-wasm` and `public/models/mediapipe`, requires `download-models.sh`) as the primary detector — each MediaPipe box is padded ~30% and cropped, then run through face-api.js's TinyFaceDetector purely to align/recognize (128-dim descriptor) within that crop. If MediaPipe fails to load, falls back to face-api.js's own SSD MobileNetV1, then TinyFaceDetector (multi-scale 416+608 with IoU-NMS, no descriptors) as a last resort. Age/gender/expression are loaded as a separate optional model pair and only populated when available.
 
 **API mode** (backend alive): `app/page.tsx` POSTs to `/analyze`. The backend runs a two-tier pipeline in `backend/utils/face_utils.py`:
 - **Tier 1 (InsightFace buffalo_l)**: SCRFD detector at 1280×1280 with tiling for images larger than 1280px (1024px stride, 256px overlap). IoU-based NMS deduplicates tile boundaries. Returns 512-dim ArcFace embeddings + age + gender.
@@ -157,7 +157,7 @@ Tagged users under a post caption (`post.taggedUsers`) and deleting a feed post 
 `backend/main.py` is a FastAPI server. The frontend polls `GET /health` on load; if it responds the app enters "API mode" (server-side EXIF+face via `/analyze`, POI lookup via `/nearby-places`). If offline, falls back to browser-mode. **Not required** for any core functionality. `/health`'s response includes `utils_available`, `places_available`, `claude_available` — each backend feature degrades independently (missing deps or an unset `ANTHROPIC_API_KEY` return a JSON `error` field from that endpoint rather than a 500).
 
 Key backend files:
-- `backend/utils/face_utils.py` — two-tier face pipeline (InsightFace Tier 1, SSD+dlib Tier 2). InsightFace downloads `buffalo_l` (~200 MB) to `~/.insightface/models/buffalo_l/` on first run.
+- `backend/utils/face_utils.py` — two-tier face pipeline (InsightFace Tier 1, SSD+dlib Tier 2) used by `/analyze`. InsightFace downloads `buffalo_l` (~200 MB) to `~/.insightface/models/buffalo_l/` on first run. Also has an unused `detect_faces_multi()` / MediaPipe detector path (pinned to `mediapipe==0.10.21` — 1.0.x crashes the process on macOS) not wired to any endpoint, kept for future backend-side experimentation — not the same MediaPipe as the browser detector below.
 - `backend/utils/exif_utils.py` — EXIF extraction + reverse geocoding
 - `backend/utils/places_utils.py` — Overpass API for nearby POIs
 - `backend/utils/claude_utils.py` — Claude API (Anthropic SDK, model `claude-haiku-4-5` — chosen for low per-call cost over Opus) wrappers behind `/generate-diary` (photo metadata → short first-person travel diary, `client.messages.create`) and `/recognize-landmark` (photo → landmark name/confidence via `client.messages.parse` + a Pydantic `LandmarkResult` schema). Both require `ANTHROPIC_API_KEY`. Called from `app/albums/page.tsx` (Trips view "AI Diary" button, photo modal "Identify Landmark" button).

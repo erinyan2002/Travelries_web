@@ -636,9 +636,15 @@ export default function AlbumsPage() {
 
   async function handleDelete(id: string) {
     const fileName = photos.find((p) => p.id === id)?.fileName;
-    await deletePhotoEverywhere(id, fileName);
-    setPhotos((prev) => prev.filter((p) => p.id !== id));
-    setConfirmDeleteId(null);
+    try {
+      await deletePhotoEverywhere(id, fileName);
+      setPhotos((prev) => prev.filter((p) => p.id !== id));
+    } catch (err) {
+      console.error("Delete failed:", err);
+      alert("Couldn't delete this photo. Please try again.");
+    } finally {
+      setConfirmDeleteId(null);
+    }
   }
 
   function handleDownload(photo: MapPhoto) {

@@ -62,28 +62,6 @@ def _get_face_app():
     return _face_app
 
 
-# ── EXIF rotation ─────────────────────────────────────────────────────────────
-def _apply_exif_rotation(image: np.ndarray, file_path: str) -> np.ndarray:
-    """Rotate image so faces are upright based on EXIF Orientation tag."""
-    try:
-        import exifread
-        with open(file_path, "rb") as f:
-            tags = exifread.process_file(f, details=False, stop_tag="Orientation")
-        tag = tags.get("Image Orientation")
-        if tag is None:
-            return image
-        val = tag.values[0] if hasattr(tag, "values") else int(str(tag))
-        if val == 3:
-            return cv2.rotate(image, cv2.ROTATE_180)
-        if val == 6:
-            return cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
-        if val == 8:
-            return cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
-    except Exception:
-        pass
-    return image
-
-
 # ── IoU + NMS helpers ─────────────────────────────────────────────────────────
 def _iou_xyxy(a: np.ndarray, b: np.ndarray) -> float:
     ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
@@ -407,7 +385,6 @@ def detect_faces(file_path: str) -> dict:
         return {"facesDetected": 0, "faceBoxes": [], "descriptors": [],
                 "ages": [], "genders": [], "confidences": []}
 
-    image = _apply_exif_rotation(image, file_path)
     return _detect_insightface(image)
 
 
@@ -433,8 +410,6 @@ def detect_faces_multi(file_path: str) -> dict:
     image = cv2.imread(file_path)
     if image is None:
         return {"primary": {"engine": None, **empty}, "mediapipe": None}
-
-    image = _apply_exif_rotation(image, file_path)
 
     primary_result = _detect_insightface(image)
     primary_engine = "insightface" if _insightface_ok else "ssd_dlib"

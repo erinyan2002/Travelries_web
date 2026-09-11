@@ -7,10 +7,12 @@ export function loadMediaPipeDetector(): Promise<FaceDetector> {
     detectorPromise = FilesetResolver.forVisionTasks("/mediapipe-wasm").then((vision) =>
       FaceDetector.createFromOptions(vision, {
         baseOptions: {
-          modelAssetPath: "/models/mediapipe/blaze_face_short_range.tflite",
+          // full_range (not short_range) — short_range is tuned for a single close-up
+          // selfie face within ~2m and misses smaller/angled faces in group photos.
+          modelAssetPath: "/models/mediapipe/blaze_face_full_range.tflite",
         },
         runningMode: "IMAGE",
-        minDetectionConfidence: 0.5,
+        minDetectionConfidence: 0.4,
       })
     );
   }
