@@ -30,6 +30,7 @@ export type FacePhoto = {
   ages?: number[];
   genders?: string[];
   expressions?: string[];
+  personIds?: (string | null)[]; // index-aligned with boxes/descriptors — manual "same person" override, see lib/peopleApi.ts
   lat?: number;
   lng?: number;
   location?: string;
@@ -75,6 +76,7 @@ export function rowToFacePhoto(row: Record<string, unknown>): FacePhoto {
     ages: (row.ages as number[]) ?? undefined,
     genders: (row.genders as string[]) ?? undefined,
     expressions: (row.expressions as string[]) ?? undefined,
+    personIds: (row.person_ids as (string | null)[]) ?? undefined,
     lat: (row.lat as number) ?? undefined,
     lng: (row.lng as number) ?? undefined,
     location: (row.location as string) ?? undefined,

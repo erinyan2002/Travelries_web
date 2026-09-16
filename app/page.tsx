@@ -8,6 +8,7 @@ import BottomNav from "@/components/BottomNav";
 import { supabase } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
 import { fetchMapPhotos, fetchFacePhotos, upsertPhoto, renamePhoto } from "@/lib/photosApi";
+import { fetchPeople, Person } from "@/lib/peopleApi";
 import {
   Camera, Upload, MapPin, Users, CalendarDays, Clock,
   FileImage, Ruler, CheckCircle2, Loader2, AlertTriangle,
@@ -29,6 +30,7 @@ export type FacePhoto = {
   ages?: number[];
   genders?: string[];
   expressions?: string[];
+  personIds?: (string | null)[];
   lat?: number;
   lng?: number;
   location?: string;
@@ -428,6 +430,8 @@ export default function HomePage() {
   const [faceSaveStatus,      setFaceSaveStatus]      = useState<"idle" | "needsSelection" | "saving" | "saved" | "failed">("idle");
   const [savedFaceCount,      setSavedFaceCount]      = useState(0);
   const [faceThumbnails,      setFaceThumbnails]      = useState<string[]>([]);
+  const [people,              setPeople]              = useState<Person[]>([]);
+  const [faceAssignments,     setFaceAssignments]     = useState<Record<number, string>>({});
 
   async function refreshStats() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -449,6 +453,12 @@ export default function HomePage() {
 
   useEffect(() => {
     refreshStats();
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      const uid = user?.id ?? "guest";
+      if (uid === "guest") return;
+      setPeople(await fetchPeople(uid));
+    })();
   }, []);
 
   useEffect(() => {
@@ -580,6 +590,10 @@ export default function HomePage() {
     const boxes       = indices.map((i) => faces.boxes[i]);
     const descriptors = indices.map((i) => faces.descriptors[i]).filter((d): d is number[] => !!d);
     const confidences = indices.map((i) => faces.confidences[i]).filter((c): c is number => c !== undefined);
+    // Index-aligned with `boxes` above (built from the same `indices`), so a face
+    // the user tagged with an existing person at upload time keeps that tag —
+    // see the "Who is this?" picker in the needsSelection UI below.
+    const personIds   = indices.map((i) => faceAssignments[i] ?? null);
     const allSelected = indices.length === faces.boxes.length;
 
     setFaceSaveStatus("saving");
@@ -600,6 +614,7 @@ export default function HomePage() {
         ...(boxes.length > 0       && { boxes }),
         ...(descriptors.length > 0 && { descriptors }),
         ...(confidences.length > 0 && { confidences }),
+        ...(personIds.some((p) => p !== null) && { personIds }),
         ...(allSelected && faces.ages.length > 0        && { ages: faces.ages }),
         ...(allSelected && faces.genders.length > 0     && { genders: faces.genders }),
         ...(allSelected && faces.expressions.length > 0 && { expressions: faces.expressions }),
@@ -661,6 +676,7 @@ export default function HomePage() {
     setFaceSaveStatus("idle");
     setSavedFaceCount(0);
     setFaceThumbnails([]);
+    setFaceAssignments({});
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
     setCustomFileName(file.name);
@@ -930,6 +946,7 @@ export default function HomePage() {
     setFaceSaveStatus("idle");
     setSavedFaceCount(0);
     setFaceThumbnails([]);
+    setFaceAssignments({});
   }
 
   function startEditName() { setDraftFileName(customFileName); setIsEditingName(true); }
@@ -1452,31 +1469,54 @@ export default function HomePage() {
                         {photoInfo.faceBoxes.map((_, i) => {
                           const selected = selectedFaceIndices.has(i);
                           return (
-                            <button
-                              key={i}
-                              type="button"
-                              onClick={() => toggleFaceSelection(i)}
-                              className="flex flex-shrink-0 flex-col items-center gap-1"
-                            >
-                              <div className={`relative h-16 w-16 overflow-hidden rounded-full border-2 ${
-                                selected ? "border-emerald-500 ring-2 ring-emerald-200" : "border-slate-200"
-                              }`}>
-                                {faceThumbnails[i] ? (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img src={faceThumbnails[i]} alt={`Person ${i + 1}`} className="h-full w-full object-cover" />
-                                ) : (
-                                  <div className="h-full w-full animate-pulse bg-slate-200" />
-                                )}
-                                {selected && (
-                                  <div className="absolute inset-0 flex items-center justify-center bg-emerald-500/30">
-                                    <Check size={20} className="text-white drop-shadow" />
-                                  </div>
-                                )}
-                              </div>
-                              <span className={`text-[11px] font-semibold ${selected ? "text-emerald-600" : "text-slate-500"}`}>
-                                Person {i + 1}
-                              </span>
-                            </button>
+                            <div key={i} className="flex flex-shrink-0 flex-col items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => toggleFaceSelection(i)}
+                                className="flex flex-col items-center gap-1"
+                              >
+                                <div className={`relative h-16 w-16 overflow-hidden rounded-full border-2 ${
+                                  selected ? "border-emerald-500 ring-2 ring-emerald-200" : "border-slate-200"
+                                }`}>
+                                  {faceThumbnails[i] ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={faceThumbnails[i]} alt={`Person ${i + 1}`} className="h-full w-full object-cover" />
+                                  ) : (
+                                    <div className="h-full w-full animate-pulse bg-slate-200" />
+                                  )}
+                                  {selected && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-emerald-500/30">
+                                      <Check size={20} className="text-white drop-shadow" />
+                                    </div>
+                                  )}
+                                </div>
+                                <span className={`text-[11px] font-semibold ${selected ? "text-emerald-600" : "text-slate-500"}`}>
+                                  Person {i + 1}
+                                </span>
+                              </button>
+                              {/* Optionally tag this face as an existing Faces-page person instead
+                                  of leaving it to automatic clustering — see faceAssignments. */}
+                              {selected && people.length > 0 && (
+                                <select
+                                  value={faceAssignments[i] ?? ""}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setFaceAssignments((prev) => {
+                                      const next = { ...prev };
+                                      if (val) next[i] = val; else delete next[i];
+                                      return next;
+                                    });
+                                  }}
+                                  className="w-16 text-[9px] font-semibold text-slate-600 border border-slate-200 rounded-md px-0.5 py-0.5 outline-none"
+                                >
+                                  <option value="">Who?</option>
+                                  {people.map((p) => (
+                                    <option key={p.id} value={p.id}>{p.name}</option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
                           );
                         })}
                       </div>

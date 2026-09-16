@@ -11,8 +11,10 @@ import { supabase } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
 import { fetchMapPhotos } from "@/lib/photosApi";
 import { deletePhotoEverywhere } from "@/lib/savedUtils";
-import { MapPin, ArrowLeft, Trash2, X, CalendarDays, ChevronLeft, ChevronRight, Share2, Loader2, Route, Flame } from "lucide-react";
+import { MapPin, ArrowLeft, Trash2, X, CalendarDays, ChevronLeft, ChevronRight, Share2, Loader2, Route, Flame, Map as MapIcon, Layers } from "lucide-react";
 import { sharePhoto } from "@/lib/shareUtils";
+import KoreaRegionMap from "@/components/KoreaRegionMap";
+import { matchRegionCode, REGION_LABELS } from "@/lib/koreaGeo";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -229,6 +231,8 @@ export default function MapPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showRoute,   setShowRoute]   = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(false);
+  const [viewMode,       setViewMode]       = useState<"pins" | "region">("pins");
+  const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -272,6 +276,11 @@ export default function MapPage() {
     [photos]
   );
 
+  const displayedPhotos = useMemo(
+    () => (viewMode === "region" && selectedRegion ? photos.filter((p) => matchRegionCode(p.location) === selectedRegion) : photos),
+    [photos, viewMode, selectedRegion]
+  );
+
   async function handleClear() {
     const { data: { user } } = await supabase.auth.getUser();
     const uid = user?.id ?? "guest";
@@ -312,49 +321,77 @@ export default function MapPage() {
           </div>
         </div>
 
-        {photos.length > 1 && (
-          <div className="flex gap-2 mb-3">
-            <button onClick={() => setShowRoute((v) => !v)}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors ${
-                showRoute ? "bg-blue-500 border-blue-500 text-white" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-              }`}>
-              <Route size={14} /> Route
+        <div className="flex gap-2 mb-3 flex-wrap">
+          <button onClick={() => setViewMode("pins")}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors ${
+              viewMode === "pins" ? "bg-slate-900 border-slate-900 text-white" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+            }`}>
+            <MapIcon size={14} /> Pins
+          </button>
+          <button onClick={() => setViewMode("region")}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors ${
+              viewMode === "region" ? "bg-slate-900 border-slate-900 text-white" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+            }`}>
+            <Layers size={14} /> Regions
+          </button>
+          {viewMode === "pins" && photos.length > 1 && (
+            <>
+              <button onClick={() => setShowRoute((v) => !v)}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors ${
+                  showRoute ? "bg-blue-500 border-blue-500 text-white" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                }`}>
+                <Route size={14} /> Route
+              </button>
+              <button onClick={() => setShowHeatmap((v) => !v)}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors ${
+                  showHeatmap ? "bg-orange-500 border-orange-500 text-white" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                }`}>
+                <Flame size={14} /> Heatmap
+              </button>
+            </>
+          )}
+          {viewMode === "region" && selectedRegion && (
+            <button onClick={() => setSelectedRegion(null)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors">
+              <X size={14} /> {REGION_LABELS[selectedRegion] ?? "Filter"} ×
             </button>
-            <button onClick={() => setShowHeatmap((v) => !v)}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors ${
-                showHeatmap ? "bg-orange-500 border-orange-500 text-white" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-              }`}>
-              <Flame size={14} /> Heatmap
-            </button>
+          )}
+        </div>
+
+        {viewMode === "pins" ? (
+          <div className="h-[380px] w-full rounded-2xl overflow-hidden shadow-sm border border-slate-200 mb-6">
+            <MapContainer center={center} zoom={7} scrollWheelZoom={true} style={{ height: "100%", width: "100%" }}>
+              <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+              {showRoute && routePositions.length > 1 && <RouteLayer positions={routePositions} />}
+              {showHeatmap && <HeatmapLayer points={heatPoints} />}
+              {!showHeatmap && clusters.map((cluster) => (
+                <Marker key={cluster.key} position={[cluster.lat, cluster.lng]}
+                  icon={makeClusterIcon(cluster.photos[0], cluster.photos.length)}
+                  eventHandlers={{ click: () => setActiveCluster(cluster) }} />
+              ))}
+            </MapContainer>
+          </div>
+        ) : (
+          <div className="mb-6">
+            <KoreaRegionMap photos={photos} selectedRegion={selectedRegion} onSelectRegion={setSelectedRegion} />
           </div>
         )}
-
-        <div className="h-[380px] w-full rounded-2xl overflow-hidden shadow-sm border border-slate-200 mb-6">
-          <MapContainer center={center} zoom={7} scrollWheelZoom={true} style={{ height: "100%", width: "100%" }}>
-            <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            {showRoute && routePositions.length > 1 && <RouteLayer positions={routePositions} />}
-            {showHeatmap && <HeatmapLayer points={heatPoints} />}
-            {!showHeatmap && clusters.map((cluster) => (
-              <Marker key={cluster.key} position={[cluster.lat, cluster.lng]}
-                icon={makeClusterIcon(cluster.photos[0], cluster.photos.length)}
-                eventHandlers={{ click: () => setActiveCluster(cluster) }} />
-            ))}
-          </MapContainer>
-        </div>
 
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="flex items-center gap-2 px-5 py-3.5 border-b border-slate-100 bg-slate-50">
             <MapPin size={16} className="text-blue-500" />
             <h2 className="font-bold text-slate-800">Saved Photos</h2>
-            <span className="text-xs text-slate-400 bg-slate-200 px-2 py-0.5 rounded-full ml-auto">{photos.length} photos</span>
+            <span className="text-xs text-slate-400 bg-slate-200 px-2 py-0.5 rounded-full ml-auto">{displayedPhotos.length} photos</span>
           </div>
-          {photos.length === 0 ? (
+          {displayedPhotos.length === 0 ? (
             <div className="p-10 text-center">
-              <p className="text-slate-400 text-sm">No photos saved yet. Upload photos from the home screen.</p>
+              <p className="text-slate-400 text-sm">
+                {photos.length === 0 ? "No photos saved yet. Upload photos from the home screen." : "No photos in this region."}
+              </p>
             </div>
           ) : (
             <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-              {photos.map((photo) => (
+              {displayedPhotos.map((photo) => (
                 <div key={photo.id} onClick={() => { const c = clusters.find((cl) => cl.photos.some((p) => p.id === photo.id)); if (c) setActiveCluster(c); }}
                   className="photo-card bg-slate-50 rounded-xl overflow-hidden cursor-pointer border border-slate-200">
                   {/* eslint-disable-next-line @next/next/no-img-element */}

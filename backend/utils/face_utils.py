@@ -33,6 +33,14 @@ TILE_STRIDE  = 1024          # px — step between tiles (256 px overlap on each
 MIN_FACE_PX  = 12            # minimum face box side (pixels) after merging
 NMS_IOU_THR  = 0.45          # IoU threshold for duplicate suppression after tiling
 
+# A tight close-up (face fills most of the frame) can be too LARGE for the
+# detector's anchor scales even at the full 1280px pass — SCRFD's anchors have a
+# practical upper bound on face size relative to the input, and an oversized face
+# can fall outside all of them and be missed entirely. An extra pass on a shrunk
+# copy of the whole image brings an oversized face back down into a scale the
+# anchors actually cover. See _faces_from_scaled().
+DOWNSCALE_PASS_SIZE = 640    # px — long side of the shrunk copy
+
 MATCH_THRESHOLD      = 0.60  # dlib / DBSCAN person-match threshold
 CONFIDENCE_THRESHOLD = 0.45  # SSD fallback confidence gate
 AREA_RATIO_THRESHOLD = 0.12  # SSD fallback size filter
@@ -50,8 +58,12 @@ def _get_face_app():
     try:
         from insightface.app import FaceAnalysis
         app = FaceAnalysis(name="buffalo_l", providers=["CPUExecutionProvider"])
-        # 1280 instead of 640 — the single biggest accuracy win for small faces
-        app.prepare(ctx_id=-1, det_size=(TILE_SIZE, TILE_SIZE))
+        # 1280 instead of 640 — the single biggest accuracy win for small faces.
+        # det_thresh lowered from the 0.5 default so side-angled/partially occluded
+        # faces in group photos aren't dropped (NMS across tiles still dedupes).
+        # Went as low as 0.3 briefly — caused false positives (shadows/limbs
+        # mistaken for faces) — 0.4 is the accuracy/recall sweet spot.
+        app.prepare(ctx_id=-1, det_thresh=0.4, det_size=(TILE_SIZE, TILE_SIZE))
         _face_app = app
         _insightface_ok = True
         print("[face_utils] InsightFace buffalo_l 1280px loaded ✓")
@@ -96,16 +108,40 @@ def _faces_from_tile(app, rgb_tile: np.ndarray, offset_x: int, offset_y: int) ->
     return dets
 
 
+def _faces_from_scaled(app, rgb: np.ndarray, scale: float) -> list:
+    """Run app.get() on a shrunk copy of the full image; bbox coords are scaled
+    back up to original-image space so they merge correctly with other passes."""
+    h, w = rgb.shape[:2]
+    small = cv2.resize(rgb, (max(1, round(w * scale)), max(1, round(h * scale))))
+    faces = app.get(small)
+    dets = []
+    for f in faces:
+        bbox = f.bbox.copy().astype(float) / scale
+        dets.append((float(f.det_score), bbox, f.embedding, f.age, f.gender))
+    return dets
+
+
 def _collect_detections(app, rgb: np.ndarray) -> list:
     """
-    For images larger than TILE_SIZE: slide a tiled window.
-    For smaller images: single pass.
+    Whole-image pass always runs first — the safety net for a face that's large
+    relative to a tile (extreme close-up) or straddles a tile seam, either of
+    which a tile-only pass can miss entirely even though InsightFace's own
+    internal resize handles the full frame fine. A downscaled pass (see
+    DOWNSCALE_PASS_SIZE) adds recall for the opposite extreme — a face so large
+    relative to the frame it exceeds the detector's anchor scale range even at
+    the full pass. Tiles (for images larger than TILE_SIZE) add recall for
+    small/far faces on top of both. _nms() in the caller dedupes whatever
+    multiple passes agree on.
     """
     h, w = rgb.shape[:2]
-    if max(h, w) <= TILE_SIZE:
-        return _faces_from_tile(app, rgb, 0, 0)
+    dets: list = _faces_from_tile(app, rgb, 0, 0)
 
-    dets: list = []
+    if max(h, w) > DOWNSCALE_PASS_SIZE:
+        dets.extend(_faces_from_scaled(app, rgb, DOWNSCALE_PASS_SIZE / max(h, w)))
+
+    if max(h, w) <= TILE_SIZE:
+        return dets
+
     # Slide tiles — last tile always reaches the image edge
     ys = list(range(0, h - TILE_SIZE + 1, TILE_STRIDE)) + ([h - TILE_SIZE] if h > TILE_SIZE else [])
     xs = list(range(0, w - TILE_SIZE + 1, TILE_STRIDE)) + ([w - TILE_SIZE] if w > TILE_SIZE else [])

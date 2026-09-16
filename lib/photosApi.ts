@@ -82,6 +82,7 @@ export type PhotoUpsertInput = {
   ages?: number[];
   genders?: string[];
   expressions?: string[];
+  personIds?: (string | null)[];
   landmarkName?: string | null;
   landmarkConfidence?: string | null;
   landmarkDescription?: string | null;
@@ -113,6 +114,7 @@ export async function upsertPhoto(uid: string, input: PhotoUpsertInput): Promise
   if (input.ages             !== undefined) row.ages = input.ages;
   if (input.genders          !== undefined) row.genders = input.genders;
   if (input.expressions      !== undefined) row.expressions = input.expressions;
+  if (input.personIds        !== undefined) row.person_ids = input.personIds;
   if (input.landmarkName        !== undefined) row.landmark_name = input.landmarkName;
   if (input.landmarkConfidence  !== undefined) row.landmark_confidence = input.landmarkConfidence;
   if (input.landmarkDescription !== undefined) row.landmark_description = input.landmarkDescription;
@@ -120,6 +122,15 @@ export async function upsertPhoto(uid: string, input: PhotoUpsertInput): Promise
 
   const { error } = await supabase.from("photos").upsert(row);
   if (error) throw new Error(error.message);
+}
+
+// Thin wrapper over upsertPhoto for the Faces page's "merge people" action —
+// writes the full person_ids array for one photo row (the caller is responsible
+// for preserving indices it isn't touching; see handleMerge in app/faces/page.tsx).
+export async function updateFacePersonIds(
+  uid: string, photoId: string, fileName: string, imageUrl: string, personIds: (string | null)[],
+): Promise<void> {
+  await upsertPhoto(uid, { id: photoId, fileName, imageUrl, personIds });
 }
 
 // Persists a landmark-recognition result so PhotoModal never has to re-call
@@ -182,6 +193,11 @@ export async function deletePhotoEverywhere(uid: string, photoId: string, fileNa
   if (error) throw new Error(error.message);
   if (!data || data.length === 0) throw new Error("Photo not found or already deleted");
   if (fileName) {
+    // Best-effort cleanup of any OTHER row with the same filename — e.g. a face-only
+    // row saved separately from the map row for the same upload, or a duplicate
+    // re-upload — so deleting a photo from one view (Albums) doesn't leave a
+    // same-named row lingering in another (Faces). No error if nothing else matches.
+    await supabase.from("photos").delete().eq("user_id", uid).eq("file_name", fileName);
     await supabase.from("collab_photos").delete().eq("added_by", uid).eq("file_name", fileName);
   }
 }

@@ -6,7 +6,7 @@
 # Run from the project root:
 #   bash _scripts/download-models.sh
 #
-# Total download: ~34 MB (face-api ~21 MB + MediaPipe model+wasm ~13 MB)
+# Total download: ~34 MB (face-api ~21 MB + MediaPipe models+wasm ~13 MB)
 
 set -e
 
@@ -56,18 +56,27 @@ for f in "${files[@]}"; do
 done
 
 echo ""
-echo "Downloading MediaPipe face detector model → $DEST/mediapipe"
+echo "Downloading MediaPipe face detector models → $DEST/mediapipe"
 echo ""
 
 mkdir -p "$DEST/mediapipe"
-MP_MODEL="$DEST/mediapipe/blaze_face_full_range.tflite"
-if [ -f "$MP_MODEL" ]; then
-  echo "  blaze_face_full_range.tflite  already exists, skipping"
+# Both models run together (see lib/mediapipeDetector.ts) — full_range alone misses
+# faces that fill most of the frame (close-up selfies), and short_range alone misses
+# small/far faces in group photos, so neither is a safe substitute for the other.
+FULL_MODEL="$DEST/mediapipe/blaze_face_full_range.tflite"
+if [ -f "$FULL_MODEL" ]; then
+  echo "  blaze_face_full_range.tflite   already exists, skipping"
 else
-  # full_range (not short_range) — tuned for faces farther from the camera / smaller
-  # in frame, which group photos need; short_range only reliably catches one close-up face.
-  curl -fsSL "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_full_range/float16/latest/blaze_face_full_range.tflite" -o "$MP_MODEL"
-  echo "  blaze_face_full_range.tflite  done"
+  curl -fsSL "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_full_range/float16/latest/blaze_face_full_range.tflite" -o "$FULL_MODEL"
+  echo "  blaze_face_full_range.tflite   done"
+fi
+
+SHORT_MODEL="$DEST/mediapipe/blaze_face_short_range.tflite"
+if [ -f "$SHORT_MODEL" ]; then
+  echo "  blaze_face_short_range.tflite  already exists, skipping"
+else
+  curl -fsSL "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/latest/blaze_face_short_range.tflite" -o "$SHORT_MODEL"
+  echo "  blaze_face_short_range.tflite  done"
 fi
 
 echo ""

@@ -4,8 +4,9 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import BottomNav from "@/components/BottomNav";
 import { supabase } from "@/lib/supabase";
 import { FacePhoto } from "@/lib/types";
-import { fetchFacePhotos } from "@/lib/photosApi";
+import { fetchFacePhotos, updateFacePersonIds } from "@/lib/photosApi";
 import { deletePhotoEverywhere } from "@/lib/savedUtils";
+import { fetchPeople, createPerson, renamePerson, Person } from "@/lib/peopleApi";
 import { useRouter } from "next/navigation";
 import {
   Users, ImageIcon, Images, MapPin, CalendarDays, Trash2, X,
@@ -13,7 +14,9 @@ import {
 } from "lucide-react";
 
 type FaceEntry = { photo: FacePhoto; boxIndex: number };
-type PersonCluster = { id: string; label: string; faces: FaceEntry[]; centroid: number[] };
+// personId set means this group came from a manual tag/merge (supabase `people`
+// table) rather than pure descriptor-distance clustering — see buildPersonGroups().
+type PersonCluster = { id: string; label: string; faces: FaceEntry[]; centroid: number[]; personId?: string };
 
 const EXPRESSION_EMOJI: Record<string, string> = {
   happy: "😊", sad: "😢", angry: "😠", surprised: "😮",
@@ -52,6 +55,10 @@ function clusterByPerson(photos: FacePhoto[], threshold: number): PersonCluster[
     for (let i = 0; i < photo.descriptors.length; i++) {
       const desc = photo.descriptors[i];
       if (!desc?.length) continue;
+      // Manually tagged/merged faces are assembled into their own confirmed
+      // groups in buildPersonGroups() instead — skip them here so a stray
+      // distance match can't pull them into a different auto-cluster.
+      if (photo.personIds?.[i]) continue;
       let nearest: PersonCluster | null = null;
       let minDist = Infinity;
       for (const c of clusters) {
@@ -71,6 +78,30 @@ function clusterByPerson(photos: FacePhoto[], threshold: number): PersonCluster[
     }
   }
   return clusters.sort((a, b) => b.faces.length - a.faces.length).map((c, i) => ({ ...c, label: `Person ${i + 1}` }));
+}
+
+// Confirmed groups (manual tag at upload, or "merge into..." on this page) are
+// pulled out before clusterByPerson() runs and assembled here from photos.person_ids
+// — a manual override always wins over descriptor distance and never re-splits.
+function buildPersonGroups(photos: FacePhoto[], people: Person[], threshold: number): PersonCluster[] {
+  const confirmedMap = new Map<string, FaceEntry[]>();
+  for (const photo of photos) {
+    photo.personIds?.forEach((personId, i) => {
+      if (!personId || !photo.boxes?.[i]) return;
+      if (!confirmedMap.has(personId)) confirmedMap.set(personId, []);
+      confirmedMap.get(personId)!.push({ photo, boxIndex: i });
+    });
+  }
+  const confirmed: PersonCluster[] = [...confirmedMap.entries()].map(([personId, faces]) => ({
+    id: personId,
+    personId,
+    label: people.find((p) => p.id === personId)?.name ?? "Unnamed",
+    faces,
+    centroid: [],
+  }));
+
+  const auto = clusterByPerson(photos, threshold);
+  return [...confirmed, ...auto].sort((a, b) => b.faces.length - a.faces.length);
 }
 
 // ── Canvas components ─────────────────────────────────────────────────────────
@@ -325,6 +356,8 @@ export default function FacesPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [editDraft,       setEditDraft]       = useState("");
   const [uid,             setUid]             = useState<string | null>(null);
+  const [people,          setPeople]          = useState<Person[]>([]);
+  const [merging,         setMerging]         = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -334,6 +367,7 @@ export default function FacesPage() {
       setUid(u);
 
       const faces = u === "guest" ? [] : await fetchFacePhotos(u);
+      const peopleList = u === "guest" ? [] : await fetchPeople(u);
 
       const rawLabels: Record<string, string> = JSON.parse(localStorage.getItem(`face-labels-${u}`) ?? "{}");
       // Discard labels stored in old pX format (cluster IDs are now photoId_boxIndex)
@@ -342,6 +376,7 @@ export default function FacesPage() {
       );
       setCustomLabels(validLabels);
       setStoredPhotos(faces);
+      setPeople(peopleList);
       setLoading(false);
     }
     load();
@@ -356,10 +391,19 @@ export default function FacesPage() {
     const fileName = storedPhotos.find((p) => p.id === id)?.fileName;
     try {
       await deletePhotoEverywhere(id, fileName);
-      setStoredPhotos((prev) => prev.filter((p) => p.id !== id));
+      // deletePhotoEverywhere also sweeps every other row sharing this filename —
+      // drop those from local state too, not just the clicked id, so a same-named
+      // duplicate card doesn't linger looking deletable when it's already gone.
+      setStoredPhotos((prev) => prev.filter((p) => p.id !== id && (!fileName || p.fileName !== fileName)));
     } catch (err) {
-      console.error("Delete failed:", err);
-      alert("Couldn't delete this photo. Please try again.");
+      // A duplicate-filename sibling delete earlier in this session may have already
+      // swept this exact row — treat that as already-deleted, not a real failure.
+      if (err instanceof Error && err.message === "Photo not found or already deleted") {
+        setStoredPhotos((prev) => prev.filter((p) => p.id !== id && (!fileName || p.fileName !== fileName)));
+      } else {
+        console.error("Delete failed:", err);
+        alert("Couldn't delete this photo. Please try again.");
+      }
     } finally {
       setConfirmDeleteId(null);
     }
@@ -372,6 +416,9 @@ export default function FacesPage() {
       try {
         await deletePhotoEverywhere(p.id, p.fileName);
       } catch (err) {
+        // deletePhotoEverywhere also sweeps other rows sharing this filename, so an
+        // earlier iteration here may have already removed this one — not a real failure.
+        if (err instanceof Error && err.message === "Photo not found or already deleted") continue;
         console.error(`Delete failed for ${p.fileName}:`, err);
         failed.push(p);
       }
@@ -385,9 +432,68 @@ export default function FacesPage() {
     }
   }
 
-  const clusters      = useMemo(() => clusterByPerson(storedPhotos, MATCH_THRESHOLD), [storedPhotos]);
+  const clusters      = useMemo(() => buildPersonGroups(storedPhotos, people, MATCH_THRESHOLD), [storedPhotos, people]);
   const hasDescriptors = storedPhotos.some((p) => p.descriptors?.length);
   const totalFaces    = storedPhotos.reduce((s, p) => s + (p.faceCount ?? 0), 0);
+
+  // Confirmed (merged/tagged) clusters are named from the `people` table; everything
+  // else still uses the localStorage custom-name map keyed by the cluster's seed id.
+  function labelOf(cluster: PersonCluster): string {
+    return cluster.personId ? cluster.label : (customLabels[cluster.id] ?? cluster.label);
+  }
+
+  async function commitRename(cluster: PersonCluster) {
+    const name = editDraft.trim() || cluster.label;
+    setEditingId(null);
+    if (cluster.personId) {
+      try {
+        await renamePerson(cluster.personId, name);
+        setPeople((prev) => prev.map((p) => (p.id === cluster.personId ? { ...p, name } : p)));
+      } catch (err) {
+        console.error("Rename failed:", err);
+        alert("Couldn't rename this person. Please try again.");
+      }
+    } else {
+      setCustomLabels((prev) => ({ ...prev, [cluster.id]: name }));
+    }
+  }
+
+  // Merges two Person cards into one: reuses either side's existing person_id if
+  // it has one, otherwise creates a new `people` row, then writes that person_id
+  // onto every face in both groups (batched per photo row, preserving any other
+  // face's existing tag on the same row) so the merge survives a reload/re-cluster.
+  async function handleMerge(source: PersonCluster, target: PersonCluster) {
+    if (!uid || source.id === target.id) return;
+    const sourceLabel = labelOf(source);
+    const targetLabel = labelOf(target);
+    if (!confirm(`Merge "${sourceLabel}" into "${targetLabel}"?`)) return;
+    setMerging(source.id);
+    try {
+      let personId = target.personId ?? source.personId;
+      if (!personId) {
+        const created = await createPerson(uid, targetLabel);
+        personId = created.id;
+        setPeople((prev) => [...prev, created]);
+      }
+      const updates = new Map<string, { photo: FacePhoto; indices: number[] }>();
+      for (const face of [...source.faces, ...target.faces]) {
+        const entry = updates.get(face.photo.id) ?? { photo: face.photo, indices: [] };
+        entry.indices.push(face.boxIndex);
+        updates.set(face.photo.id, entry);
+      }
+      for (const { photo, indices } of updates.values()) {
+        const current = photo.personIds ? [...photo.personIds] : new Array(photo.boxes?.length ?? 0).fill(null);
+        indices.forEach((i) => { current[i] = personId; });
+        await updateFacePersonIds(uid, photo.id, photo.fileName, photo.imageUrl, current);
+      }
+      setStoredPhotos(await fetchFacePhotos(uid));
+    } catch (err) {
+      console.error("Merge failed:", err);
+      alert("Couldn't merge these people. Please try again.");
+    } finally {
+      setMerging(null);
+    }
+  }
 
   const photoGroups: Record<string, FacePhoto[]> = {};
   storedPhotos.forEach((p) => {
@@ -502,7 +608,7 @@ export default function FacesPage() {
                           const color = PALETTE[idx % PALETTE.length];
                           const rep = cluster.faces[0];
                           const repBox = rep?.photo.boxes?.[rep.boxIndex];
-                          const displayLabel = customLabels[cluster.id] ?? cluster.label;
+                          const displayLabel = labelOf(cluster);
                           const isEditing = editingId === cluster.id;
                           return (
                             <div key={cluster.id}
@@ -525,13 +631,13 @@ export default function FacesPage() {
                                     value={editDraft}
                                     onChange={(e) => setEditDraft(e.target.value)}
                                     onKeyDown={(e) => {
-                                      if (e.key === "Enter") { setCustomLabels((prev) => ({ ...prev, [cluster.id]: editDraft.trim() || cluster.label })); setEditingId(null); }
+                                      if (e.key === "Enter") commitRename(cluster);
                                       if (e.key === "Escape") setEditingId(null);
                                     }}
                                     className="flex-1 text-xs font-bold text-slate-800 border border-blue-300 rounded-lg px-2 py-1 outline-none text-center min-w-0"
                                   />
                                   <button
-                                    onClick={(e) => { e.stopPropagation(); setCustomLabels((prev) => ({ ...prev, [cluster.id]: editDraft.trim() || cluster.label })); setEditingId(null); }}
+                                    onClick={(e) => { e.stopPropagation(); commitRename(cluster); }}
                                     className="w-6 h-6 flex items-center justify-center bg-blue-500 rounded-lg text-white flex-shrink-0">
                                     <Check size={12} />
                                   </button>
@@ -559,6 +665,26 @@ export default function FacesPage() {
                               >
                                 <Images size={9} /> See in Albums
                               </button>
+                              {clusters.length > 1 && (
+                                <select
+                                  value=""
+                                  disabled={merging === cluster.id}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    const targetId = e.target.value;
+                                    e.target.value = "";
+                                    const target = clusters.find((c) => c.id === targetId);
+                                    if (target) handleMerge(cluster, target);
+                                  }}
+                                  className="mt-1.5 w-full text-[10px] font-bold text-slate-400 bg-slate-50 hover:bg-slate-100 disabled:opacity-50 px-2 py-1 rounded-full border border-slate-100 outline-none appearance-none text-center"
+                                >
+                                  <option value="">{merging === cluster.id ? "Merging…" : "🔗 Merge with…"}</option>
+                                  {clusters.filter((c) => c.id !== cluster.id).map((c) => (
+                                    <option key={c.id} value={c.id}>{labelOf(c)}</option>
+                                  ))}
+                                </select>
+                              )}
                             </div>
                           );
                         })}
