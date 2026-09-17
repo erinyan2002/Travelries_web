@@ -16,7 +16,7 @@ onnxruntime
 # macOS (Check failed: service_ Service is unavailable., in TensorsToDetectionsCalculator)
 # even with delegate=CPU explicitly set — a known upstream issue, not fixable from here.
 mediapipe==0.10.21
-# AI travel diary + landmark recognition (needs ANTHROPIC_API_KEY, see utils/claude_utils.py)
-anthropic
+# AI travel diary + landmark recognition (needs GOOGLE_API_KEY, see utils/gemini_utils.py)
+google-genai
 python-dotenv
 Pillow

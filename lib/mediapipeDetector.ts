@@ -1,5 +1,22 @@
 import { FaceDetector, FilesetResolver } from "@mediapipe/tasks-vision";
 
+// @mediapipe/tasks-vision's WASM runtime logs its own backend-init messages (e.g.
+// "INFO: Created TensorFlow Lite XNNPACK delegate for CPU.") via console.error rather
+// than console.log/info — harmless, but Next.js's dev overlay treats any console.error
+// as a crash and shows a red "Console Error" screen for it. Filter just that pattern so
+// real errors still surface normally.
+if (typeof window !== "undefined") {
+  const w = window as unknown as { __mediapipeConsoleFilterInstalled?: boolean };
+  if (!w.__mediapipeConsoleFilterInstalled) {
+    w.__mediapipeConsoleFilterInstalled = true;
+    const originalError = console.error;
+    console.error = (...args: unknown[]) => {
+      if (typeof args[0] === "string" && /Created TensorFlow Lite .* delegate for CPU/.test(args[0])) return;
+      originalError(...args);
+    };
+  }
+}
+
 // Two BlazeFace variants, run together and merged — neither one alone covers the
 // full range of real photos:
 //   • full_range: tuned for faces farther from the camera / smaller in frame —

@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 try:
     from dotenv import load_dotenv
-    load_dotenv()  # reads backend/.env (e.g. ANTHROPIC_API_KEY) into the environment
+    load_dotenv()  # reads backend/.env (e.g. GOOGLE_API_KEY) into the environment
 except Exception:
     pass
 
@@ -32,10 +32,10 @@ except Exception:
     _PLACES_OK = False
 
 try:
-    from utils.claude_utils import generate_travel_diary, recognize_landmark
-    _CLAUDE_OK = True
+    from utils.gemini_utils import generate_travel_diary, recognize_landmark
+    _GEMINI_OK = True
 except Exception:
-    _CLAUDE_OK = False
+    _GEMINI_OK = False
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -71,7 +71,7 @@ def health():
         "status": "ok",
         "utils_available": _UTILS_OK,
         "places_available": _PLACES_OK,
-        "claude_available": _CLAUDE_OK and bool(os.environ.get("ANTHROPIC_API_KEY")),
+        "gemini_available": _GEMINI_OK and bool(os.environ.get("GOOGLE_API_KEY")),
     }
 
 
@@ -149,10 +149,10 @@ def generate_diary(body: DiaryRequest):
     """AI-generated travel diary entry summarizing a set of photos (by metadata only).
     Called only when the user clicks "Generate" — the frontend caches the result in
     Supabase (trip_diaries) so this endpoint isn't hit again for the same trip."""
-    if not _CLAUDE_OK:
-        return {"diary": None, "error": "anthropic package not installed — run: pip install -r requirements.txt"}
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        return {"diary": None, "error": "ANTHROPIC_API_KEY not set — see utils/claude_utils.py"}
+    if not _GEMINI_OK:
+        return {"diary": None, "error": "google-genai package not installed — run: pip install -r requirements.txt"}
+    if not os.environ.get("GOOGLE_API_KEY"):
+        return {"diary": None, "error": "GOOGLE_API_KEY not set — see utils/gemini_utils.py"}
     try:
         diary = generate_travel_diary([e.model_dump() for e in body.entries], language=body.language)
         return {"diary": diary}
@@ -163,14 +163,14 @@ def generate_diary(body: DiaryRequest):
 
 @app.post("/recognize-landmark")
 async def recognize_landmark_endpoint(file: UploadFile = File(...), lat: float | None = None, lng: float | None = None):
-    """AI landmark recognition for a single photo, via Claude Vision.
+    """AI landmark recognition for a single photo, via Gemini Vision.
     Called only when the user clicks "Identify Landmark" / "Re-analyze" — the frontend
     caches the result on the photo row (photos.landmark_*) so this isn't re-hit for a
     photo that's already been analyzed."""
-    if not _CLAUDE_OK:
-        return {"landmark": None, "error": "anthropic package not installed — run: pip install -r requirements.txt"}
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        return {"landmark": None, "error": "ANTHROPIC_API_KEY not set — see utils/claude_utils.py"}
+    if not _GEMINI_OK:
+        return {"landmark": None, "error": "google-genai package not installed — run: pip install -r requirements.txt"}
+    if not os.environ.get("GOOGLE_API_KEY"):
+        return {"landmark": None, "error": "GOOGLE_API_KEY not set — see utils/gemini_utils.py"}
     try:
         image_bytes = await file.read()
         result = recognize_landmark(image_bytes, file.content_type or "image/jpeg", lat, lng)

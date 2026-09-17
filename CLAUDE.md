@@ -36,7 +36,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 
 `backend/.env` (optional, only for the AI diary/landmark endpoints — see below):
 ```
-ANTHROPIC_API_KEY=...
+GOOGLE_API_KEY=...
 ```
 
 ## Architecture
@@ -118,7 +118,7 @@ Photos grouped by location string. Filters:
 - **Date range chips**: All / This Week / This Month / This Year — filters by `captureDate` or `uploadedAt`
 - Both filters compose: category → date range → search
 
-**Trips view** (`viewMode === "trips"`, via `detectTrips()`) groups photos into trip cards by date gap. Each trip card has an **"AI Diary"** button — checks Supabase `trip_diaries` for a cached entry first (keyed by `trip_key`, the sorted/comma-joined ids of the trip's photos — stable across reloads and filter changes, unlike `trip.id` which is just an array index) and only POSTs to `/generate-diary` on a cache miss; a successful generation is written back via `saveTripDiary`. `DiaryModal` shows a "Re-generate" button once a diary is loaded, which is the only way to force a fresh API call. The single-photo detail modal (`PhotoModal`) has an **"Identify Landmark"** button — only shown when the photo has no `landmark_analyzed_at` yet; it resizes the image client-side (`resizeImageForApi`, max 1024px) before POSTing to `/recognize-landmark`, then persists the result via `saveLandmarkResult` (`photos.landmark_name`/`landmark_confidence`/`landmark_description`/`landmark_analyzed_at`). Once analyzed, the cached result renders directly from `MapPhoto` with only a small "Re-analyze" link to force another call. Both endpoints are no-ops with a Korean error message if the backend is offline or `ANTHROPIC_API_KEY` isn't set (the endpoints return `{error: "..."}` for that rather than a 500). The backend also resizes server-side (`_resize_for_api` in `claude_utils.py`) as a backstop, and logs model/token usage/duration/errors for both calls via the standard `logging` module. `PhotoModal` also has a **"Story"** button rendering an Instagram-story-shaped share card for that one photo (`drawPhotoStoryCard`, see Share cards below).
+**Trips view** (`viewMode === "trips"`, via `detectTrips()`) groups photos into trip cards by date gap. Each trip card has an **"AI Diary"** button — checks Supabase `trip_diaries` for a cached entry first (keyed by `trip_key`, the sorted/comma-joined ids of the trip's photos — stable across reloads and filter changes, unlike `trip.id` which is just an array index) and only POSTs to `/generate-diary` on a cache miss; a successful generation is written back via `saveTripDiary`. `DiaryModal` shows a "Re-generate" button once a diary is loaded, which is the only way to force a fresh API call. The single-photo detail modal (`PhotoModal`) has an **"Identify Landmark"** button — only shown when the photo has no `landmark_analyzed_at` yet; it resizes the image client-side (`resizeImageForApi`, max 1024px) before POSTing to `/recognize-landmark`, then persists the result via `saveLandmarkResult` (`photos.landmark_name`/`landmark_confidence`/`landmark_description`/`landmark_analyzed_at`). Once analyzed, the cached result renders directly from `MapPhoto` with only a small "Re-analyze" link to force another call. Both endpoints are no-ops with a Korean error message if the backend is offline or `GOOGLE_API_KEY` isn't set (the endpoints return `{error: "..."}` for that rather than a 500). The backend also resizes server-side (`_resize_for_api` in `gemini_utils.py`) as a backstop, and logs model/token usage/duration/errors for both calls via the standard `logging` module. `PhotoModal` also has a **"Story"** button rendering an Instagram-story-shaped share card for that one photo (`drawPhotoStoryCard`, see Share cards below).
 
 ### Share cards (Canvas API)
 
@@ -162,13 +162,13 @@ Tagged users under a post caption (`post.taggedUsers`) and deleting a feed post 
 
 ### Backend (optional)
 
-`backend/main.py` is a FastAPI server. The frontend polls `GET /health` on load; if it responds the app enters "API mode" (server-side EXIF+face via `/analyze`, POI lookup via `/nearby-places`). If offline, falls back to browser-mode. **Not required** for any core functionality. `/health`'s response includes `utils_available`, `places_available`, `claude_available` — each backend feature degrades independently (missing deps or an unset `ANTHROPIC_API_KEY` return a JSON `error` field from that endpoint rather than a 500).
+`backend/main.py` is a FastAPI server. The frontend polls `GET /health` on load; if it responds the app enters "API mode" (server-side EXIF+face via `/analyze`, POI lookup via `/nearby-places`). If offline, falls back to browser-mode. **Not required** for any core functionality. `/health`'s response includes `utils_available`, `places_available`, `gemini_available` — each backend feature degrades independently (missing deps or an unset `GOOGLE_API_KEY` return a JSON `error` field from that endpoint rather than a 500).
 
 Key backend files:
 - `backend/utils/face_utils.py` — two-tier face pipeline (InsightFace Tier 1, SSD+dlib Tier 2) used by `/analyze`. InsightFace downloads `buffalo_l` (~200 MB) to `~/.insightface/models/buffalo_l/` on first run. Also has an unused `detect_faces_multi()` / MediaPipe detector path (pinned to `mediapipe==0.10.21` — 1.0.x crashes the process on macOS) not wired to any endpoint, kept for future backend-side experimentation — not the same MediaPipe as the browser detector below.
 - `backend/utils/exif_utils.py` — EXIF extraction + reverse geocoding
 - `backend/utils/places_utils.py` — Overpass API for nearby POIs
-- `backend/utils/claude_utils.py` — Claude API (Anthropic SDK, model `claude-haiku-4-5` — chosen for low per-call cost over Opus) wrappers behind `/generate-diary` (photo metadata → short first-person travel diary, `client.messages.create`) and `/recognize-landmark` (photo → landmark name/confidence via `client.messages.parse` + a Pydantic `LandmarkResult` schema). Both require `ANTHROPIC_API_KEY`. Called from `app/albums/page.tsx` (Trips view "AI Diary" button, photo modal "Identify Landmark" button).
+- `backend/utils/gemini_utils.py` — Gemini API (`google-genai` SDK, model `gemini-3.5-flash-lite` — free tier, chosen over Claude to avoid per-call billing) wrappers behind `/generate-diary` (photo metadata → short first-person travel diary, `client.models.generate_content`) and `/recognize-landmark` (photo → landmark name/confidence via `response_schema` + a Pydantic `LandmarkResult` schema, read back from `response.parsed`). Both require `GOOGLE_API_KEY`. Called from `app/albums/page.tsx` (Trips view "AI Diary" button, photo modal "Identify Landmark" button).
 
 To install InsightFace tier: `pip install insightface onnxruntime` (already in `backend/requirements.txt`).
 

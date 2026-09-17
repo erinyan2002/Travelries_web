@@ -1,10 +1,8 @@
-"""AI travel diary generation + landmark recognition via the Claude API.
+"""AI travel diary generation + landmark recognition via the Gemini API (free tier).
 
-Requires ANTHROPIC_API_KEY in the environment (e.g. backend/.env). Get a key at
-console.anthropic.com > API Keys, then either `export ANTHROPIC_API_KEY=...`
-before starting uvicorn, or add it to backend/.env and load it with
-python-dotenv (add `from dotenv import load_dotenv; load_dotenv()` near the
-top of main.py if you go that route — not wired up by default here).
+Requires GOOGLE_API_KEY in the environment (e.g. backend/.env). Get a free key at
+aistudio.google.com/apikey, then either `export GOOGLE_API_KEY=...` before starting
+uvicorn, or add it to backend/.env (loaded automatically via python-dotenv in main.py).
 """
 
 import base64
@@ -14,13 +12,14 @@ import os
 import time
 from typing import Optional
 
-import anthropic
+from google import genai
+from google.genai import types
 from PIL import Image
 from pydantic import BaseModel
 
-logger = logging.getLogger("claude_utils")
+logger = logging.getLogger("gemini_utils")
 
-MODEL = "claude-haiku-4-5"
+MODEL = "gemini-3.5-flash-lite"
 
 # Landmark photos are analyzed once and cached (see lib/photosApi.ts saveLandmarkResult),
 # so this only bounds cost on the rare request that skips the client-side resize.
@@ -33,13 +32,13 @@ class LandmarkResult(BaseModel):
     description: Optional[str]   # one short sentence, or null
 
 
-def _client() -> anthropic.Anthropic:
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+def _client() -> genai.Client:
+    if not os.environ.get("GOOGLE_API_KEY"):
         raise RuntimeError(
-            "ANTHROPIC_API_KEY is not set — get one at console.anthropic.com "
+            "GOOGLE_API_KEY is not set — get a free key at aistudio.google.com/apikey "
             "and set it in the environment before calling this endpoint."
         )
-    return anthropic.Anthropic()
+    return genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
 
 
 def generate_travel_diary(entries: list[dict], language: str = "ko") -> str:
@@ -61,26 +60,31 @@ def generate_travel_diary(entries: list[dict], language: str = "ko") -> str:
 
     start = time.monotonic()
     try:
-        response = _client().messages.create(
+        client = _client()  # kept alive for the duration of the call — see recognize_landmark for why
+        response = client.models.generate_content(
             model=MODEL,
-            max_tokens=1024,
-            system=(
-                "You write short, warm first-person travel diary entries from a list of "
-                "photo metadata (date, time, location, how many people are in each photo). "
-                "Infer the flow of the trip from the order and locations. Do not invent "
-                "specific events, food, or feelings that aren't implied by the metadata — "
-                "keep it grounded but personable. 3-5 sentences. " + lang_instruction
+            contents=f"Photos from this trip, in order:\n{photo_summary}",
+            config=types.GenerateContentConfig(
+                system_instruction=(
+                    "You write short, warm first-person travel diary entries from a list of "
+                    "photo metadata (date, time, location, how many people are in each photo). "
+                    "Infer the flow of the trip from the order and locations. Do not invent "
+                    "specific events, food, or feelings that aren't implied by the metadata — "
+                    "keep it grounded but personable. 3-5 sentences. " + lang_instruction
+                ),
+                max_output_tokens=1024,
             ),
-            messages=[{"role": "user", "content": f"Photos from this trip, in order:\n{photo_summary}"}],
         )
     except Exception:
         logger.exception("generate_travel_diary failed after %.2fs (model=%s, photos=%d)", time.monotonic() - start, MODEL, len(entries))
         raise
+    usage = response.usage_metadata
     logger.info(
         "generate_travel_diary ok in %.2fs — model=%s photos=%d input_tokens=%d output_tokens=%d",
-        time.monotonic() - start, MODEL, len(entries), response.usage.input_tokens, response.usage.output_tokens,
+        time.monotonic() - start, MODEL, len(entries),
+        usage.prompt_token_count or 0, usage.candidates_token_count or 0,
     )
-    return next((b.text for b in response.content if b.type == "text"), "")
+    return response.text or ""
 
 
 def _resize_for_api(image_bytes: bytes, media_type: str) -> tuple[bytes, str]:
@@ -109,33 +113,40 @@ def recognize_landmark(
 ) -> LandmarkResult:
     """Identify a famous landmark/building in a photo, if any."""
     image_bytes, media_type = _resize_for_api(image_bytes, media_type)
-    image_b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
     location_hint = f" The photo was taken near ({lat}, {lng})." if lat is not None and lng is not None else ""
 
     start = time.monotonic()
     try:
-        response = _client().messages.parse(
+        # Hold the Client in a variable (not `_client().models...` inline) — the SDK
+        # retries the HTTP call from a worker thread, and an inline temporary can get
+        # garbage-collected (closing its httpx client) before that thread runs,
+        # raising "Cannot send a request, as the client has been closed."
+        client = _client()
+        response = client.models.generate_content(
             model=MODEL,
-            max_tokens=512,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": image_b64}},
-                    {"type": "text", "text": (
-                        "Is there a recognizable landmark, monument, or notable building in this photo?"
-                        + location_hint +
-                        " If yes, name it and rate your confidence. If no specific landmark is "
-                        "recognizable (e.g. a generic street, beach, or indoor scene), set landmark to null."
-                    )},
-                ],
-            }],
-            output_format=LandmarkResult,
+            contents=[
+                types.Part.from_bytes(data=image_bytes, mime_type=media_type),
+                (
+                    "Is there a recognizable landmark, monument, or notable building in this photo?"
+                    + location_hint +
+                    " If yes, name it and rate your confidence. If no specific landmark is "
+                    "recognizable (e.g. a generic street, beach, or indoor scene), set landmark to null."
+                ),
+            ],
+            config=types.GenerateContentConfig(
+                max_output_tokens=512,
+                response_mime_type="application/json",
+                response_schema=LandmarkResult,
+            ),
         )
     except Exception:
         logger.exception("recognize_landmark failed after %.2fs (model=%s, bytes=%d)", time.monotonic() - start, MODEL, len(image_bytes))
         raise
+    usage = response.usage_metadata
+    result: LandmarkResult = response.parsed
     logger.info(
         "recognize_landmark ok in %.2fs — model=%s input_tokens=%d output_tokens=%d result=%r",
-        time.monotonic() - start, MODEL, response.usage.input_tokens, response.usage.output_tokens, response.parsed_output.landmark,
+        time.monotonic() - start, MODEL,
+        usage.prompt_token_count or 0, usage.candidates_token_count or 0, result.landmark,
     )
-    return response.parsed_output
+    return result
