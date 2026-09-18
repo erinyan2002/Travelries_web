@@ -444,6 +444,20 @@ function InfoRow({ label, value, icon: Icon }: {
 // ── Main Component ──────────────────────────────
 export default function HomePage() {
   const uploadRequestIdRef = useRef(0);
+  // Mirrors customFileName synchronously — saveFacesToAlbum reads this instead of
+  // the raw File.name so its DB write always carries whatever name is showing at
+  // the moment it actually executes, even if the user renamed while face
+  // detection (which can take a couple of seconds) was still running. React state
+  // alone can't do this: saveFacesToAlbum's closure would only see the value of
+  // customFileName from when it was called, not any rename typed afterward.
+  const customFileNameRef = useRef("");
+  // Similarly a ref, not state — saveFacesToAlbum and handleSaveToMap both need to
+  // reserve/read this id SYNCHRONOUSLY (before their own await), so that whichever
+  // of the two runs second reuses the same row instead of racing to mint its own
+  // id while the other's state update hasn't committed yet (a real race with
+  // useState: two handlers that both start before either's setState has been
+  // applied would both see the old value and each create a separate row).
+  const lastFacePhotoIdRef = useRef<string | null>(null);
   const [selectedFile,   setSelectedFile]   = useState<File | null>(null);
   const [previewUrl,     setPreviewUrl]     = useState("");
   const [photoInfo,      setPhotoInfo]      = useState<PhotoInfo | null>(null);
@@ -460,7 +474,6 @@ export default function HomePage() {
   const [locationQuery,  setLocationQuery]  = useState("");
   const [manualCoords,   setManualCoords]   = useState<{ lat: number; lng: number; name: string } | null>(null);
   const [locationStatus, setLocationStatus] = useState<"idle" | "searching" | "done" | "error">("idle");
-  const [lastFacePhotoId,  setLastFacePhotoId]  = useState<string | null>(null);
   const [nearbyPlaces,     setNearbyPlaces]     = useState<NearbyPlace[]>([]);
   const [placesLoading,    setPlacesLoading]    = useState(false);
   const [placesFetched,    setPlacesFetched]    = useState(false);
@@ -650,11 +663,19 @@ export default function HomePage() {
       if (uid === "guest") throw new Error("Not signed in");
       const dataUrl = await createThumbnailDataUrl(file, 1024, 0.90);
       // Reuse the id of a row this file was already saved under (e.g. Save to Map
-      // clicked first) so this stays one row with both flags, not two rows.
-      const photoId = lastFacePhotoId ?? crypto.randomUUID();
+      // clicked first) so this stays one row with both flags, not two rows. Reserved
+      // synchronously, before the upsert below, so a concurrent Save to Map click
+      // (or a rename) during this write's network round-trip sees the same id
+      // instead of racing to mint its own.
+      const photoId = lastFacePhotoIdRef.current ?? crypto.randomUUID();
+      lastFacePhotoIdRef.current = photoId;
       await upsertPhoto(uid, {
         id: photoId,
-        fileName: file.name,
+        // The live current name, not the File object's original name — so a
+        // rename typed while detection was still running (customFileNameRef
+        // updates synchronously; this whole function's own closure over `file`
+        // wouldn't see it otherwise) actually lands on the row.
+        fileName: customFileNameRef.current || file.name,
         imageUrl: dataUrl,
         faceCount: boxes.length,
         isFacePhoto: true,
@@ -669,7 +690,6 @@ export default function HomePage() {
         ...(lng !== null               && { lng }),
         ...(location !== "No GPS data" && { location }),
       });
-      setLastFacePhotoId(photoId);
       setSavedFaceCount(boxes.length);
       setFaceSaveStatus("saved");
       const topExpr = allSelected && faces.expressions[0] ? (EXPRESSION_EN[faces.expressions[0]] ?? faces.expressions[0]) : null;
@@ -714,7 +734,7 @@ export default function HomePage() {
     setManualCoords(null);
     setLocationQuery("");
     setLocationStatus("idle");
-    setLastFacePhotoId(null);
+    lastFacePhotoIdRef.current = null;
     setNearbyPlaces([]);
     setPlacesFetched(false);
     setIsMapSaved(false);
@@ -727,6 +747,7 @@ export default function HomePage() {
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
     setCustomFileName(file.name);
+    customFileNameRef.current = file.name;
     setDraftFileName(file.name);
     setIsEditingName(false);
     setLoading(true);
@@ -1013,12 +1034,13 @@ export default function HomePage() {
     setPreviewUrl("");
     setPhotoInfo(null);
     setCustomFileName("");
+    customFileNameRef.current = "";
     setDraftFileName("");
     setSavedMessage("");
     setFaceMessage("");
     setManualCoords(null);
     setLocationStatus("idle");
-    setLastFacePhotoId(null);
+    lastFacePhotoIdRef.current = null;
     setNearbyPlaces([]);
     setPlacesFetched(false);
     setIsMapSaved(false);
@@ -1035,10 +1057,11 @@ export default function HomePage() {
     const newName = draftFileName.trim();
     if (newName) {
       setCustomFileName(newName);
-      if (lastFacePhotoId) {
+      customFileNameRef.current = newName;
+      if (lastFacePhotoIdRef.current) {
         const { data: { user } } = await supabase.auth.getUser();
         const uid = user?.id ?? "guest";
-        if (uid !== "guest") await renamePhoto(uid, lastFacePhotoId, newName);
+        if (uid !== "guest") await renamePhoto(uid, lastFacePhotoIdRef.current, newName);
       }
     }
     setIsEditingName(false);
@@ -1059,8 +1082,11 @@ export default function HomePage() {
 
       // Reuse the id of the face-detection row this file already got saved under
       // (if any), so this becomes one row with both is_map_photo and is_face_photo
-      // set, instead of two rows for the same photo.
-      const photoId = lastFacePhotoId ?? crypto.randomUUID();
+      // set, instead of two rows for the same photo. Reserved synchronously (see
+      // the matching comment in saveFacesToAlbum) so a concurrent face-save
+      // in flight for the same file can't race this into minting a second id.
+      const photoId = lastFacePhotoIdRef.current ?? crypto.randomUUID();
+      lastFacePhotoIdRef.current = photoId;
       const dataUrl = await createThumbnailDataUrl(selectedFile, 1024, 0.90);
 
       // Upload to Supabase Storage; fall back to base64 if it fails
@@ -1085,7 +1111,6 @@ export default function HomePage() {
         isMapPhoto: true,
       });
 
-      setLastFacePhotoId(photoId);
       setIsMapSaved(true);
       setSavedMessage("Saved to map and albums!");
       refreshStats();
