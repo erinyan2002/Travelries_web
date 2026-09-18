@@ -94,7 +94,7 @@ export default function ShareCardModal({ title, fileName, onClose, draw }: Share
           )}
           {drawError && (
             <div className="absolute inset-0 flex items-center justify-center p-4">
-              <p className="text-xs text-slate-400 text-center">카드를 만들지 못했어요. 다시 시도해 주세요.</p>
+              <p className="text-xs text-slate-400 text-center">Couldn&apos;t create the card. Please try again.</p>
             </div>
           )}
         </div>

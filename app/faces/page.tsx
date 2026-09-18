@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import BottomNav from "@/components/BottomNav";
 import { supabase } from "@/lib/supabase";
 import { FacePhoto } from "@/lib/types";
-import { fetchFacePhotos, updateFacePersonIds } from "@/lib/photosApi";
+import { fetchFacePhotos, updateFacePersonIds, removeFaceFromPhoto } from "@/lib/photosApi";
 import { deletePhotoEverywhere } from "@/lib/savedUtils";
 import { fetchPeople, createPerson, renamePerson, Person } from "@/lib/peopleApi";
 import { useRouter } from "next/navigation";
@@ -34,6 +34,15 @@ const PALETTE = [
   { ring: "ring-pink-400",    bg: "bg-pink-100",    text: "text-pink-700"    },
   { ring: "ring-cyan-400",    bg: "bg-cyan-100",    text: "text-cyan-700"    },
 ];
+
+// A face "removed" via removeFaceFromPhoto has its descriptor tombstoned to an
+// empty array — but only when the photo genuinely has real per-face descriptor
+// data (some legacy/fallback detection paths save an entirely-empty descriptors
+// array for every face, which must NOT be mistaken for every face being removed).
+function isFaceRemoved(photo: FacePhoto, i: number): boolean {
+  if (!photo.descriptors?.length) return false;
+  return !photo.descriptors[i]?.length;
+}
 
 function euclidean(a: number[], b: number[]): number {
   let s = 0;
@@ -123,6 +132,7 @@ function PhotoWithBoxes({ photo }: { photo: FacePhoto }) {
       const labelH = Math.max(26, img.height / 22);
       const fontSize = Math.max(13, labelH * 0.62);
       photo.boxes.forEach((box, i) => {
+        if (isFaceRemoved(photo, i)) return;
         const x = box.x * img.width, y = box.y * img.height;
         const w = box.width * img.width, h = box.height * img.height;
         const conf = photo.confidences?.[i] ?? 1;
@@ -186,7 +196,10 @@ function FaceChip({ imageUrl, box, index, size = 64, ringClass = "ring-blue-400"
 }
 
 // ── Modals ────────────────────────────────────────────────────────────────────
-function PhotoModal({ photo, onClose, onDelete }: { photo: FacePhoto; onClose: () => void; onDelete: (id: string) => void }) {
+function PhotoModal({ photo, onClose, onDelete, onRemoveFace }: {
+  photo: FacePhoto; onClose: () => void; onDelete: (id: string) => void;
+  onRemoveFace: (photoId: string, boxIndex: number) => void;
+}) {
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[2000] flex items-end sm:items-center justify-center sm:p-5 overflow-y-auto" onClick={onClose}>
       <div className="w-full sm:max-w-[600px] bg-white sm:rounded-3xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -217,10 +230,25 @@ function PhotoModal({ photo, onClose, onDelete }: { photo: FacePhoto; onClose: (
               Detected faces ({photo.faceCount})
             </p>
             <div className="flex gap-3 overflow-x-auto pb-1">
-              {photo.boxes.map((box, i) => (
-                <FaceChip key={i} imageUrl={photo.imageUrl} box={box} index={i} size={60}
-                  ringClass={PALETTE[i % PALETTE.length].ring} />
-              ))}
+              {photo.boxes.map((box, i) => {
+                if (isFaceRemoved(photo, i)) return null;
+                return (
+                  <div key={i} className="relative flex-shrink-0">
+                    <FaceChip imageUrl={photo.imageUrl} box={box} index={i} size={60}
+                      ringClass={PALETTE[i % PALETTE.length].ring} />
+                    <button
+                      onClick={() => {
+                        if (confirm("Remove this face? The photo stays in your Albums.")) {
+                          onRemoveFace(photo.id, i);
+                        }
+                      }}
+                      title="Remove this face"
+                      className="absolute -top-1 -right-1 w-5 h-5 flex items-center justify-center rounded-full bg-red-500 hover:bg-red-600 text-white shadow-sm transition-colors">
+                      <X size={11} />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -253,7 +281,10 @@ function PhotoModal({ photo, onClose, onDelete }: { photo: FacePhoto; onClose: (
   );
 }
 
-function PersonModal({ cluster, onClose, colorIdx }: { cluster: PersonCluster; onClose: () => void; colorIdx: number }) {
+function PersonModal({ cluster, onClose, colorIdx, onRemoveFace }: {
+  cluster: PersonCluster; onClose: () => void; colorIdx: number;
+  onRemoveFace: (photoId: string, boxIndex: number) => void;
+}) {
   const color = PALETTE[colorIdx % PALETTE.length];
   const rep = cluster.faces[0];
   const repBox = rep?.photo.boxes?.[rep.boxIndex];
@@ -291,7 +322,17 @@ function PersonModal({ cluster, onClose, colorIdx }: { cluster: PersonCluster; o
             {cluster.faces.map((face, idx) => {
               const box = face.photo.boxes?.[face.boxIndex];
               return (
-                <div key={`${face.photo.id}_${face.boxIndex}_${idx}`} className="bg-slate-50 rounded-2xl overflow-hidden border border-slate-100 shadow-sm">
+                <div key={`${face.photo.id}_${face.boxIndex}_${idx}`} className="relative bg-slate-50 rounded-2xl overflow-hidden border border-slate-100 shadow-sm">
+                  <button
+                    onClick={() => {
+                      if (confirm("Remove this face? The photo stays in your Albums.")) {
+                        onRemoveFace(face.photo.id, face.boxIndex);
+                      }
+                    }}
+                    title="Remove this face"
+                    className="absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center rounded-full bg-black/50 hover:bg-red-500 text-white transition-colors">
+                    <X size={12} />
+                  </button>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={face.photo.imageUrl} alt={face.photo.fileName} className="w-full h-32 object-cover bg-slate-200" />
                   <div className="p-2.5 flex items-center gap-2.5">
@@ -386,6 +427,44 @@ export default function FacesPage() {
     if (!uid) return;
     localStorage.setItem(`face-labels-${uid}`, JSON.stringify(customLabels));
   }, [customLabels, uid]);
+
+  // Removes one face from a photo (see removeFaceFromPhoto) and keeps every
+  // open view in sync: the photo's own local state, and — since PersonModal/
+  // PhotoModal are handed a snapshot of the photo/cluster at open time, not a
+  // live reference — the currently-open modal(s) too, closing them if that was
+  // the last face left to show.
+  async function handleRemoveFace(photoId: string, boxIndex: number) {
+    if (!uid) return;
+    try {
+      await removeFaceFromPhoto(uid, photoId, boxIndex);
+      setStoredPhotos((prev) => prev.flatMap((p) => {
+        if (p.id !== photoId) return [p];
+        const newFaceCount = Math.max(0, (p.faceCount ?? 0) - 1);
+        if (newFaceCount === 0) return []; // no faces left — no longer a face photo
+        const descriptors = [...(p.descriptors ?? [])];
+        descriptors[boxIndex] = [];
+        const personIds = [...(p.personIds ?? [])];
+        personIds[boxIndex] = null;
+        return [{ ...p, descriptors, personIds, faceCount: newFaceCount }];
+      }));
+      setSelectedCluster((prev) => {
+        if (!prev) return prev;
+        const faces = prev.cluster.faces.filter((f) => !(f.photo.id === photoId && f.boxIndex === boxIndex));
+        return faces.length === 0 ? null : { ...prev, cluster: { ...prev.cluster, faces } };
+      });
+      setSelectedPhoto((prev) => {
+        if (!prev || prev.id !== photoId) return prev;
+        const newFaceCount = Math.max(0, (prev.faceCount ?? 0) - 1);
+        if (newFaceCount === 0) return null;
+        const descriptors = [...(prev.descriptors ?? [])];
+        descriptors[boxIndex] = [];
+        return { ...prev, descriptors, faceCount: newFaceCount };
+      });
+    } catch (err) {
+      console.error("Remove face failed:", err);
+      alert("Couldn't remove this face. Please try again.");
+    }
+  }
 
   async function handleDelete(id: string) {
     const fileName = storedPhotos.find((p) => p.id === id)?.fileName;
@@ -503,26 +582,26 @@ export default function FacesPage() {
   });
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 pt-6 pb-28">
+    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-4 pt-6 pb-28">
       <div className="max-w-2xl mx-auto">
 
         {/* ── Hero header ── */}
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-sky-500 via-blue-500 to-blue-600 p-6 mb-5 shadow-xl shadow-blue-200">
-          <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full" />
-          <div className="absolute -bottom-6 -left-6 w-28 h-28 bg-white/10 rounded-full" />
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-sky-100 via-sky-50 to-blue-100 border border-sky-200/60 p-6 mb-5 shadow-sm">
+          <div className="absolute -top-10 -right-10 w-40 h-40 bg-sky-200/50 rounded-full blur-2xl" />
+          <div className="absolute -bottom-6 -left-6 w-28 h-28 bg-blue-200/40 rounded-full blur-2xl" />
           <div className="relative">
             <div className="flex items-center gap-3 mb-5">
-              <div className="w-11 h-11 bg-white/20 rounded-2xl flex items-center justify-center shadow-inner">
+              <div className="w-11 h-11 bg-gradient-to-br from-sky-400 to-blue-500 rounded-2xl flex items-center justify-center shadow-md shadow-blue-200">
                 <Scan size={20} className="text-white" />
               </div>
               <div className="flex-1">
-                <h1 className="text-2xl font-black text-white tracking-tight leading-none">Faces</h1>
-                <p className="text-sky-100 text-xs mt-0.5">AI-powered face detection & clustering</p>
+                <h1 className="text-2xl font-black text-slate-800 tracking-tight leading-none">Faces</h1>
+                <p className="text-slate-500 text-xs mt-0.5">AI-powered face detection & clustering</p>
               </div>
               {storedPhotos.length > 0 && (
                 <button
                   onClick={() => setConfirmClearAll(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-red-500/80 text-white text-xs font-bold rounded-xl transition-all border border-white/20"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-red-500 text-xs font-bold rounded-xl transition-all border border-red-100 hover:bg-red-50"
                 >
                   <Trash2 size={12} /> Clear All
                 </button>
@@ -534,10 +613,10 @@ export default function FacesPage() {
                 { label: "Faces",   value: loading ? "—" : totalFaces,             icon: Eye       },
                 { label: "Photos",  value: loading ? "—" : storedPhotos.length,    icon: ImageIcon },
               ].map(({ label, value, icon: Icon }) => (
-                <div key={label} className="bg-white/15 rounded-2xl p-3 text-center backdrop-blur-sm">
-                  <Icon size={14} className="text-sky-100 mx-auto mb-1" />
-                  <p className="text-xl font-black text-white leading-none">{value}</p>
-                  <p className="text-sky-100 text-[10px] font-semibold mt-0.5">{label}</p>
+                <div key={label} className="bg-white/80 border border-white rounded-2xl p-3 text-center backdrop-blur-sm shadow-sm">
+                  <Icon size={14} className="text-sky-500 mx-auto mb-1" />
+                  <p className="text-xl font-black text-slate-800 leading-none">{value}</p>
+                  <p className="text-slate-500 text-[10px] font-semibold mt-0.5">{label}</p>
                 </div>
               ))}
             </div>
@@ -647,8 +726,8 @@ export default function FacesPage() {
                                   <p className="font-black text-slate-800 text-sm">{displayLabel}</p>
                                   <button
                                     onClick={(e) => { e.stopPropagation(); setEditDraft(displayLabel); setEditingId(cluster.id); }}
-                                    className="w-5 h-5 flex items-center justify-center text-slate-300 hover:text-blue-500 transition-colors">
-                                    <Pencil size={11} />
+                                    className="w-5 h-5 flex items-center justify-center rounded-full bg-blue-50 text-blue-500 hover:bg-blue-100 hover:text-blue-600 transition-colors">
+                                    <Pencil size={10} />
                                   </button>
                                 </div>
                               )}
@@ -744,8 +823,9 @@ export default function FacesPage() {
                               <Trash2 size={12} />
                             </button>
 
-                            {/* Age / gender bottom-left */}
-                            {photo.ages?.[0] != null && (
+                            {/* Age / gender bottom-left — 0 means "unknown" (a MediaPipe-localized
+                                face face-api couldn't extract age/gender for), not a real age */}
+                            {photo.ages?.[0] != null && photo.ages[0] > 0 && (
                               <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
                                 {photo.genders?.[0] === "male" ? "♂" : "♀"} {photo.ages[0]}yr
                               </div>
@@ -780,13 +860,14 @@ export default function FacesPage() {
         )}
 
         {selectedPhoto && (
-          <PhotoModal photo={selectedPhoto} onClose={() => setSelectedPhoto(null)} onDelete={handleDelete} />
+          <PhotoModal photo={selectedPhoto} onClose={() => setSelectedPhoto(null)} onDelete={handleDelete} onRemoveFace={handleRemoveFace} />
         )}
         {selectedCluster && (
           <PersonModal
             cluster={selectedCluster.cluster}
             colorIdx={selectedCluster.idx}
             onClose={() => setSelectedCluster(null)}
+            onRemoveFace={handleRemoveFace}
           />
         )}
       </div>
@@ -800,7 +881,7 @@ export default function FacesPage() {
               <Trash2 size={26} className="text-red-500" />
             </div>
             <h3 className="text-lg font-extrabold text-slate-900 mb-1">Clear all face data?</h3>
-            <p className="text-sm text-slate-500 mb-5">모든 얼굴 인식 데이터와 사진이 삭제됩니다. 복구할 수 없습니다.</p>
+            <p className="text-sm text-slate-500 mb-5">All face recognition data and photos will be deleted. This cannot be undone.</p>
             <div className="flex gap-3">
               <button onClick={() => setConfirmClearAll(false)}
                 className="flex-1 py-3 rounded-2xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50 transition-colors">
@@ -823,7 +904,7 @@ export default function FacesPage() {
               <Trash2 size={26} className="text-red-500" />
             </div>
             <h3 className="text-lg font-extrabold text-slate-900 mb-1">Delete this photo?</h3>
-            <p className="text-sm text-slate-500 mb-5">삭제하면 복구할 수 없습니다.</p>
+            <p className="text-sm text-slate-500 mb-5">This cannot be undone.</p>
             <div className="flex gap-3">
               <button onClick={() => setConfirmDeleteId(null)}
                 className="flex-1 py-3 rounded-2xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50 transition-colors">

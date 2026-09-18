@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import BottomNav from "@/components/BottomNav";
+import PageHero from "@/components/PageHero";
+import AnimatedNumber from "@/components/AnimatedNumber";
+import { fadeUp, staggerContainer } from "@/lib/motion";
 import { supabase } from "@/lib/supabase";
 import { MapPhoto, FacePhoto } from "@/lib/types";
 import { fetchAllPhotos } from "@/lib/photosApi";
@@ -11,12 +15,26 @@ import {
   TrendingUp, Image as ImageIcon, CalendarDays, Clock, LayoutTemplate,
 } from "lucide-react";
 import ShareCardModal from "@/components/ShareCardModal";
-import { loadImage, drawImageCover, fillTextTracked, drawRouteDivider } from "@/lib/canvasCard";
+import { loadImage, drawPolaroid, fillTextTracked, drawRouteDivider } from "@/lib/canvasCard";
 
-// Draws the 1080x1920 "Year in Review" share card: a dimmed cover photo behind
-// a headline number (total photos) and a short stat panel — Spotify-Wrapped-style
-// summary of the year's travel activity. Dashed dividers echo the app's own
-// map route line; the hero number gets a blue-to-violet gradient to match.
+// Scattered polaroid layout for the collage, back-to-front draw order (last
+// entry ends up on top, centered and largest) — offsets are relative to the
+// collage's own center point. When fewer than 5 photos are available, the
+// slice kept is the tail of this array so the centered "hero" photo is
+// always present and only the smaller background photos are dropped.
+const COLLAGE_LAYOUT = [
+  { dx: -260, dy: -55, size: 250, rot: -12 },
+  { dx: 255, dy: -30, size: 240, rot: 10 },
+  { dx: -195, dy: 100, size: 260, rot: 8 },
+  { dx: 205, dy: 120, size: 250, rot: -9 },
+  { dx: 5, dy: 10, size: 320, rot: -3 },
+];
+
+// Draws the 1080x1920 "Year in Review" share card: a scattered polaroid
+// collage of recent photos, a headline number (total photos), and a short
+// stat panel — Spotify-Wrapped-style summary of the year's travel activity.
+// Dashed dividers echo the app's own map route line; the hero number gets a
+// blue-to-violet gradient to match.
 async function drawYearReviewCard(ctx: CanvasRenderingContext2D, w: number, h: number, stats: Stats, year: number) {
   const margin = 90;
   const dividerColor = "rgba(255,255,255,0.18)";
@@ -24,63 +42,57 @@ async function drawYearReviewCard(ctx: CanvasRenderingContext2D, w: number, h: n
   ctx.fillStyle = "#0B1220";
   ctx.fillRect(0, 0, w, h);
 
-  const coverPhoto = stats.recentPhotos[0];
-  if (coverPhoto?.imageUrl) {
-    try {
-      const img = await loadImage(coverPhoto.imageUrl);
-      ctx.globalAlpha = 0.28;
-      drawImageCover(ctx, img, 0, 0, w, h);
-      ctx.globalAlpha = 1;
-    } catch {
-      // no cover photo available (e.g. CORS) — solid background above still holds
-    }
-  }
-
-  const overlay = ctx.createLinearGradient(0, 0, 0, h);
-  overlay.addColorStop(0, "rgba(11,18,32,0.65)");
-  overlay.addColorStop(0.4, "rgba(11,18,32,0.85)");
-  overlay.addColorStop(1, "rgba(6,10,20,0.97)");
-  ctx.fillStyle = overlay;
-  ctx.fillRect(0, 0, w, h);
-
   ctx.textAlign = "center";
 
   ctx.fillStyle = "#93C5FD";
-  ctx.font = "700 32px system-ui, -apple-system, sans-serif";
-  fillTextTracked(ctx, "✈ TRAVELRIES", w / 2, 140, 6);
-
-  drawRouteDivider(ctx, 190, w, margin, dividerColor);
+  ctx.font = "700 28px system-ui, -apple-system, sans-serif";
+  fillTextTracked(ctx, "✈ TRAVELRIES", w / 2, 100, 6);
 
   ctx.fillStyle = "#ffffff";
-  ctx.font = "800 128px system-ui, -apple-system, sans-serif";
-  ctx.fillText(String(year), w / 2, 350);
-  ctx.font = "700 50px system-ui, -apple-system, sans-serif";
+  ctx.font = "800 84px system-ui, -apple-system, sans-serif";
+  ctx.fillText(String(year), w / 2, 195);
+  ctx.font = "700 34px system-ui, -apple-system, sans-serif";
   ctx.fillStyle = "rgba(255,255,255,0.75)";
-  ctx.fillText("Year in Review", w / 2, 420);
+  ctx.fillText("Year in Review", w / 2, 242);
 
-  drawRouteDivider(ctx, 480, w, margin, dividerColor);
+  drawRouteDivider(ctx, 290, w, margin, dividerColor);
+
+  // Photo collage — up to 5 of the most recent photos, scattered as polaroids.
+  const collagePhotos = stats.recentPhotos.slice(0, 5);
+  const loadedPhotos = await Promise.all(
+    collagePhotos.map((p) => (p.imageUrl ? loadImage(p.imageUrl).catch(() => null) : Promise.resolve(null)))
+  );
+  const layout = COLLAGE_LAYOUT.slice(COLLAGE_LAYOUT.length - loadedPhotos.length);
+  const collageCenterX = w / 2;
+  const collageCenterY = 580;
+  loadedPhotos.forEach((img, i) => {
+    const spot = layout[i];
+    drawPolaroid(ctx, img, collageCenterX + spot.dx, collageCenterY + spot.dy, spot.size, spot.rot);
+  });
+
+  drawRouteDivider(ctx, 900, w, margin, dividerColor);
 
   const countText = String(stats.totalPhotos);
-  const bigFontSize = countText.length <= 2 ? 260 : countText.length === 3 ? 220 : countText.length === 4 ? 170 : 130;
+  const bigFontSize = countText.length <= 2 ? 190 : countText.length === 3 ? 160 : countText.length === 4 ? 130 : 100;
   const heroGradient = ctx.createLinearGradient(w / 2 - 320, 0, w / 2 + 320, 0);
   heroGradient.addColorStop(0, "#93C5FD");
   heroGradient.addColorStop(1, "#C4B5FD");
   ctx.fillStyle = heroGradient;
   ctx.font = `900 ${bigFontSize}px system-ui, -apple-system, sans-serif`;
-  ctx.fillText(countText, w / 2, 780);
-  ctx.font = "600 40px system-ui, -apple-system, sans-serif";
+  ctx.fillText(countText, w / 2, 1060);
+  ctx.font = "600 38px system-ui, -apple-system, sans-serif";
   ctx.fillStyle = "rgba(255,255,255,0.7)";
-  ctx.fillText("photos captured", w / 2, 850);
+  ctx.fillText("photos captured", w / 2, 1120);
 
-  drawRouteDivider(ctx, 930, w, margin, dividerColor);
+  drawRouteDivider(ctx, 1170, w, margin, dividerColor);
 
   const rows: { label: string; value: string }[] = [
     { label: "Places visited", value: String(stats.totalLocations) },
     { label: "Faces detected", value: String(stats.totalFacesDetected) },
     { label: "Top destination", value: stats.topLocations[0]?.name ?? "—" },
   ];
-  const rowHeight = 140;
-  const panelTop = 1000;
+  const rowHeight = 130;
+  const panelTop = 1200;
   const panelPadX = 40;
   const panelHeight = 48 + rows.length * rowHeight;
 
@@ -141,23 +153,31 @@ type Stats = {
 };
 
 function StatCard({
-  icon: Icon, label, value, color, sub,
+  icon: Icon, label, value, gradient, glow, sub,
 }: {
   icon: React.ElementType;
   label: string;
-  value: string | number;
-  color: string;
+  value: number;
+  gradient: string;
+  glow: string;
   sub?: string;
 }) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 ${color}`}>
+    <motion.div
+      variants={fadeUp}
+      whileHover={{ y: -4, boxShadow: "0 16px 32px -8px rgba(0,0,0,0.12)" }}
+      className="relative bg-white rounded-2xl border border-slate-200 shadow-sm p-5 overflow-hidden"
+    >
+      <div className={`absolute -top-6 -right-6 w-20 h-20 rounded-full blur-2xl opacity-30 ${glow}`} />
+      <div className={`relative w-10 h-10 rounded-xl flex items-center justify-center mb-3 bg-gradient-to-br ${gradient} shadow-md`}>
         <Icon size={20} className="text-white" />
       </div>
-      <p className="text-2xl font-extrabold text-slate-900">{value}</p>
-      <p className="text-sm font-semibold text-slate-500 mt-0.5">{label}</p>
-      {sub && <p className="text-xs text-slate-400 mt-1">{sub}</p>}
-    </div>
+      <p className="relative text-2xl font-extrabold text-slate-900">
+        <AnimatedNumber value={value} />
+      </p>
+      <p className="relative text-sm font-semibold text-slate-500 mt-0.5">{label}</p>
+      {sub && <p className="relative text-xs text-slate-400 mt-1">{sub}</p>}
+    </motion.div>
   );
 }
 
@@ -165,13 +185,19 @@ function MonthlyBarChart({ data }: { data: { label: string; count: number }[] })
   const max = Math.max(...data.map(d => d.count), 1);
   return (
     <div className="flex items-end gap-1 mt-3" style={{ height: "100px" }}>
-      {data.map(({ label, count }) => {
+      {data.map(({ label, count }, i) => {
         const h = count > 0 ? Math.max(Math.round((count / max) * 72), 6) : 2;
         return (
           <div key={label} className="flex-1 flex flex-col items-center justify-end gap-0.5 h-full min-w-0">
             <span className="text-[8px] text-slate-400 font-bold leading-none">{count > 0 ? count : ""}</span>
-            <div className={`w-full rounded-t transition-all duration-700 ${count > 0 ? "bg-blue-400 hover:bg-blue-500" : "bg-slate-100"}`}
-              style={{ height: `${h}px` }} />
+            <motion.div
+              initial={{ height: 0 }}
+              animate={{ height: h }}
+              transition={{ duration: 0.6, delay: i * 0.03, ease: [0.16, 1, 0.3, 1] }}
+              whileHover={{ scaleY: count > 0 ? 1.08 : 1 }}
+              style={{ transformOrigin: "bottom" }}
+              className={`w-full rounded-t ${count > 0 ? "bg-gradient-to-t from-blue-500 to-indigo-400" : "bg-slate-100"}`}
+            />
             <span className="text-[8px] text-slate-400 truncate w-full text-center leading-none mt-0.5">{label}</span>
           </div>
         );
@@ -189,10 +215,19 @@ function DonutChart({ portrait, scenery, total }: { portrait: number; scenery: n
     <div className="flex items-center gap-5 mt-2">
       <div className="relative flex-shrink-0">
         <svg viewBox="0 0 80 80" width="80" height="80">
+          <defs>
+            <linearGradient id="donutGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#3b82f6" />
+              <stop offset="100%" stopColor="#8b5cf6" />
+            </linearGradient>
+          </defs>
           <circle cx="40" cy="40" r={r} fill="none" stroke="#f1f5f9" strokeWidth="12" />
           {portrait > 0 && (
-            <circle cx="40" cy="40" r={r} fill="none" stroke="#3b82f6" strokeWidth="12"
-              strokeDasharray={`${arc} ${circ - arc}`}
+            <motion.circle
+              cx="40" cy="40" r={r} fill="none" stroke="url(#donutGradient)" strokeWidth="12" strokeLinecap="round"
+              initial={{ strokeDasharray: `0 ${circ}` }}
+              animate={{ strokeDasharray: `${arc} ${circ - arc}` }}
+              transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
               style={{ transform: "rotate(-90deg)", transformOrigin: "40px 40px" }} />
           )}
         </svg>
@@ -308,46 +343,65 @@ export default function StatsPage() {
 
   if (!stats) {
     return (
-      <main className="min-h-screen bg-slate-50 px-6 py-8 pb-28 flex items-center justify-center">
-        <p className="text-slate-400">Loading...</p>
+      <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28 flex flex-col items-center justify-center gap-3">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+          className="w-10 h-10 rounded-full border-[3px] border-blue-100 border-t-blue-600"
+        />
+        <p className="text-slate-400 text-sm">Loading your stats…</p>
         <BottomNav />
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-6 py-8 pb-28">
+    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28">
       <div className="max-w-5xl mx-auto">
 
-        {/* Header */}
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-md shadow-blue-200">
-            <BarChart2 size={22} className="text-white" />
-          </div>
-          <div className="flex-1">
-            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Statistics</h1>
-            <p className="text-slate-500 text-sm">Summary of your photo activity</p>
-          </div>
-          <button onClick={() => setShowYearCard(true)}
-            className="flex items-center gap-1.5 bg-violet-500 text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-violet-600 transition-colors shadow-md shadow-violet-200 flex-shrink-0">
-            <LayoutTemplate size={16} /> Year in Review
-          </button>
-        </div>
+        <PageHero
+          icon={BarChart2}
+          title="Statistics"
+          subtitle="Summary of your photo activity"
+          action={
+            <motion.button
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => setShowYearCard(true)}
+              className="flex items-center gap-1.5 bg-gradient-to-br from-sky-500 to-blue-500 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-md shadow-blue-200"
+            >
+              <LayoutTemplate size={16} /> Year in Review
+            </motion.button>
+          }
+        />
 
         {/* Stat cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-          <StatCard icon={Camera}   label="Photos"          value={stats.totalPhotos}         color="bg-blue-500"   sub="saved to map" />
-          <StatCard icon={Users}    label="Face Photos"     value={stats.totalFacePhotos}     color="bg-blue-500"   sub={`${stats.totalFacesDetected} detected`} />
-          <StatCard icon={MapPin}   label="Places Visited"  value={stats.totalLocations}      color="bg-blue-500"   sub="unique locations" />
-          <StatCard icon={Star}     label="Favorites"       value={stats.totalSaved}          color="bg-blue-500"   sub="saved photos" />
-        </div>
+        <motion.div
+          variants={staggerContainer}
+          initial="hidden"
+          animate="show"
+          className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6"
+        >
+          <StatCard icon={Camera} label="Photos"         value={stats.totalPhotos}     gradient="from-blue-500 to-blue-600"     glow="bg-blue-400"    sub="saved to map" />
+          <StatCard icon={Users}  label="Face Photos"    value={stats.totalFacePhotos} gradient="from-violet-500 to-violet-600" glow="bg-violet-400"  sub={`${stats.totalFacesDetected} detected`} />
+          <StatCard icon={MapPin} label="Places Visited" value={stats.totalLocations}  gradient="from-emerald-500 to-emerald-600" glow="bg-emerald-400" sub="unique locations" />
+          <StatCard icon={Star}   label="Favorites"      value={stats.totalSaved}      gradient="from-amber-500 to-amber-600"   glow="bg-amber-400"   sub="saved photos" />
+        </motion.div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
 
           {/* Photo type breakdown */}
-          <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+          <motion.section
+            initial={{ opacity: 0, y: 14 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, amount: 0.3 }}
+            transition={{ duration: 0.4 }}
+            className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5"
+          >
             <div className="flex items-center gap-2 mb-4">
-              <TrendingUp size={17} className="text-indigo-500" />
+              <div className="w-7 h-7 rounded-lg bg-indigo-50 flex items-center justify-center">
+                <TrendingUp size={15} className="text-indigo-500" />
+              </div>
               <h2 className="font-bold text-slate-800">Photo Types</h2>
             </div>
             <DonutChart portrait={stats.portraitCount} scenery={stats.generalCount} total={stats.totalPhotos} />
@@ -356,12 +410,20 @@ export default function StatsPage() {
                 Max faces in one photo: <strong className="text-slate-600">{stats.mostFacesPhoto.faceCount}</strong>
               </p>
             )}
-          </section>
+          </motion.section>
 
           {/* Top locations */}
-          <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+          <motion.section
+            initial={{ opacity: 0, y: 14 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, amount: 0.3 }}
+            transition={{ duration: 0.4, delay: 0.05 }}
+            className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5"
+          >
             <div className="flex items-center gap-2 mb-5">
-              <MapPin size={17} className="text-emerald-500" />
+              <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center">
+                <MapPin size={15} className="text-emerald-500" />
+              </div>
               <h2 className="font-bold text-slate-800">Top 5 Locations</h2>
             </div>
             {stats.topLocations.length === 0 ? (
@@ -381,29 +443,47 @@ export default function StatsPage() {
                         <span className="text-xs text-slate-400 ml-2 flex-shrink-0">{loc.count}</span>
                       </div>
                       <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                        <div className="h-full bg-emerald-400 rounded-full"
-                          style={{ width: `${Math.round((loc.count / stats.topLocations[0].count) * 100)}%` }} />
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${Math.round((loc.count / stats.topLocations[0].count) * 100)}%` }}
+                          transition={{ duration: 0.6, delay: 0.1 + i * 0.06, ease: [0.16, 1, 0.3, 1] }}
+                          className="h-full bg-gradient-to-r from-emerald-400 to-teal-400 rounded-full"
+                        />
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
             )}
-          </section>
+          </motion.section>
         </div>
 
         {/* Monthly uploads chart */}
-        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 mb-5">
+        <motion.section
+          initial={{ opacity: 0, y: 14 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.3 }}
+          transition={{ duration: 0.4 }}
+          className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 mb-5"
+        >
           <div className="flex items-center gap-2 mb-1">
-            <TrendingUp size={17} className="text-blue-500" />
+            <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center">
+              <TrendingUp size={15} className="text-blue-500" />
+            </div>
             <h2 className="font-bold text-slate-800">Monthly Uploads</h2>
             <span className="text-xs text-slate-400 ml-auto">Last 12 months</span>
           </div>
           <MonthlyBarChart data={stats.monthlyUploads} />
-        </section>
+        </motion.section>
 
         {/* Recent uploads */}
-        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <motion.section
+          initial={{ opacity: 0, y: 14 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.2 }}
+          transition={{ duration: 0.4 }}
+          className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
+        >
           <div className="flex items-center gap-2 px-5 py-3.5 border-b border-slate-100 bg-slate-50">
             <Clock size={16} className="text-slate-400" />
             <h2 className="font-bold text-slate-800">Recent Uploads</h2>
@@ -419,9 +499,20 @@ export default function StatsPage() {
               <p className="text-slate-400 text-sm">No photos yet</p>
             </div>
           ) : (
-            <div className="p-4 grid grid-cols-3 sm:grid-cols-6 gap-3">
+            <motion.div
+              variants={staggerContainer}
+              initial="hidden"
+              whileInView="show"
+              viewport={{ once: true, amount: 0.2 }}
+              className="p-4 grid grid-cols-3 sm:grid-cols-6 gap-3"
+            >
               {stats.recentPhotos.map((photo) => (
-                <div key={photo.id} className="rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+                <motion.div
+                  key={photo.id}
+                  variants={fadeUp}
+                  whileHover={{ y: -3, scale: 1.03 }}
+                  className="rounded-xl overflow-hidden border border-slate-200 bg-slate-50 shadow-sm"
+                >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={photo.imageUrl} alt={photo.fileName} className="w-full h-20 object-contain bg-slate-100" />
                   <div className="p-1.5">
@@ -436,11 +527,11 @@ export default function StatsPage() {
                       </span>
                     )}
                   </div>
-                </div>
+                </motion.div>
               ))}
-            </div>
+            </motion.div>
           )}
-        </section>
+        </motion.section>
 
       </div>
       {showYearCard && (

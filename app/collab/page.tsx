@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import BottomNav from "@/components/BottomNav";
+import PageHero from "@/components/PageHero";
 import { createAlbum, getMyAlbums, CollabAlbum } from "@/lib/collabUtils";
 import { FolderOpen, Plus, X, LogIn } from "lucide-react";
 
@@ -44,30 +45,26 @@ export default function CollabPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-6 py-8 pb-28">
+    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28">
       <div className="max-w-3xl mx-auto">
 
-        <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-md shadow-blue-200">
-              <FolderOpen size={22} className="text-white" />
+        <PageHero
+          icon={FolderOpen}
+          title="Collab Albums"
+          subtitle="Create shared albums and collect photos together."
+          action={
+            <div className="flex gap-2">
+              <Link href="/collab/join"
+                className="flex items-center gap-1.5 px-4 py-2.5 bg-white text-slate-700 border border-slate-200 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors">
+                <LogIn size={15} /> Join
+              </Link>
+              <button onClick={() => setShowCreate(true)}
+                className="flex items-center gap-1.5 px-4 py-2.5 bg-gradient-to-br from-sky-500 to-blue-500 text-white rounded-xl text-sm font-bold shadow-md shadow-blue-200">
+                <Plus size={15} /> New Album
+              </button>
             </div>
-            <div>
-              <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Collab Albums</h1>
-              <p className="text-slate-500 text-sm">Create shared albums and collect photos together.</p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Link href="/collab/join"
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-sm font-bold hover:bg-slate-200 transition-colors">
-              <LogIn size={15} /> Join
-            </Link>
-            <button onClick={() => setShowCreate(true)}
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors">
-              <Plus size={15} /> New Album
-            </button>
-          </div>
-        </div>
+          }
+        />
 
         {loading ? (
           <div className="text-center text-slate-400 text-sm py-16 animate-pulse">Loading...</div>

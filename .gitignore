@@ -47,3 +47,7 @@ __pycache__/
 
 # python virtualenv
 backend/.venv/
+
+# backend runtime uploads (user photos processed by /analyze — not source, not
+# safe to publish to a public repo)
+backend/uploads/

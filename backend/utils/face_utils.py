@@ -226,7 +226,12 @@ except Exception:
 try:
     import face_recognition as _face_recognition_lib
     _DLIB_OK = True
-except ImportError:
+except (ImportError, SystemExit):
+    # A newer face_recognition_models release calls sys.exit() (raising
+    # SystemExit, not ImportError) when it can't locate its model files —
+    # SystemExit isn't an Exception subclass, so it must be caught explicitly
+    # here or it takes down the whole process at import time. Harmless to miss:
+    # this is only Tier 2, used when insightface/onnxruntime aren't installed.
     _face_recognition_lib = None  # type: ignore[assignment]
     _DLIB_OK = False
 

@@ -183,6 +183,54 @@ export async function renamePhoto(uid: string, photoId: string, fileName: string
   await supabase.from("photos").update({ file_name: fileName }).eq("id", photoId).eq("user_id", uid);
 }
 
+// Removes ONE detected face from a photo (e.g. a stranger caught in a group
+// shot, or a face saved by mistake) without deleting the photo itself — it
+// stays in Albums/Map exactly as before. The face's array entries can't just
+// be spliced out and the rest shifted down: every OTHER face's cluster id and
+// manual person tag in this app are keyed by its position in boxes/descriptors
+// (see clusterByPerson/buildPersonGroups in app/faces/page.tsx) — shifting
+// indices would silently reassign other people's identities on the same photo.
+// Instead the removed face is "tombstoned" in place: its descriptor is cleared
+// to an empty array (clusterByPerson's existing `!desc?.length` guard already
+// skips those) and its personId cleared to null (buildPersonGroups' existing
+// `!personId` guard already skips those) — every other index is untouched.
+export async function removeFaceFromPhoto(uid: string, photoId: string, boxIndex: number): Promise<void> {
+  const { data, error } = await supabase
+    .from("photos")
+    .select("boxes, descriptors, person_ids, face_count")
+    .eq("id", photoId)
+    .eq("user_id", uid)
+    .single();
+  if (error || !data) throw new Error(error?.message ?? "Photo not found");
+
+  const boxes = (data.boxes as FacePhoto["boxes"]) ?? [];
+  if (boxIndex < 0 || boxIndex >= boxes.length) throw new Error("Face not found on this photo");
+
+  const newBoxes = [...boxes];
+  newBoxes[boxIndex] = { x: 0, y: 0, width: 0, height: 0 };
+
+  const descriptors = [...(((data.descriptors as number[][]) ?? []))];
+  descriptors[boxIndex] = [];
+
+  const personIds = [...(((data.person_ids as (string | null)[]) ?? []))];
+  personIds[boxIndex] = null;
+
+  const newFaceCount = Math.max(0, ((data.face_count as number) ?? 0) - 1);
+
+  const { error: updateError } = await supabase
+    .from("photos")
+    .update({
+      boxes: newBoxes,
+      descriptors,
+      person_ids: personIds,
+      face_count: newFaceCount,
+      is_face_photo: newFaceCount > 0,
+    })
+    .eq("id", photoId)
+    .eq("user_id", uid);
+  if (updateError) throw new Error(updateError.message);
+}
+
 // Deletes the photo row (saved_photos cascades via its FK) and any collab_photos
 // row this user added under the same filename.
 export async function deletePhotoEverywhere(uid: string, photoId: string, fileName?: string): Promise<void> {

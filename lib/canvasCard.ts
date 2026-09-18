@@ -89,6 +89,51 @@ export function fillTextTracked(
   ctx.textAlign = originalAlign;
 }
 
+// Draws `img` as a rotated polaroid-style photo (white frame, larger bottom
+// border, drop shadow) centered at (cx, cy) — used to scatter a handful of
+// photos into a Spotify-Wrapped-style collage. Pass `img: null` to draw a
+// blank placeholder frame (e.g. an image that failed to load via CORS).
+export function drawPolaroid(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement | null,
+  cx: number, cy: number, size: number, rotationDeg: number,
+): void {
+  const border = 18;
+  const bottomBorder = 54;
+  const totalW = size + border * 2;
+  const totalH = size + border + bottomBorder;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate((rotationDeg * Math.PI) / 180);
+
+  ctx.shadowColor = "rgba(0,0,0,0.45)";
+  ctx.shadowBlur = 28;
+  ctx.shadowOffsetY = 12;
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.roundRect(-totalW / 2, -totalH / 2, totalW, totalH, 8);
+  ctx.fill();
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
+
+  const photoX = -totalW / 2 + border;
+  const photoY = -totalH / 2 + border;
+  if (img) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(photoX, photoY, size, size);
+    ctx.clip();
+    drawImageCover(ctx, img, photoX, photoY, size, size);
+    ctx.restore();
+  } else {
+    ctx.fillStyle = "#1E293B";
+    ctx.fillRect(photoX, photoY, size, size);
+  }
+  ctx.restore();
+}
+
 // A dashed horizontal divider echoing the app's own map route line — used to
 // separate sections on a share card without a hard rule.
 export function drawRouteDivider(

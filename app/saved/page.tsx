@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import BottomNav from "@/components/BottomNav";
+import PageHero from "@/components/PageHero";
 import { supabase } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
 import { getSavedIds, toggleSaved } from "@/lib/savedUtils";
@@ -84,18 +85,10 @@ export default function SavedPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-6 py-8 pb-28">
+    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28">
       <div className="max-w-5xl mx-auto">
 
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center shadow-md shadow-blue-200">
-            <Star size={22} className="text-white fill-white" />
-          </div>
-          <div>
-            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Saved</h1>
-            <p className="text-slate-500 text-sm">Photos you star in Albums appear here.</p>
-          </div>
-        </div>
+        <PageHero icon={Star} title="Saved" subtitle="Photos you star in Albums appear here." />
 
         {saved.length === 0 ? (
           <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-16 text-center">

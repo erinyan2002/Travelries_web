@@ -3,8 +3,11 @@
 import { ChangeEvent, useState, useEffect, useRef } from "react";
 import * as exifr from "exifr";
 import * as faceapi from "face-api.js";
+import { motion } from "framer-motion";
 import { detectFacesMediaPipe, loadMediaPipeDetector } from "@/lib/mediapipeDetector";
 import BottomNav from "@/components/BottomNav";
+import AnimatedNumber from "@/components/AnimatedNumber";
+import { fadeUp, staggerContainer } from "@/lib/motion";
 import { supabase } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
 import { fetchMapPhotos, fetchFacePhotos, upsertPhoto, renamePhoto } from "@/lib/photosApi";
@@ -12,7 +15,7 @@ import { fetchPeople, Person } from "@/lib/peopleApi";
 import {
   Camera, Upload, MapPin, Users, CalendarDays, Clock,
   FileImage, Ruler, CheckCircle2, Loader2, AlertTriangle,
-  Search, Navigation, X, Check,
+  Search, Navigation, X, Check, Pencil,
   Coffee, Utensils, Wine, Sparkles, Trash2, Map,
 } from "lucide-react";
 import AppLogo from "@/components/AppLogo";
@@ -257,9 +260,15 @@ async function runFaceDetection(
     ({ x: b.x / W, y: b.y / H, width: b.width / W, height: b.height / H });
 
   if (modelType === "mediapipe") {
-    const rawBoxes = (await detectFacesMediaPipe(imgEl)).filter(
-      (b) => b.width >= MIN_PX && b.height >= MIN_PX
-    );
+    const mpBoxes = await detectFacesMediaPipe(imgEl);
+    const rawBoxes = mpBoxes.filter((b) => b.width >= MIN_PX && b.height >= MIN_PX);
+    if (rawBoxes.length === 0) {
+      // Nothing to blame on the face-api confirmation step below — MediaPipe's
+      // full_range/short_range/tiled passes themselves found no face (or found
+      // only sub-MIN_PX boxes). Logged so a missed face can be told apart from
+      // the "MediaPipe found it, face-api couldn't confirm it" case further down.
+      console.warn(`No face localized by MediaPipe (${mpBoxes.length} raw box(es) before the ${MIN_PX}px size filter).`);
+    }
 
     const boxes: DetectionResult["boxes"] = [];
     const descriptors: number[][] = [];
@@ -284,29 +293,67 @@ async function runFaceDetection(
       if (!ctx) continue;
       ctx.drawImage(imgEl, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
+      // face-api's own box within this crop is a landmark-based detection, more
+      // precise than MediaPipe's original box — use IT for the stored/displayed
+      // position (translated back to full-image coordinates), not MediaPipe's.
+      // Using MediaPipe's box unconditionally here was the actual cause of boxes
+      // rendering on a collar/shoulder next to a confirmed face: face-api can
+      // correctly confirm a face that's only partly inside a padded crop while
+      // still centering its own detection correctly within that crop.
+      const toFullImageBox = (b: { x: number; y: number; width: number; height: number }) =>
+        normBox({ x: cropX + b.x, y: cropY + b.y, width: b.width, height: b.height });
+
       const tinyOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.1 });
+      // A second, more permissive pass for a crop the first pass missed (tight
+      // angle, glasses glare, an occluded chin/mouth) — MediaPipe already cleared
+      // its own 0.4 confidence bar on the whole/tiled image, so a miss here is
+      // face-api's landmark model choking on this specific crop, not "no face."
+      const retryOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.01 });
 
       if (hasExtra) {
-        const rec = await faceapi
+        let rec = await faceapi
           .detectSingleFace(canvas, tinyOpts)
           .withFaceLandmarks()
           .withFaceDescriptor()
           .withAgeAndGender()
           .withFaceExpressions();
-        if (!rec) continue; // MediaPipe already localized it; a miss here is rare
-        boxes.push(normBox(box));
+        if (!rec) {
+          rec = await faceapi
+            .detectSingleFace(canvas, retryOpts)
+            .withFaceLandmarks()
+            .withFaceDescriptor()
+            .withAgeAndGender()
+            .withFaceExpressions();
+        }
+        if (!rec) {
+          // face-api found no face in this crop even on the permissive retry —
+          // treat that as MediaPipe having localized non-face content (its own
+          // documented failure mode: "lock onto a random small patch"), not a
+          // hard-but-real face. Discarding it, not keeping it, is what avoids a
+          // wrong box landing on a collar/shadow/limb — verified against a real
+          // false-positive case, see the reverted "keep unconfirmed box" attempt.
+          console.warn("MediaPipe box rejected by face-api on both passes — discarded as a likely false positive.", box);
+          continue;
+        }
+        boxes.push(toFullImageBox(rec.detection.box));
+        confidences.push(rec.detection.score);
         descriptors.push(Array.from(rec.descriptor));
-        confidences.push(box.score);
         ages.push(Math.round(rec.age));
         genders.push(rec.gender);
         const e = rec.expressions as unknown as Record<string, number>;
         expressions.push(Object.entries(e).sort((a, b) => b[1] - a[1])[0][0]);
       } else {
-        const rec = await faceapi.detectSingleFace(canvas, tinyOpts).withFaceLandmarks().withFaceDescriptor();
-        if (!rec) continue;
-        boxes.push(normBox(box));
+        let rec = await faceapi.detectSingleFace(canvas, tinyOpts).withFaceLandmarks().withFaceDescriptor();
+        if (!rec) {
+          rec = await faceapi.detectSingleFace(canvas, retryOpts).withFaceLandmarks().withFaceDescriptor();
+        }
+        if (!rec) {
+          console.warn("MediaPipe box rejected by face-api on both passes — discarded as a likely false positive.", box);
+          continue;
+        }
+        boxes.push(toFullImageBox(rec.detection.box));
+        confidences.push(rec.detection.score);
         descriptors.push(Array.from(rec.descriptor));
-        confidences.push(box.score);
       }
     }
 
@@ -715,6 +762,13 @@ export default function HomePage() {
         faceConfidences   = (data.confidences ?? []).map(Number);
         faceAges          = (data.ages ?? []).filter((a): a is number => a !== null);
         faceGenders       = (data.genders ?? []).filter((g): g is string => g !== null);
+        // Temporary diagnostics for tuning the backend's det_thresh — if a face
+        // gets wrongly detected (or a real one missed), check this in devtools
+        // to see the confidence score and normalized box InsightFace actually
+        // returned for it, rather than guessing at the threshold blind.
+        console.log(`[API mode] ${detectedFaceCount} face(s) detected`, faceBoxes.map((b, i) => ({
+          confidence: faceConfidences[i], x: b.x.toFixed(3), y: b.y.toFixed(3), w: b.width.toFixed(3), h: b.height.toFixed(3),
+        })));
       } else {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const exifData: any = await exifr.parse(file).catch(() => null);
@@ -817,27 +871,12 @@ export default function HomePage() {
       items[i] = { ...items[i], status: "processing" };
       setBatchItems([...items]);
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const exifData: any = await exifr.parse(file).catch(() => null);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const gpsData:  any = await exifr.gps(file).catch(() => null);
-        const lat = typeof gpsData?.latitude  === "number" ? gpsData.latitude  : undefined;
-        const lng = typeof gpsData?.longitude === "number" ? gpsData.longitude : undefined;
+        let lat: number | undefined;
+        let lng: number | undefined;
         let captureDate: string | undefined;
         let captureTime: string | undefined;
         let captureTimestamp: string | undefined;
         let location:    string | undefined;
-        const takenAt = exifData?.DateTimeOriginal || exifData?.CreateDate || null;
-        if (takenAt) {
-          const d = new Date(takenAt);
-          captureDate = d.toLocaleDateString();
-          captureTime = d.toLocaleTimeString();
-          captureTimestamp = d.toISOString();
-        }
-        if (lat !== undefined && lng !== undefined) {
-          const addr = await reverseGeocode(lat, lng);
-          location = addr || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-        }
         let faceCount = 0;
         let faceBoxes:    Array<{ x: number; y: number; width: number; height: number }> = [];
         let faceDescriptors: number[][] = [];
@@ -845,16 +884,58 @@ export default function HomePage() {
         let faceAgesB:    number[] = [];
         let faceGendersB: string[] = [];
         let faceExprsB:   string[] = [];
-        if (isModelLoaded) {
-          const imgEl = await faceapi.fetchImage(URL.createObjectURL(file));
-          const r = await runFaceDetection(imgEl, modelType, hasExtraModels);
-          faceCount       = r.count;
-          faceBoxes       = r.boxes;
-          faceDescriptors = r.descriptors;
-          faceConfs       = r.confidences;
-          faceAgesB       = r.ages;
-          faceGendersB    = r.genders;
-          faceExprsB      = r.expressions;
+
+        // Same backend/browser split as the single-photo upload path (handleFileChange)
+        // — batch upload used to always run browser-mode face detection even with the
+        // backend online, silently giving batch uploads worse accuracy than single ones.
+        if (backendStatus === "online") {
+          const data = await analyzeWithBackend(file);
+          lat = data.latitude ?? undefined;
+          lng = data.longitude ?? undefined;
+          captureDate = data.captureDate ?? undefined;
+          captureTime = data.captureTime ?? undefined;
+          captureTimestamp = data.captureDate && data.captureTime
+            ? new Date(`${data.captureDate}T${data.captureTime}`).toISOString()
+            : undefined;
+          location = data.location ?? (lat !== undefined ? `${lat.toFixed(6)}, ${lng?.toFixed(6)}` : undefined);
+          faceCount       = data.faceCount ?? 0;
+          faceBoxes       = (data.faceBoxes ?? []).map((b) => ({ x: b.x_norm, y: b.y_norm, width: b.w_norm, height: b.h_norm }));
+          faceDescriptors = data.descriptors ?? [];
+          faceConfs       = (data.confidences ?? []).map(Number);
+          faceAgesB       = (data.ages ?? []).filter((a): a is number => a !== null);
+          faceGendersB    = (data.genders ?? []).filter((g): g is string => g !== null);
+          console.log(`[API mode][batch] ${file.name}: ${faceCount} face(s) detected`, faceBoxes.map((b, j) => ({
+            confidence: faceConfs[j], x: b.x.toFixed(3), y: b.y.toFixed(3), w: b.width.toFixed(3), h: b.height.toFixed(3),
+          })));
+        } else {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const exifData: any = await exifr.parse(file).catch(() => null);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const gpsData:  any = await exifr.gps(file).catch(() => null);
+          lat = typeof gpsData?.latitude  === "number" ? gpsData.latitude  : undefined;
+          lng = typeof gpsData?.longitude === "number" ? gpsData.longitude : undefined;
+          const takenAt = exifData?.DateTimeOriginal || exifData?.CreateDate || null;
+          if (takenAt) {
+            const d = new Date(takenAt);
+            captureDate = d.toLocaleDateString();
+            captureTime = d.toLocaleTimeString();
+            captureTimestamp = d.toISOString();
+          }
+          if (lat !== undefined && lng !== undefined) {
+            const addr = await reverseGeocode(lat, lng);
+            location = addr || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+          }
+          if (isModelLoaded) {
+            const imgEl = await faceapi.fetchImage(URL.createObjectURL(file));
+            const r = await runFaceDetection(imgEl, modelType, hasExtraModels);
+            faceCount       = r.count;
+            faceBoxes       = r.boxes;
+            faceDescriptors = r.descriptors;
+            faceConfs       = r.confidences;
+            faceAgesB       = r.ages;
+            faceGendersB    = r.genders;
+            faceExprsB      = r.expressions;
+          }
         }
         const dataUrl = await createThumbnailDataUrl(file, 1024, 0.90);
         const photoId = crypto.randomUUID();
@@ -1015,38 +1096,60 @@ export default function HomePage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-6 py-8 pb-28">
+    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28">
       <div className="max-w-5xl mx-auto">
 
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-1">
-            <AppLogo size="md" className="shadow-md shadow-blue-200" />
-            <h1 className="text-4xl font-extrabold tracking-tight">
-              Travel<span className="bg-gradient-to-r from-blue-600 to-indigo-500 bg-clip-text text-transparent">ries</span>
+        {/* Header — soft pastel hero banner */}
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] }}
+          className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-sky-100 via-sky-50 to-blue-100 border border-sky-200/60 px-6 pt-6 pb-7 mb-6 shadow-sm"
+        >
+          <div className="absolute -top-10 -right-10 w-40 h-40 bg-sky-200/50 rounded-full blur-2xl" />
+          <div className="absolute -bottom-16 -left-8 w-44 h-44 bg-blue-200/40 rounded-full blur-2xl" />
+
+          <div className="relative flex items-center gap-3 mb-1">
+            <motion.div whileHover={{ rotate: -8, scale: 1.05 }} transition={{ type: "spring", stiffness: 300, damping: 15 }}>
+              <AppLogo size="md" className="shadow-md shadow-blue-200" />
+            </motion.div>
+            <h1 className="text-4xl font-extrabold tracking-tight text-slate-800">
+              Travel<span className="bg-gradient-to-r from-sky-500 to-blue-500 bg-clip-text text-transparent">ries</span>
             </h1>
           </div>
-          <p className="text-slate-500 ml-[52px] text-sm">Upload travel photos to automatically analyze location &amp; faces.</p>
-        </div>
+          <p className="relative text-slate-500 ml-[52px] text-sm mb-5">Upload travel photos to automatically analyze location &amp; faces.</p>
 
-        {/* ── Dashboard Stats ── */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
-          {[
-            { label: "Photos Saved",   value: dashStats.totalPhotos,    icon: Camera, color: "bg-blue-500" },
-            { label: "Places Visited", value: dashStats.totalLocations, icon: MapPin, color: "bg-blue-500" },
-            { label: "Faces Detected", value: dashStats.totalFaces,     icon: Users,  color: "bg-blue-500" },
-          ].map(({ label, value, icon: Icon, color }) => (
-            <div key={label} className="bg-white rounded-2xl border border-slate-200 shadow-sm px-4 py-3 flex items-center gap-3">
-              <div className={`w-9 h-9 ${color} rounded-xl flex items-center justify-center flex-shrink-0`}>
-                <Icon size={17} className="text-white" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xl font-extrabold text-slate-900 leading-tight">{value}</p>
-                <p className="text-[11px] text-slate-400 font-medium truncate">{label}</p>
-              </div>
-            </div>
-          ))}
-        </div>
+          {/* ── Dashboard Stats ── */}
+          <motion.div
+            variants={staggerContainer}
+            initial="hidden"
+            animate="show"
+            className="relative grid grid-cols-3 gap-3"
+          >
+            {[
+              { label: "Photos Saved",   value: dashStats.totalPhotos,    icon: Camera, gradient: "from-sky-400 to-blue-500" },
+              { label: "Places Visited", value: dashStats.totalLocations, icon: MapPin, gradient: "from-emerald-400 to-teal-500" },
+              { label: "Faces Detected", value: dashStats.totalFaces,     icon: Users,  gradient: "from-amber-400 to-orange-500" },
+            ].map(({ label, value, icon: Icon, gradient }) => (
+              <motion.div
+                key={label}
+                variants={fadeUp}
+                whileHover={{ y: -3, scale: 1.02, boxShadow: "0 10px 25px -5px rgba(0,0,0,0.08)" }}
+                className="bg-white/80 backdrop-blur rounded-2xl border border-white shadow-sm px-4 py-3 flex items-center gap-3"
+              >
+                <div className={`w-9 h-9 bg-gradient-to-br ${gradient} rounded-xl flex items-center justify-center flex-shrink-0 shadow-md`}>
+                  <Icon size={17} className="text-white" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xl font-extrabold text-slate-800 leading-tight">
+                    <AnimatedNumber value={value} />
+                  </p>
+                  <p className="text-[11px] text-slate-500 font-medium truncate">{label}</p>
+                </div>
+              </motion.div>
+            ))}
+          </motion.div>
+        </motion.div>
 
         {/* ── Batch Upload UI ── */}
         {batchActive && (() => {
@@ -1062,7 +1165,7 @@ export default function HomePage() {
             <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-6">
               <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-blue-500 rounded-xl flex items-center justify-center">
+                  <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-md shadow-blue-200">
                     <Upload size={16} className="text-white" />
                   </div>
                   <div>
@@ -1173,26 +1276,30 @@ export default function HomePage() {
 
                           {/* 이름 변경 인풋 + 확인 버튼 */}
                           <div className="flex gap-1.5">
-                            <input
-                              value={item.editName ?? item.name}
-                              onChange={(e) => {
-                                const updated = [...batchItems];
-                                updated[i] = { ...updated[i], editName: e.target.value };
-                                setBatchItems(updated);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter" && item.photoId) {
-                                  handleBatchRename(item.photoId, item.editName ?? item.name);
+                            <div className="relative flex-1 min-w-0">
+                              <Pencil size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-blue-400 pointer-events-none" />
+                              <input
+                                value={item.editName ?? item.name}
+                                onChange={(e) => {
                                   const updated = [...batchItems];
-                                  updated[i] = { ...updated[i], name: item.editName ?? item.name };
+                                  updated[i] = { ...updated[i], editName: e.target.value };
                                   setBatchItems(updated);
-                                  (e.target as HTMLInputElement).blur();
-                                }
-                              }}
-                              className="flex-1 min-w-0 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-all"
-                              placeholder="파일 이름 변경..."
-                            />
-                            <button
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" && item.photoId) {
+                                    handleBatchRename(item.photoId, item.editName ?? item.name);
+                                    const updated = [...batchItems];
+                                    updated[i] = { ...updated[i], name: item.editName ?? item.name };
+                                    setBatchItems(updated);
+                                    (e.target as HTMLInputElement).blur();
+                                  }
+                                }}
+                                className="w-full text-xs font-semibold text-slate-700 bg-blue-50/60 border border-blue-200 rounded-lg pl-7 pr-2.5 py-1.5 outline-none focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100 transition-all"
+                                placeholder="Rename file..."
+                              />
+                            </div>
+                            <motion.button
+                              whileTap={{ scale: 0.9 }}
                               onClick={() => {
                                 if (!item.photoId) return;
                                 handleBatchRename(item.photoId, item.editName ?? item.name);
@@ -1200,10 +1307,10 @@ export default function HomePage() {
                                 updated[i] = { ...updated[i], name: item.editName ?? item.name };
                                 setBatchItems(updated);
                               }}
-                              className="w-8 h-8 flex items-center justify-center bg-blue-500 hover:bg-blue-600 text-white rounded-lg flex-shrink-0 transition-colors"
+                              className="w-8 h-8 flex items-center justify-center bg-gradient-to-br from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg flex-shrink-0 shadow-sm shadow-blue-200 transition-colors"
                             >
                               <Check size={13} />
-                            </button>
+                            </motion.button>
                           </div>
                         </div>
                       </div>
@@ -1233,8 +1340,8 @@ export default function HomePage() {
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 bg-sky-50 border border-sky-100 rounded-xl flex items-center justify-center">
-                  <FileImage size={16} className="text-sky-500" />
+                <div className="w-8 h-8 bg-gradient-to-br from-sky-400 to-blue-500 rounded-xl flex items-center justify-center shadow-md shadow-sky-200">
+                  <FileImage size={16} className="text-white" />
                 </div>
                 <h2 className="text-lg font-bold text-slate-800">Upload Photo</h2>
               </div>
@@ -1627,18 +1734,32 @@ export default function HomePage() {
 
         {/* ── Highlights ── */}
         {(highlights.recent || (highlights.mostFaces && (highlights.mostFaces.faceCount ?? 0) > 0)) && (
-          <section className="mt-6 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="flex items-center gap-2 px-5 py-3.5 border-b border-slate-100 bg-slate-50">
-              <Sparkles size={16} className="text-amber-400" />
+          <motion.section
+            initial={{ opacity: 0, y: 14 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, amount: 0.3 }}
+            transition={{ duration: 0.4 }}
+            className="mt-6 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
+          >
+            <div className="flex items-center gap-2 px-5 py-3.5 border-b border-slate-100 bg-gradient-to-r from-amber-50 to-orange-50">
+              <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center flex-shrink-0">
+                <Sparkles size={13} className="text-white" />
+              </div>
               <h2 className="font-bold text-slate-800">Highlights</h2>
             </div>
-            <div className="p-4 grid grid-cols-2 gap-3">
+            <motion.div
+              variants={staggerContainer}
+              initial="hidden"
+              whileInView="show"
+              viewport={{ once: true, amount: 0.3 }}
+              className="p-4 grid grid-cols-2 gap-3"
+            >
               {highlights.recent && (
-                <div>
+                <motion.div variants={fadeUp} whileHover={{ y: -2 }}>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
                     <Clock size={9} /> Recent Upload
                   </p>
-                  <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+                  <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-50 shadow-sm">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={highlights.recent.imageUrl} alt={highlights.recent.fileName} className="w-full h-28 object-contain bg-slate-100" />
                     <div className="p-2.5">
@@ -1654,14 +1775,14 @@ export default function HomePage() {
                       )}
                     </div>
                   </div>
-                </div>
+                </motion.div>
               )}
               {highlights.mostFaces && (highlights.mostFaces.faceCount ?? 0) > 0 && (
-                <div>
+                <motion.div variants={fadeUp} whileHover={{ y: -2 }}>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
                     <Users size={9} /> Most Faces
                   </p>
-                  <div className="rounded-xl overflow-hidden border border-sky-200 bg-slate-50">
+                  <div className="rounded-xl overflow-hidden border border-sky-200 bg-slate-50 shadow-sm">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={highlights.mostFaces.imageUrl} alt={highlights.mostFaces.fileName} className="w-full h-28 object-contain bg-slate-100" />
                     <div className="p-2.5">
@@ -1671,10 +1792,10 @@ export default function HomePage() {
                       </span>
                     </div>
                   </div>
-                </div>
+                </motion.div>
               )}
-            </div>
-          </section>
+            </motion.div>
+          </motion.section>
         )}
 
       </div>

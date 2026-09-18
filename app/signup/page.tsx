@@ -3,9 +3,11 @@
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { motion } from "framer-motion";
 import { Eye, EyeOff, AlertCircle, UserPlus, CheckCircle2, Mail, RefreshCw } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import AppLogo from "@/components/AppLogo";
+import AuthBackdrop from "@/components/AuthBackdrop";
 
 export default function SignUpPage() {
   const router = useRouter();
@@ -132,15 +134,24 @@ export default function SignUpPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-br from-blue-50 via-white to-emerald-50">
-      <div className="w-full max-w-md">
+    <AuthBackdrop>
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
+      >
 
         {/* Branding */}
         <div className="text-center mb-8">
-          <div className="relative inline-flex mb-5">
+          <motion.div
+            className="relative inline-flex mb-5"
+            initial={{ scale: 0.7, rotate: -12, opacity: 0 }}
+            animate={{ scale: 1, rotate: 0, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 260, damping: 18, delay: 0.1 }}
+          >
             <div className="absolute inset-0 bg-blue-400/25 blur-2xl rounded-full scale-[1.6]" />
             <AppLogo size="xl" className="relative shadow-xl shadow-blue-300/50" />
-          </div>
+          </motion.div>
           <h1 className="text-3xl font-black tracking-tight text-slate-900 mb-1">
             Travel<span className="bg-gradient-to-r from-blue-600 to-indigo-500 bg-clip-text text-transparent">ries</span>
           </h1>
@@ -311,7 +322,7 @@ export default function SignUpPage() {
         <p className="text-center mt-5 text-xs text-slate-400">
           Travelries · Photo Map &amp; Face Detection
         </p>
-      </div>
-    </main>
+      </motion.div>
+    </AuthBackdrop>
   );
 }

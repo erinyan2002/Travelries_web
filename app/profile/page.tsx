@@ -174,18 +174,18 @@ export default function ProfilePage() {
   const displayName = profile.name || email;
 
   return (
-    <main className="min-h-screen bg-slate-50 px-6 py-8 pb-28">
+    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28">
       <div className="max-w-lg mx-auto space-y-5">
 
-        <h1 className="text-2xl font-extrabold text-slate-900 mb-2">My Profile</h1>
+        <h1 className="text-2xl font-extrabold text-slate-800 mb-2">My Profile</h1>
 
         {/* Avatar card */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex items-center gap-5">
+        <div className="relative overflow-hidden bg-gradient-to-br from-sky-50 to-blue-50 rounded-2xl border border-sky-100 shadow-sm p-6 flex items-center gap-5">
           <div className="relative flex-shrink-0">
             <button
               onClick={() => avatarInputRef.current?.click()}
               disabled={avatarUploading}
-              className="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center shadow-md shadow-blue-200 overflow-hidden disabled:opacity-70"
+              className="w-16 h-16 rounded-2xl bg-gradient-to-br from-sky-400 to-blue-500 flex items-center justify-center shadow-md shadow-blue-200 overflow-hidden disabled:opacity-70"
             >
               {avatarUploading ? (
                 <Loader2 size={20} className="text-white animate-spin" />

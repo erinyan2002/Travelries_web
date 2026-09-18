@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { AnimatePresence, motion } from "framer-motion";
 import { Eye, EyeOff, AlertCircle, CheckCircle2, KeyRound, ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import AppLogo from "@/components/AppLogo";
+import AuthBackdrop from "@/components/AuthBackdrop";
 
 type Stage = "waiting" | "form" | "success" | "invalid";
 
@@ -98,15 +100,24 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-br from-blue-50 via-white to-emerald-50">
-      <div className="w-full max-w-md">
+    <AuthBackdrop>
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
+      >
 
         {/* Branding */}
         <div className="text-center mb-8">
-          <div className="relative inline-flex mb-5">
+          <motion.div
+            className="relative inline-flex mb-5"
+            initial={{ scale: 0.7, rotate: -12, opacity: 0 }}
+            animate={{ scale: 1, rotate: 0, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 260, damping: 18, delay: 0.1 }}
+          >
             <div className="absolute inset-0 bg-blue-400/25 blur-2xl rounded-full scale-[1.6]" />
             <AppLogo size="xl" className="relative shadow-xl shadow-blue-300/50" />
-          </div>
+          </motion.div>
           <h1 className="text-3xl font-black tracking-tight text-slate-900 mb-1">
             Travel<span className="bg-gradient-to-r from-blue-600 to-indigo-500 bg-clip-text text-transparent">ries</span>
           </h1>
@@ -114,18 +125,19 @@ export default function ResetPasswordPage() {
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xl p-8">
+          <AnimatePresence mode="wait">
 
           {/* Waiting for token */}
           {stage === "waiting" && (
-            <div className="text-center py-6">
+            <motion.div key="waiting" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-center py-6">
               <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4" />
               <p className="text-sm text-slate-500">Verifying your reset link…</p>
-            </div>
+            </motion.div>
           )}
 
           {/* Invalid / expired link */}
           {stage === "invalid" && (
-            <div className="text-center py-4">
+            <motion.div key="invalid" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="text-center py-4">
               <div className="w-14 h-14 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
                 <AlertCircle size={28} className="text-red-500" />
               </div>
@@ -144,12 +156,12 @@ export default function ResetPasswordPage() {
                   <ArrowLeft size={14} /> Back to sign in
                 </Link>
               </div>
-            </div>
+            </motion.div>
           )}
 
           {/* New password form */}
           {stage === "form" && (
-            <form onSubmit={handleSubmit} noValidate className="space-y-5">
+            <motion.form key="form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onSubmit={handleSubmit} noValidate className="space-y-5">
               <p className="text-sm text-slate-500 mb-1">
                 Choose a strong password of at least 6 characters.
               </p>
@@ -194,24 +206,31 @@ export default function ResetPasswordPage() {
                 </div>
               )}
 
-              <button
+              <motion.button
+                whileHover={loading ? {} : { scale: 1.01 }}
+                whileTap={loading ? {} : { scale: 0.98 }}
                 type="submit" disabled={loading}
-                className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-white text-sm font-bold tracking-wide transition-all ${
-                  loading ? "bg-blue-300 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200 active:scale-[0.98]"
+                className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-white text-sm font-bold tracking-wide transition-colors ${
+                  loading ? "bg-blue-300 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200"
                 }`}
               >
                 <KeyRound size={16} />
                 {loading ? "Saving…" : "Set new password"}
-              </button>
-            </form>
+              </motion.button>
+            </motion.form>
           )}
 
           {/* Success */}
           {stage === "success" && (
-            <div className="text-center py-4">
-              <div className="w-14 h-14 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <motion.div key="success" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="text-center py-4">
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: "spring", stiffness: 400, damping: 18, delay: 0.1 }}
+                className="w-14 h-14 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4"
+              >
                 <CheckCircle2 size={28} className="text-emerald-600" />
-              </div>
+              </motion.div>
               <h2 className="text-lg font-extrabold text-slate-900 mb-2">Password updated!</h2>
               <p className="text-sm text-slate-500 mb-6">
                 Your password has been changed. Redirecting you to sign in…
@@ -222,15 +241,16 @@ export default function ResetPasswordPage() {
               >
                 <ArrowLeft size={15} /> Go to sign in
               </Link>
-            </div>
+            </motion.div>
           )}
+          </AnimatePresence>
 
         </div>
 
         <p className="text-center mt-5 text-xs text-slate-400">
           Travelries · Photo Map &amp; Face Detection
         </p>
-      </div>
-    </main>
+      </motion.div>
+    </AuthBackdrop>
   );
 }

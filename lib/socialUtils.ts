@@ -383,3 +383,11 @@ export async function untagUserInPost(postId: string, taggedUserId: string): Pro
   const { error } = await supabase.from("post_tags").delete().eq("post_id", postId).eq("tagged_user_id", taggedUserId);
   if (error) throw new Error(error.message);
 }
+
+// In-app "Send" — delivers a notification (type `post_shared`) to a specific
+// followed/follower user rather than generating a public link (see
+// lib/shareUtils.ts for that). See supabase/migrations/0011_share_post_to_user.sql.
+export async function sharePostToUser(postId: string, toUserId: string): Promise<void> {
+  const { error } = await supabase.rpc("share_post_to_user", { p_post_id: postId, p_to_user_id: toUserId });
+  if (error) throw new Error(error.message);
+}

@@ -15,11 +15,11 @@ import {
 function timeAgo(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return "방금 전";
-  if (mins < 60) return `${mins}분 전`;
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}시간 전`;
-  return `${Math.floor(hours / 24)}일 전`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
 function DeletePostConfirmModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
@@ -84,7 +84,7 @@ export default function PostDetailPage() {
 
   if (!post) {
     return (
-      <main className="min-h-screen bg-slate-50 px-6 py-8 pb-28 flex flex-col items-center justify-center gap-3">
+      <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28 flex flex-col items-center justify-center gap-3">
         <p className="text-slate-400 text-sm">This post isn&apos;t available — it may have been deleted, or you may need to follow the author to see it.</p>
         <button onClick={() => router.back()} className="flex items-center gap-1.5 text-sm font-semibold text-blue-600 hover:text-blue-700 transition-colors">
           <ArrowLeft size={16} /> Back
@@ -95,7 +95,7 @@ export default function PostDetailPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-6 py-8 pb-28">
+    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28">
       <div className="max-w-2xl mx-auto space-y-5">
         <button onClick={() => router.back()} className="flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700 transition-colors">
           <ArrowLeft size={16} /> Back

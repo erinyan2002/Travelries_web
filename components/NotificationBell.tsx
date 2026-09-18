@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { AnimatePresence, motion } from "framer-motion";
 import { Bell, BellRing, CheckCheck, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
@@ -21,6 +22,7 @@ const TYPE_ICON: Record<string, string> = {
   tagged_in_post:     "🏷️",
   comment_liked:      "❤️",
   comment_replied:    "💬",
+  post_shared:        "📤",
 };
 
 // Only these types carry a `from_user_id` (the person who acted) in their `data` —
@@ -31,6 +33,7 @@ const ACTION_TEXT: Record<string, string> = {
   tagged_in_post:  "tagged you in a post",
   comment_liked:   "liked your comment",
   comment_replied: "replied to your comment",
+  post_shared:     "shared a post with you",
 };
 
 export default function NotificationBell() {
@@ -38,6 +41,7 @@ export default function NotificationBell() {
   const [open,   setOpen]   = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [actorNames, setActorNames] = useState<Record<string, string>>({});
+  const [ring, setRing] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -52,6 +56,7 @@ export default function NotificationBell() {
     if (!userId) return;
     const channel = subscribeToNotifications(userId, (n) => {
       setNotes((prev) => [n, ...prev]);
+      setRing(true);
     });
     return () => { supabase.removeChannel(channel); };
   }, [userId]);
@@ -91,24 +96,44 @@ export default function NotificationBell() {
   return (
     <div ref={ref} className="fixed top-4 right-4 z-[2000]">
       {/* Bell button */}
-      <button
+      <motion.button
+        whileTap={{ scale: 0.88 }}
         onClick={() => setOpen((o) => !o)}
+        animate={ring ? { rotate: [0, -14, 12, -8, 6, 0] } : {}}
+        transition={ring ? { duration: 0.5, ease: "easeInOut" } : {}}
+        onAnimationComplete={() => setRing(false)}
         className="relative w-11 h-11 bg-white rounded-full shadow-lg border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition-colors"
       >
         {unread > 0
           ? <BellRing size={20} className="text-violet-600" />
           : <Bell size={20} className="text-slate-400" />
         }
-        {unread > 0 && (
-          <span className="absolute -top-1 -right-1 min-w-[20px] h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1">
-            {unread > 9 ? "9+" : unread}
-          </span>
-        )}
-      </button>
+        <AnimatePresence>
+          {unread > 0 && (
+            <motion.span
+              key="badge"
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0 }}
+              transition={{ type: "spring", stiffness: 500, damping: 20 }}
+              className="absolute -top-1 -right-1 min-w-[20px] h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1"
+            >
+              {unread > 9 ? "9+" : unread}
+            </motion.span>
+          )}
+        </AnimatePresence>
+      </motion.button>
 
       {/* Dropdown */}
+      <AnimatePresence>
       {open && (
-        <div className="absolute top-full right-0 mt-2 w-[320px] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+        <motion.div
+          initial={{ opacity: 0, y: -8, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -8, scale: 0.96 }}
+          transition={{ type: "spring", stiffness: 400, damping: 30 }}
+          className="absolute top-full right-0 mt-2 w-[320px] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden"
+        >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
             <div className="flex items-center gap-2">
@@ -181,8 +206,9 @@ export default function NotificationBell() {
               ))
             )}
           </div>
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }

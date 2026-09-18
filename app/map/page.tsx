@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { MapContainer, Marker, Polyline, TileLayer, useMap } from "react-leaflet";
 import BottomNav from "@/components/BottomNav";
+import PageHero from "@/components/PageHero";
 import { supabase } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
 import { fetchMapPhotos } from "@/lib/photosApi";
@@ -295,31 +296,27 @@ export default function MapPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-6 py-8 pb-28">
+    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28">
       <div className="max-w-5xl mx-auto">
 
-        <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center shadow-md shadow-blue-200">
-              <MapPin size={22} className="text-white" />
+        <PageHero
+          icon={MapPin}
+          title="Photo Map"
+          subtitle="Click a marker to view photos"
+          action={
+            <div className="flex gap-2">
+              <Link href="/" className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-700 transition-colors">
+                <ArrowLeft size={15} /> Back
+              </Link>
+              {photos.length > 0 && (
+                <button onClick={() => setShowDeleteConfirm(true)}
+                  className="flex items-center gap-1.5 px-4 py-2.5 bg-red-500 text-white rounded-xl text-sm font-bold hover:bg-red-600 transition-colors">
+                  <Trash2 size={15} /> Delete All
+                </button>
+              )}
             </div>
-            <div>
-              <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Photo Map</h1>
-              <p className="text-slate-500 text-sm">Click a marker to view photos</p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Link href="/" className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-700 transition-colors">
-              <ArrowLeft size={15} /> Back
-            </Link>
-            {photos.length > 0 && (
-              <button onClick={() => setShowDeleteConfirm(true)}
-                className="flex items-center gap-1.5 px-4 py-2.5 bg-red-500 text-white rounded-xl text-sm font-bold hover:bg-red-600 transition-colors">
-                <Trash2 size={15} /> Delete All
-              </button>
-            )}
-          </div>
-        </div>
+          }
+        />
 
         <div className="flex gap-2 mb-3 flex-wrap">
           <button onClick={() => setViewMode("pins")}

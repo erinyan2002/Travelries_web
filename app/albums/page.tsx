@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import BottomNav from "@/components/BottomNav";
+import PageHero from "@/components/PageHero";
 import { toggleSaved, getSavedIds, deletePhotoEverywhere } from "@/lib/savedUtils";
 import { supabase } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
@@ -369,7 +370,7 @@ function PhotoModal({
         onLandmarkSaved(photo.id, saved);
       }
     } catch {
-      setLandmarkError("백엔드 서버에 연결할 수 없어요.");
+      setLandmarkError("Couldn't connect to the backend server.");
     } finally {
       setLandmarkLoading(false);
       setIsReanalyzing(false);
@@ -584,10 +585,10 @@ export default function AlbumsPage() {
         setDiaryText(data.diary);
         if (uid) await saveTripDiary(uid, key, data.diary, "ko");
       } else {
-        setDiaryError(data.error ?? "일기를 만들지 못했어요. 잠시 후 다시 시도해주세요.");
+        setDiaryError(data.error ?? "Couldn't generate the diary. Please try again in a moment.");
       }
     } catch {
-      setDiaryError("백엔드 서버에 연결할 수 없어요 (uvicorn이 꺼져있을 수 있어요).");
+      setDiaryError("Couldn't connect to the backend server (uvicorn may be offline).");
     } finally {
       setDiaryLoading(false);
     }
@@ -730,19 +731,10 @@ export default function AlbumsPage() {
   const isFiltering = searchQuery.trim() !== "" || filter !== "All" || dateRange !== "all";
 
   return (
-    <main className="min-h-screen bg-slate-50 px-6 py-8 pb-28">
+    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28">
       <div className="max-w-5xl mx-auto">
 
-        {/* Header */}
-        <div className="flex items-center gap-3 mb-5">
-          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-md shadow-blue-200">
-            <Images size={22} className="text-white" />
-          </div>
-          <div>
-            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Albums</h1>
-            <p className="text-slate-500 text-sm">Browse your saved travel photos by date.</p>
-          </div>
-        </div>
+        <PageHero icon={Images} title="Albums" subtitle="Browse your saved travel photos by date." />
 
         {/* Person filter banner */}
         {personFilterNames && (

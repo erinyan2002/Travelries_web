@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { AnimatePresence } from "framer-motion";
 import BottomNav from "@/components/BottomNav";
+import PageHero from "@/components/PageHero";
 import Avatar from "@/components/Avatar";
 import { supabase } from "@/lib/supabase";
 import { fetchMapPhotos } from "@/lib/photosApi";
 import { MapPhoto } from "@/lib/types";
-import { sharePhoto } from "@/lib/shareUtils";
 import CommentThread from "@/components/CommentThread";
+import ShareToModal from "@/components/ShareToModal";
 import {
   ensureProfile, searchProfiles, getFollowCounts, getFollowingIds,
   followUser, unfollowUser, createPost, deletePost, fetchFeed, toggleLike, createRepost,
@@ -18,17 +20,17 @@ import {
 } from "@/lib/socialUtils";
 import {
   Sparkles, Search, X, Heart, Plus, Loader2, MapPin, CalendarDays, Trash2, Users, UserPlus, UserCheck,
-  MessageCircle, Repeat2, Share2, Check,
+  MessageCircle, Repeat2, Share2,
 } from "lucide-react";
 
 function timeAgo(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return "방금 전";
-  if (mins < 60) return `${mins}분 전`;
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}시간 전`;
-  return `${Math.floor(hours / 24)}일 전`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
 function NewPostModal({
@@ -232,8 +234,7 @@ export default function FeedPage() {
 
   const [openComments, setOpenComments] = useState<Set<string>>(new Set());
 
-  const [sharingId, setSharingId] = useState<string | null>(null);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [shareTarget, setShareTarget] = useState<Post | null>(null);
 
   const [followList, setFollowList] = useState<{ kind: "following" | "followers"; profiles: Profile[] } | null>(null);
   const [followListLoading, setFollowListLoading] = useState(false);
@@ -305,35 +306,6 @@ export default function FeedPage() {
     await reloadSocial(uid);
   }
 
-  // Reuses the existing photo-share link mechanism (lib/shareUtils.ts / /share/[id])
-  // — post.imageUrl is already a public Storage URL, so sharePhoto skips re-uploading
-  // and just creates a `shares` row pointing at it. A public link works for anyone,
-  // including people who don't follow the poster (unlike the feed itself).
-  async function handleShare(post: Post) {
-    setSharingId(post.id);
-    try {
-      const url = await sharePhoto({
-        id: post.id,
-        fileName: post.caption || "Travelries post",
-        imageUrl: post.imageUrl,
-        location: post.location ?? undefined,
-        captureDate: post.captureDate ?? undefined,
-        faceCount: 0,
-      });
-      if (navigator.share) {
-        await navigator.share({ title: "Travelries", text: post.caption ?? undefined, url });
-      } else {
-        await navigator.clipboard.writeText(url);
-        setCopiedId(post.id);
-        setTimeout(() => setCopiedId(null), 2000);
-      }
-    } catch (err) {
-      if (err instanceof Error && err.name !== "AbortError") console.error("Share failed:", err);
-    } finally {
-      setSharingId(null);
-    }
-  }
-
   async function handleDelete(postId: string) {
     if (!uid) return;
     await deletePost(uid, postId);
@@ -366,16 +338,14 @@ export default function FeedPage() {
   if (loading) return null;
 
   return (
-    <main className="min-h-screen bg-slate-50 px-6 py-8 pb-28">
+    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28">
       <div className="max-w-2xl mx-auto space-y-5">
 
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-md shadow-blue-200">
-            <Sparkles size={22} className="text-white" />
-          </div>
-          <div className="flex-1">
-            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Feed</h1>
-            <p className="text-slate-500 text-sm">
+        <PageHero
+          icon={Sparkles}
+          title="Feed"
+          subtitle={
+            <>
               <button onClick={() => openFollowList("following")} className="hover:underline">
                 <strong className="text-slate-700">{followCounts.following}</strong> following
               </button>
@@ -383,13 +353,15 @@ export default function FeedPage() {
               <button onClick={() => openFollowList("followers")} className="hover:underline">
                 <strong className="text-slate-700">{followCounts.followers}</strong> followers
               </button>
-            </p>
-          </div>
-          <button onClick={openNewPost}
-            className="flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors shadow-md shadow-blue-200">
-            <Plus size={16} /> Post
-          </button>
-        </div>
+            </>
+          }
+          action={
+            <button onClick={openNewPost}
+              className="flex items-center gap-1.5 bg-gradient-to-br from-sky-500 to-blue-500 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-md shadow-blue-200">
+              <Plus size={16} /> Post
+            </button>
+          }
+        />
 
         {/* Find people */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
@@ -475,11 +447,9 @@ export default function FeedPage() {
                       className="flex items-center gap-1.5 text-sm font-bold text-slate-600 hover:text-emerald-600 transition-colors">
                       <Repeat2 size={18} />
                     </button>
-                    <button onClick={() => handleShare(post)} disabled={sharingId === post.id} title="Share"
-                      className="flex items-center gap-1.5 text-sm font-bold text-slate-600 hover:text-blue-600 transition-colors disabled:opacity-60">
-                      {sharingId === post.id
-                        ? <Loader2 size={18} className="animate-spin" />
-                        : copiedId === post.id ? <Check size={18} className="text-emerald-600" /> : <Share2 size={18} />}
+                    <button onClick={() => setShareTarget(post)} title="Share"
+                      className="flex items-center gap-1.5 text-sm font-bold text-slate-600 hover:text-blue-600 transition-colors">
+                      <Share2 size={18} />
                     </button>
                   </div>
                   {post.caption && <p className="text-sm text-slate-700">{post.caption}</p>}
@@ -535,6 +505,11 @@ export default function FeedPage() {
           onClose={() => setFollowList(null)}
         />
       )}
+      <AnimatePresence>
+        {shareTarget && uid && (
+          <ShareToModal post={shareTarget} uid={uid} onClose={() => setShareTarget(null)} />
+        )}
+      </AnimatePresence>
       <BottomNav />
     </main>
   );
