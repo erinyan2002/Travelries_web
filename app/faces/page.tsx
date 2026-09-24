@@ -45,13 +45,34 @@ function isFaceRemoved(photo: FacePhoto, i: number): boolean {
 }
 
 function euclidean(a: number[], b: number[]): number {
+  if (a.length !== b.length) return Infinity;
   let s = 0;
   for (let i = 0; i < a.length; i++) s += (a[i] - b[i]) ** 2;
   return Math.sqrt(s);
 }
 
 // Fixed after tuning — 0.55 gave the most accurate person grouping in testing.
+// Applies to 128-dim descriptors (browser face-api.js, or the backend's dlib tier).
 const MATCH_THRESHOLD = 0.55;
+
+// The backend's InsightFace tier saves 512-dim ArcFace embeddings, which live in
+// a completely different space from the 128-dim ones — the two can never be
+// compared to each other, and need their own threshold. On unit-length ArcFace
+// vectors, distance 1.05 ≈ cosine similarity 0.45 (InsightFace's usual
+// same-person cut-off is ~0.4-0.5).
+const ARCFACE_DIM = 512;
+const ARCFACE_MATCH_THRESHOLD = 1.05;
+
+function l2normalize(v: number[]): number[] {
+  const n = Math.sqrt(v.reduce((s, x) => s + x * x, 0));
+  return n > 0 ? v.map((x) => x / n) : v;
+}
+
+// Rows saved before the backend switched to normed_embedding hold raw ArcFace
+// vectors (norm ~20+), so normalize every 512-dim descriptor on read.
+function prepDescriptor(desc: number[]): number[] {
+  return desc.length === ARCFACE_DIM ? l2normalize(desc) : desc;
+}
 
 function clusterByPerson(photos: FacePhoto[], threshold: number): PersonCluster[] {
   const clusters: PersonCluster[] = [];
@@ -62,8 +83,10 @@ function clusterByPerson(photos: FacePhoto[], threshold: number): PersonCluster[
   for (const photo of sorted) {
     if (!photo.descriptors?.length || !photo.boxes?.length) continue;
     for (let i = 0; i < photo.descriptors.length; i++) {
-      const desc = photo.descriptors[i];
-      if (!desc?.length) continue;
+      if (!photo.descriptors[i]?.length) continue;
+      const desc = prepDescriptor(photo.descriptors[i]);
+      const isArcFace = desc.length === ARCFACE_DIM;
+      const limit = isArcFace ? ARCFACE_MATCH_THRESHOLD : threshold;
       // Manually tagged/merged faces are assembled into their own confirmed
       // groups in buildPersonGroups() instead — skip them here so a stray
       // distance match can't pull them into a different auto-cluster.
@@ -73,13 +96,15 @@ function clusterByPerson(photos: FacePhoto[], threshold: number): PersonCluster[
       for (const c of clusters) {
         // Same-photo constraint: two faces from the same photo can never be the same person
         if (c.faces.some(f => f.photo.id === photo.id)) continue;
-        const d = euclidean(desc, c.centroid);
+        const d = euclidean(desc, c.centroid); // Infinity across 128/512-dim
         if (d < minDist) { minDist = d; nearest = c; }
       }
-      if (nearest && minDist < threshold) {
+      if (nearest && minDist < limit) {
         nearest.faces.push({ photo, boxIndex: i });
         const n = nearest.faces.length;
-        nearest.centroid = nearest.centroid.map((v, j) => (v * (n - 1) + desc[j]) / n);
+        const mean = nearest.centroid.map((v, j) => (v * (n - 1) + desc[j]) / n);
+        // Keep ArcFace centroids on the unit sphere so the threshold stays valid.
+        nearest.centroid = isArcFace ? l2normalize(mean) : mean;
       } else {
         // Stable ID based on seed face — does not change when new photos are added
         clusters.push({ id: `${photo.id}_${i}`, label: `Person ${clusters.length + 1}`, faces: [{ photo, boxIndex: i }], centroid: [...desc] });
@@ -469,7 +494,7 @@ export default function FacesPage() {
   async function handleDelete(id: string) {
     const fileName = storedPhotos.find((p) => p.id === id)?.fileName;
     try {
-      await deletePhotoEverywhere(id, fileName);
+      await deletePhotoEverywhere(id);
       // deletePhotoEverywhere also sweeps every other row sharing this filename —
       // drop those from local state too, not just the clicked id, so a same-named
       // duplicate card doesn't linger looking deletable when it's already gone.
@@ -493,7 +518,7 @@ export default function FacesPage() {
     const failed: FacePhoto[] = [];
     for (const p of storedPhotos) {
       try {
-        await deletePhotoEverywhere(p.id, p.fileName);
+        await deletePhotoEverywhere(p.id);
       } catch (err) {
         // deletePhotoEverywhere also sweeps other rows sharing this filename, so an
         // earlier iteration here may have already removed this one — not a real failure.

@@ -6,10 +6,10 @@ async function currentUserId(): Promise<string | null> {
   return user?.id ?? null;
 }
 
-export async function deletePhotoEverywhere(photoId: string, fileName?: string): Promise<void> {
+export async function deletePhotoEverywhere(photoId: string): Promise<void> {
   const uid = await currentUserId();
   if (!uid) return;
-  await photosApi.deletePhotoEverywhere(uid, photoId, fileName);
+  await photosApi.deletePhotoEverywhere(uid, photoId);
 }
 
 export async function toggleSaved(photoId: string): Promise<boolean> {

@@ -287,7 +287,7 @@ export default function MapPage() {
     const uid = user?.id ?? "guest";
     if (uid !== "guest") {
       for (const p of photos) {
-        await deletePhotoEverywhere(p.id, p.fileName);
+        await deletePhotoEverywhere(p.id);
       }
     }
     setPhotos([]);

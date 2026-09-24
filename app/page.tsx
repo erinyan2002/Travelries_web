@@ -19,6 +19,7 @@ import {
   Coffee, Utensils, Wine, Sparkles, Trash2, Map,
 } from "lucide-react";
 import AppLogo from "@/components/AppLogo";
+import { BACKEND_URL } from "@/lib/backend";
 
 // ── Types ──────────────────────────────────────
 export type FacePhoto = {
@@ -79,7 +80,6 @@ type PhotoInfo = {
   faceBoxes: Array<{ x: number; y: number; width: number; height: number }>;
 };
 
-const BACKEND_URL = "http://localhost:8000";
 
 function base64ToBlob(dataUrl: string): { blob: Blob; mimeType: string } {
   const [header, data] = dataUrl.split(",");
@@ -249,6 +249,23 @@ function boxIoU(
   return inter / (a.width * a.height + b.width * b.height - inter);
 }
 
+function descriptorDistance(a: number[], b: number[]): number {
+  if (!a.length || a.length !== b.length) return Infinity;
+  let sum = 0;
+  for (let i = 0; i < a.length; i++) sum += (a[i] - b[i]) ** 2;
+  return Math.sqrt(sum);
+}
+
+// A face-api detection inside a MediaPipe crop must overlap that MediaPipe box
+// at least this much to count as confirming it (rather than being a neighbour's
+// face that also fell inside the padded crop).
+const CROP_MATCH_IOU = 0.3;
+// Final same-face dedupe. The same face seen through two slightly different
+// crops gives descriptors ~0.1-0.3 apart; two different people in one photo are
+// essentially never under 0.4 (face-api's own same-person threshold is 0.6).
+const DEDUPE_IOU = 0.4;
+const DEDUPE_DESC_DIST = 0.4;
+
 async function runFaceDetection(
   imgEl: HTMLImageElement,
   modelType: "mediapipe" | "ssd" | "tiny",
@@ -270,12 +287,15 @@ async function runFaceDetection(
       console.warn(`No face localized by MediaPipe (${mpBoxes.length} raw box(es) before the ${MIN_PX}px size filter).`);
     }
 
-    const boxes: DetectionResult["boxes"] = [];
-    const descriptors: number[][] = [];
-    const confidences: number[] = [];
-    const ages: number[] = [];
-    const genders: string[] = [];
-    const expressions: string[] = [];
+    type Confirmed = {
+      box: { x: number; y: number; width: number; height: number }; // full-image px
+      score: number;
+      descriptor: number[];
+      age?: number;
+      gender?: string;
+      expression?: string;
+    };
+    const confirmed: Confirmed[] = [];
 
     for (const box of rawBoxes) {
       // Pad the MediaPipe box ~30% on each side, clamped to image bounds, so
@@ -297,11 +317,9 @@ async function runFaceDetection(
       // precise than MediaPipe's original box — use IT for the stored/displayed
       // position (translated back to full-image coordinates), not MediaPipe's.
       // Using MediaPipe's box unconditionally here was the actual cause of boxes
-      // rendering on a collar/shoulder next to a confirmed face: face-api can
-      // correctly confirm a face that's only partly inside a padded crop while
-      // still centering its own detection correctly within that crop.
+      // rendering on a collar/shoulder next to a confirmed face.
       const toFullImageBox = (b: { x: number; y: number; width: number; height: number }) =>
-        normBox({ x: cropX + b.x, y: cropY + b.y, width: b.width, height: b.height });
+        ({ x: cropX + b.x, y: cropY + b.y, width: b.width, height: b.height });
 
       const tinyOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.1 });
       // A second, more permissive pass for a crop the first pass missed (tight
@@ -310,54 +328,75 @@ async function runFaceDetection(
       // face-api's landmark model choking on this specific crop, not "no face."
       const retryOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.01 });
 
-      if (hasExtra) {
-        let rec = await faceapi
-          .detectSingleFace(canvas, tinyOpts)
-          .withFaceLandmarks()
-          .withFaceDescriptor()
-          .withAgeAndGender()
-          .withFaceExpressions();
-        if (!rec) {
-          rec = await faceapi
-            .detectSingleFace(canvas, retryOpts)
-            .withFaceLandmarks()
-            .withFaceDescriptor()
-            .withAgeAndGender()
-            .withFaceExpressions();
+      const detectInCrop = async (opts: faceapi.TinyFaceDetectorOptions): Promise<Confirmed[]> => {
+        if (hasExtra) {
+          const recs = await faceapi.detectAllFaces(canvas, opts)
+            .withFaceLandmarks().withFaceDescriptors().withAgeAndGender().withFaceExpressions();
+          return recs.map((r) => {
+            const e = r.expressions as unknown as Record<string, number>;
+            return {
+              box: toFullImageBox(r.detection.box), score: r.detection.score,
+              descriptor: Array.from(r.descriptor), age: Math.round(r.age), gender: r.gender,
+              expression: Object.entries(e).sort((a, b) => b[1] - a[1])[0][0],
+            };
+          });
         }
-        if (!rec) {
-          // face-api found no face in this crop even on the permissive retry —
-          // treat that as MediaPipe having localized non-face content (its own
-          // documented failure mode: "lock onto a random small patch"), not a
-          // hard-but-real face. Discarding it, not keeping it, is what avoids a
-          // wrong box landing on a collar/shadow/limb — verified against a real
-          // false-positive case, see the reverted "keep unconfirmed box" attempt.
-          console.warn("MediaPipe box rejected by face-api on both passes — discarded as a likely false positive.", box);
-          continue;
+        const recs = await faceapi.detectAllFaces(canvas, opts).withFaceLandmarks().withFaceDescriptors();
+        return recs.map((r) => ({
+          box: toFullImageBox(r.detection.box), score: r.detection.score, descriptor: Array.from(r.descriptor),
+        }));
+      };
+
+      // The padded crop often also contains part of a NEIGHBOURING face (a
+      // close-up face at the frame edge next to someone else). The old
+      // detectSingleFace just took the crop's highest-scoring face — which was
+      // the neighbour's fully-visible face, not this box's partially-cut one —
+      // so the neighbour got counted twice and this person vanished. Only accept
+      // the face-api detection that actually overlaps THIS MediaPipe box.
+      const pickMatch = (cands: Confirmed[]): Confirmed | null => {
+        let best: Confirmed | null = null, bestIoU = CROP_MATCH_IOU;
+        for (const c of cands) {
+          const ov = boxIoU(c.box, box);
+          if (ov >= bestIoU) { best = c; bestIoU = ov; }
         }
-        boxes.push(toFullImageBox(rec.detection.box));
-        confidences.push(rec.detection.score);
-        descriptors.push(Array.from(rec.descriptor));
-        ages.push(Math.round(rec.age));
-        genders.push(rec.gender);
-        const e = rec.expressions as unknown as Record<string, number>;
-        expressions.push(Object.entries(e).sort((a, b) => b[1] - a[1])[0][0]);
-      } else {
-        let rec = await faceapi.detectSingleFace(canvas, tinyOpts).withFaceLandmarks().withFaceDescriptor();
-        if (!rec) {
-          rec = await faceapi.detectSingleFace(canvas, retryOpts).withFaceLandmarks().withFaceDescriptor();
-        }
-        if (!rec) {
-          console.warn("MediaPipe box rejected by face-api on both passes — discarded as a likely false positive.", box);
-          continue;
-        }
-        boxes.push(toFullImageBox(rec.detection.box));
-        confidences.push(rec.detection.score);
-        descriptors.push(Array.from(rec.descriptor));
+        return best;
+      };
+
+      const match = pickMatch(await detectInCrop(tinyOpts)) ?? pickMatch(await detectInCrop(retryOpts));
+      if (!match) {
+        // face-api found no face matching this box even on the permissive retry —
+        // treat that as MediaPipe having localized non-face content (its own
+        // documented failure mode: "lock onto a random small patch"), not a
+        // hard-but-real face. Discarding it, not keeping it, is what avoids a
+        // wrong box landing on a collar/shadow/limb — verified against a real
+        // false-positive case, see the reverted "keep unconfirmed box" attempt.
+        console.warn("MediaPipe box rejected by face-api on both passes — discarded as a likely false positive.", box);
+        continue;
       }
+      confirmed.push(match);
     }
 
-    return { count: boxes.length, boxes, descriptors, confidences, ages, genders, expressions };
+    // Safety net: two different MediaPipe boxes can still resolve to the same
+    // real face (overlapping crops). One person can't appear twice in one photo,
+    // so drop any face that overlaps or is a near-identical descriptor match of a
+    // higher-scoring one already kept.
+    const kept: Confirmed[] = [];
+    for (const c of [...confirmed].sort((a, b) => b.score - a.score)) {
+      const dup = kept.some((k) =>
+        boxIoU(c.box, k.box) >= DEDUPE_IOU || descriptorDistance(c.descriptor, k.descriptor) < DEDUPE_DESC_DIST);
+      if (!dup) kept.push(c);
+    }
+    kept.sort((a, b) => a.box.x - b.box.x); // stable left-to-right numbering
+
+    return {
+      count:       kept.length,
+      boxes:       kept.map((k) => normBox(k.box)),
+      descriptors: kept.map((k) => k.descriptor),
+      confidences: kept.map((k) => k.score),
+      ages:        hasExtra ? kept.map((k) => k.age!) : [],
+      genders:     hasExtra ? kept.map((k) => k.gender!) : [],
+      expressions: hasExtra ? kept.map((k) => k.expression!) : [],
+    };
   }
 
   if (modelType === "ssd") {

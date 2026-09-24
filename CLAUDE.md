@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Frontend (Next.js)
-npm run dev        # start dev server at localhost:3000
+npm run dev        # start dev server at localhost:3000 (runs `next dev --webpack`, not Turbopack)
 npm run build      # production build
 npm start          # serve production build
 npm run lint       # ESLint check
@@ -22,6 +22,10 @@ cd backend
 pip install -r requirements.txt
 uvicorn main:app --reload   # starts at localhost:8000, auto-loads backend/.env (python-dotenv)
 
+# Database migrations: supabase/migrations/NNNN_*.sql are NOT applied by any tool —
+# each file is pasted and run by hand in the Supabase SQL editor. Add new ones with the
+# next number; write them idempotently (create or replace / if not exists).
+
 # Download browser face-detection models (~33 MB: face-api.js weights + MediaPipe model/wasm, run once from project root)
 bash _scripts/download-models.sh
 ```
@@ -32,16 +36,20 @@ bash _scripts/download-models.sh
 ```
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+NEXT_PUBLIC_BACKEND_URL=...   # optional; defaults to http://localhost:8000 (lib/backend.ts)
 ```
 
 `backend/.env` (optional, only for the AI diary/landmark endpoints — see below):
 ```
 GOOGLE_API_KEY=...
+ALLOWED_ORIGINS=...   # optional, comma-separated extra CORS origins (e.g. the Vercel URL)
 ```
 
 ## Architecture
 
-**Travelries** is a travel photo app: upload photos (one or many) → extract GPS + EXIF → run client-side face detection → save to map/albums. It is a PWA (`app/manifest.ts`, `/pwa-icon` route).
+**Travelries** is a travel photo app: upload photos (one or many) → extract GPS + EXIF → run client-side face detection → save to map/albums. It is a PWA (`app/manifest.ts`, `/pwa-icon-192` and `/pwa-icon-512` routes).
+
+The backend URL comes from `lib/backend.ts` (`NEXT_PUBLIC_BACKEND_URL`, default `http://localhost:8000`). The localhost default only works when the browser and the backend are on the same machine, so the deployed Vercel site stays in browser mode unless a deployed backend URL is set there and added to the backend's `ALLOWED_ORIGINS`. Every main page opens with the shared `components/PageHero.tsx` banner rather than a per-page header.
 
 ### Data storage split
 
@@ -55,7 +63,7 @@ GOOGLE_API_KEY=...
   - `shares` — public photo share links, managed via `lib/shareUtils.ts`
   - `trip_diaries` — cached AI-generated diary text per trip, keyed by `(user_id, trip_key)`; see the AI diary/landmark caching note under Albums below
   - `follows`, `posts`, `post_likes`, `post_comments`, `post_tags` — social feed layer, managed via `lib/socialUtils.ts`; see Social feed below
-  - RPC: `join_collab_album(p_invite_code)`, `record_share_view(p_share_id)`
+  - RPC: `join_collab_album(p_invite_code)`, `record_share_view(p_share_id)`, `tag_user_in_post`, `share_post_to_user` (see Social feed)
 - **Supabase Storage buckets**: `user-photos` (personal photos), `collab-photos` (collab album images), `shares` (shared photo images).
 
 ### Auth flow
@@ -72,11 +80,11 @@ Single-file upload OR multi-file batch upload. On file select:
 1. EXIF + GPS extracted via `exifr`
 2. Face detection runs in browser (or via the backend in API mode — see Face detection below)
 3. Thumbnail created via `canvas.toDataURL`
-4. Detected faces are upserted into Supabase `photos` (`is_face_photo: true`) via `lib/photosApi.ts` (`upsertPhoto`/`saveFacesToAlbum`); clicking "Save to Map" afterward reuses that same row's id and adds `is_map_photo: true` + location fields, rather than creating a second row — see Key shared types below for why that matters.
+4. Detected faces are upserted into Supabase `photos` (`is_face_photo: true`) via `lib/photosApi.ts` (`upsertPhoto`/`saveFacesToAlbum`); clicking "Save to Map" afterward reuses that same row's id and adds `is_map_photo: true` + location fields, rather than creating a second row — see Key shared types below for why that matters. That shared row id (`lastFacePhotoIdRef`) and the user-edited filename (`customFileNameRef`) live in `useRef`s, reserved synchronously *before* any `await` — they were `useState` and caused lost renames and duplicate rows when a rename or Save to Map raced an in-flight face save. Keep any id/value shared across async handlers in a ref.
 
 **Multi-face save picker**: with exactly one face detected, `saveFacesToAlbum` saves it immediately as before. With 2+ faces, upload instead pauses in a `needsSelection` state — `cropFaceThumbnails` renders a padded, cropped thumbnail per detected box so the user can pick which people to save via `toggleFaceSelection`/`handleSaveSelectedFaces`, rather than saving every face in a group photo. `age`/`gender`/`expression` are only written when every detected face was selected, since a partial selection would otherwise misalign those arrays against the (possibly null-dropping) backend response. "Save to Map" writes `faceCount` from `savedFaceCount` (faces actually saved), not the raw detection count.
 
-**Batch upload**: selecting multiple files queues them into a `BatchFile[]` state and processes them sequentially via `processBatch()`. A live progress panel shows per-file status icons and a progress bar. Once all files finish, the panel switches to a review grid (one card per uploaded photo, with face-count/scenery badges) where tapping a photo lets you rename it before dismissing. Stats refresh after the batch completes.
+**Batch upload**: selecting multiple files queues them into a `BatchFile[]` state and processes them sequentially via `processBatch()` — through the backend's `/analyze` when it's online, same as single uploads (it used to always use the weaker browser detector). A live progress panel shows per-file status icons and a progress bar. Once all files finish, the panel switches to a review grid (one card per uploaded photo, with face-count/scenery badges) where tapping a photo lets you rename it before dismissing. Stats refresh after the batch completes.
 
 **Dashboard stat cards**: total photos saved, unique locations visited, total faces detected — read live via `fetchMapPhotos`/`fetchFacePhotos` (`lib/photosApi.ts`).
 
@@ -86,23 +94,25 @@ Single-file upload OR multi-file batch upload. On file select:
 
 Two execution modes depending on whether the Python backend is running:
 
-**Browser mode** (no backend): `app/page.tsx` tries MediaPipe BlazeFace (`lib/mediapipeDetector.ts`, self-hosted models+WASM under `public/mediapipe-wasm` and `public/models/mediapipe`, requires `download-models.sh`) as the primary detector — each MediaPipe box is padded ~30% and cropped, then run through face-api.js's TinyFaceDetector purely to align/recognize (128-dim descriptor) within that crop. If MediaPipe fails to load, falls back to face-api.js's own SSD MobileNetV1, then TinyFaceDetector (multi-scale 416+608 with IoU-NMS, no descriptors) as a last resort. Age/gender/expression are loaded as a separate optional model pair and only populated when available.
+**Browser mode** (no backend): `app/page.tsx` tries MediaPipe BlazeFace (`lib/mediapipeDetector.ts`, self-hosted models+WASM under `public/mediapipe-wasm` and `public/models/mediapipe`, requires `download-models.sh`) as the primary detector — each MediaPipe box is padded ~30% and cropped, then run through face-api.js's TinyFaceDetector to confirm/align/recognize (128-dim descriptor) within that crop. The **stored box is face-api's own detection translated back to full-image coordinates, not MediaPipe's raw box** — MediaPipe's box was sometimes off-center and produced boxes on a collar/shoulder next to a real face. Inside each crop face-api runs `detectAllFaces` and only a detection overlapping *that* MediaPipe box (IoU ≥ `CROP_MATCH_IOU`) counts. The padded crop often includes a neighbour's face, and taking the crop's top-scoring face double-counted the neighbour and lost the edge-cropped person. If nothing matches (even after a permissive 416px retry pass), the MediaPipe box is dropped rather than kept unconfirmed. A final dedupe (IoU ≥ 0.4 or descriptor distance < 0.4) removes any face that two crops resolved to twice. If MediaPipe fails to load, falls back to face-api.js's own SSD MobileNetV1, then TinyFaceDetector (multi-scale 416+608 with IoU-NMS, no descriptors) as a last resort. Age/gender/expression are loaded as a separate optional model pair and only populated when available.
 
 `detectFacesMediaPipe` runs **both** BlazeFace variants and merges the results (IoU-NMS) rather than picking one — full_range alone misses a face that fills most of the frame (a close-up selfie; its anchor priors are tuned for farther/smaller faces and it'll sometimes lock onto a random small patch elsewhere in the image instead), and short_range alone misses small/far faces in a group shot, so neither is a safe substitute for the other. full_range also always runs once on the whole image first before any tiling — a tile-only pass can miss a face that's large relative to a tile or straddles a tile seam, even though the untiled image shows it fine — and only *adds* tiled passes (800px tiles, 650px stride) on top when the photo is bigger than one tile, for small/far faces a single downscaled pass would lose. `minDetectionConfidence` is 0.4 for both models — 0.3 was tried and reverted after it started flagging shadows/limbs as faces.
 
 **API mode** (backend alive): `app/page.tsx` POSTs to `/analyze`. The backend runs a two-tier pipeline in `backend/utils/face_utils.py`:
-- **Tier 1 (InsightFace buffalo_l)**: SCRFD detector at 1280×1280 with tiling for images larger than 1280px (1024px stride, 256px overlap). IoU-based NMS deduplicates tile boundaries. Returns 512-dim ArcFace embeddings + age + gender.
+- **Tier 1 (InsightFace buffalo_l)**: SCRFD detector at 1280×1280 with tiling for images larger than 1280px (1024px stride, 256px overlap). IoU-based NMS deduplicates tile boundaries. Returns 512-dim ArcFace embeddings (`normed_embedding`, unit length) + age + gender.
 - **Tier 2 (SSD+dlib fallback)**: Used only if InsightFace/onnxruntime is not installed. Returns 128-dim dlib descriptors, no age/gender.
 - EXIF Orientation is corrected before detection so portrait phone photos are upright — handled implicitly by `cv2.imread`'s own EXIF-aware JPEG decode; an earlier explicit `_apply_exif_rotation` helper was removed as dead code (it was double-rotating on top of OpenCV's built-in handling).
 - Backend `/analyze` response includes `ages`, `genders`, `confidences` in addition to `faceBoxes` and `descriptors`.
 
 Result stored in `FacePhoto` with normalized bounding boxes (`x_norm`, `y_norm`, `w_norm`, `h_norm`).
 
-`app/faces/page.tsx` clusters descriptors by Euclidean distance (DBSCAN on the backend, Euclidean threshold in-browser) to group same-person appearances — no server involved for the clustering step. The in-browser algorithm (`clusterByPerson`) is a greedy nearest-centroid assign, not DBSCAN: photos are processed oldest-first, each face joins the nearest existing cluster if within `MATCH_THRESHOLD` (a fixed constant, `0.55`, tuned empirically — there is intentionally no UI to change it; a previous adjustable slider was removed because it kept resetting/drifting), else seeds a new one. A cluster's `id` is `${seedPhotoId}_${seedBoxIndex}` — stable enough for the `face-labels-<uid>` localStorage custom-name map to key off it, but not a real persisted identity (see below). Deleting a photo (single, via a per-photo confirm modal, or all at once via "Clear All") goes through `deletePhotoEverywhere` in `lib/savedUtils.ts` (thin wrapper over `photosApi.deletePhotoEverywhere`), which deletes the `photos` row outright — a deliberate simplification from the old per-view (map vs. faces) independent delete — and any matching `collab_photos` row by filename. `saved_photos` rows cascade automatically via its FK.
+`app/faces/page.tsx` clusters descriptors by Euclidean distance (DBSCAN on the backend, Euclidean threshold in-browser) to group same-person appearances — no server involved for the clustering step. The in-browser algorithm (`clusterByPerson`) is a greedy nearest-centroid assign, not DBSCAN: photos are processed oldest-first, each face joins the nearest existing cluster if within `MATCH_THRESHOLD` (a fixed constant, `0.55`, tuned empirically — there is intentionally no UI to change it; a previous adjustable slider was removed because it kept resetting/drifting), else seeds a new one. Descriptors of different dimensions are never compared (`euclidean` returns `Infinity`): 128-dim ones (face-api / dlib) use `MATCH_THRESHOLD`, and 512-dim ArcFace ones use `ARCFACE_MATCH_THRESHOLD` (1.05) after `prepDescriptor` L2-normalizes them. That normalization also covers older rows saved with raw, unnormalized embeddings. The same person uploaded once in browser mode and once in API mode ends up in two clusters and has to be merged manually. A cluster's `id` is `${seedPhotoId}_${seedBoxIndex}` — stable enough for the `face-labels-<uid>` localStorage custom-name map to key off it, but not a real persisted identity (see below). Deleting a photo (single, via a per-photo confirm modal, or all at once via "Clear All") goes through `deletePhotoEverywhere` in `lib/savedUtils.ts` (thin wrapper over `photosApi.deletePhotoEverywhere`), which deletes the `photos` row outright — a deliberate simplification from the old per-view (map vs. faces) independent delete — and any `collab_photos` row this user shared from it, matched by `image_url` (unique per photo). It never matches by filename: camera names like `IMG_1234.jpg` repeat, and the old filename match deleted unrelated photos. `saved_photos` rows cascade automatically via its FK.
 
 **Manual person grouping** (`lib/peopleApi.ts`, `supabase/migrations/0010_face_person_grouping.sql`): since automatic clustering can split one real person into two cards (e.g. a photo's lighting/angle pushes descriptor distance just past `MATCH_THRESHOLD`), a `people` table (`id`, `user_id`, `name`) plus a `photos.person_ids` column (jsonb, index-aligned with `boxes`/`descriptors` — null until a face is manually tagged) let a user override the algorithm; a manual assignment always wins. `buildPersonGroups()` wraps `clusterByPerson()`: faces with a `person_ids[i]` are skipped inside the greedy loop (via a guard added there) and instead assembled into their own "confirmed" groups keyed by `person_id`, so a stray distance match can never pull a tagged face into the wrong auto-cluster. Two entry points write `person_ids`:
-- **"🔗 같은 사람과 합치기" (merge)** on each Person card in `app/faces/page.tsx` — picking another card calls `handleMerge`, which reuses either side's existing `person_id` (creating one via `createPerson` if neither has one yet) and batches `updateFacePersonIds` calls (one per affected photo row, preserving that row's other face tags) across every face in both groups. Renaming a confirmed cluster calls `renamePerson` instead of writing to `face-labels-<uid>`; unmerged/untagged clusters still use the old localStorage label map unchanged.
-- **Upload-time tagging** in `app/page.tsx`'s multi-face save picker (see Home page above) — each selected face thumbnail gets an optional "누구?" `<select>` sourced from `fetchPeople`; a pick is threaded through `saveFacesToAlbum` as `personIds` (index-aligned with the same `indices` used for `boxes`/`descriptors`) so a newly uploaded face can be saved directly into an existing person instead of waiting on auto-clustering to (maybe) group it correctly.
+- **"🔗 Merge with…"** on each Person card in `app/faces/page.tsx` — picking another card calls `handleMerge`, which reuses either side's existing `person_id` (creating one via `createPerson` if neither has one yet) and batches `updateFacePersonIds` calls (one per affected photo row, preserving that row's other face tags) across every face in both groups. Renaming a confirmed cluster calls `renamePerson` instead of writing to `face-labels-<uid>`; unmerged/untagged clusters still use the old localStorage label map unchanged.
+- **Upload-time tagging** in `app/page.tsx`'s multi-face save picker (see Home page above) — each selected face thumbnail gets an optional "Who?" `<select>` sourced from `fetchPeople`; a pick is threaded through `saveFacesToAlbum` as `personIds` (index-aligned with the same `indices` used for `boxes`/`descriptors`) so a newly uploaded face can be saved directly into an existing person instead of waiting on auto-clustering to (maybe) group it correctly.
+
+**Per-face removal** (`removeFaceFromPhoto` in `lib/photosApi.ts`, `handleRemoveFace` in `app/faces/page.tsx`) drops one face without deleting the photo. It **tombstones in place** — box zeroed, descriptor set to `[]`, `person_ids[i]` set to null — and never splices. Cluster ids and manual person tags are keyed by array index, so shifting indices would silently reassign other people on the same photo. `isFaceRemoved()` treats an empty descriptor as removed only when the photo has *some* real descriptors (legacy/fallback paths saved all-empty descriptor arrays). Any new code that iterates `boxes`/`descriptors` must skip tombstones the same way.
 
 ### Other pages
 
@@ -118,7 +128,7 @@ Photos grouped by location string. Filters:
 - **Date range chips**: All / This Week / This Month / This Year — filters by `captureDate` or `uploadedAt`
 - Both filters compose: category → date range → search
 
-**Trips view** (`viewMode === "trips"`, via `detectTrips()`) groups photos into trip cards by date gap. Each trip card has an **"AI Diary"** button — checks Supabase `trip_diaries` for a cached entry first (keyed by `trip_key`, the sorted/comma-joined ids of the trip's photos — stable across reloads and filter changes, unlike `trip.id` which is just an array index) and only POSTs to `/generate-diary` on a cache miss; a successful generation is written back via `saveTripDiary`. `DiaryModal` shows a "Re-generate" button once a diary is loaded, which is the only way to force a fresh API call. The single-photo detail modal (`PhotoModal`) has an **"Identify Landmark"** button — only shown when the photo has no `landmark_analyzed_at` yet; it resizes the image client-side (`resizeImageForApi`, max 1024px) before POSTing to `/recognize-landmark`, then persists the result via `saveLandmarkResult` (`photos.landmark_name`/`landmark_confidence`/`landmark_description`/`landmark_analyzed_at`). Once analyzed, the cached result renders directly from `MapPhoto` with only a small "Re-analyze" link to force another call. Both endpoints are no-ops with a Korean error message if the backend is offline or `GOOGLE_API_KEY` isn't set (the endpoints return `{error: "..."}` for that rather than a 500). The backend also resizes server-side (`_resize_for_api` in `gemini_utils.py`) as a backstop, and logs model/token usage/duration/errors for both calls via the standard `logging` module. `PhotoModal` also has a **"Story"** button rendering an Instagram-story-shaped share card for that one photo (`drawPhotoStoryCard`, see Share cards below).
+**Trips view** (`viewMode === "trips"`, via `detectTrips()`) groups photos into trip cards by date gap. Each trip card has an **"AI Diary"** button — checks Supabase `trip_diaries` for a cached entry first (keyed by `trip_key`, the sorted/comma-joined ids of the trip's photos — stable across reloads and filter changes, unlike `trip.id` which is just an array index) and only POSTs to `/generate-diary` on a cache miss; a successful generation is written back via `saveTripDiary`. `DiaryModal` shows a "Re-generate" button once a diary is loaded, which is the only way to force a fresh API call. The single-photo detail modal (`PhotoModal`) has an **"Identify Landmark"** button — only shown when the photo has no `landmark_analyzed_at` yet; it resizes the image client-side (`resizeImageForApi`, max 1024px) before POSTing to `/recognize-landmark`, then persists the result via `saveLandmarkResult` (`photos.landmark_name`/`landmark_confidence`/`landmark_description`/`landmark_analyzed_at`). Once analyzed, the cached result renders directly from `MapPhoto` with only a small "Re-analyze" link to force another call. Both endpoints are no-ops with an error message if the backend is offline or `GOOGLE_API_KEY` isn't set (the endpoints return `{error: "..."}` for that rather than a 500). The backend also resizes server-side (`_resize_for_api` in `gemini_utils.py`) as a backstop, and logs model/token usage/duration/errors for both calls via the standard `logging` module. `PhotoModal` also has a **"Story"** button rendering an Instagram-story-shaped share card for that one photo (`drawPhotoStoryCard`, see Share cards below).
 
 ### Share cards (Canvas API)
 
@@ -126,7 +136,7 @@ Photos grouped by location string. Filters:
 
 ### Notifications (`lib/notificationUtils.ts`)
 
-Real-time notifications via Supabase Realtime. `subscribeToNotifications(userId, onNew)` opens a postgres_changes channel filtered to `user_id`. The `NotificationBell` component polls on mount and subscribes for live inserts. Notification types: `share_viewed`, `collab_joined`, `collab_photo_added`.
+Real-time notifications via Supabase Realtime. `subscribeToNotifications(userId, onNew)` opens a postgres_changes channel filtered to `user_id`. The `NotificationBell` component polls on mount and subscribes for live inserts. Notification types: `share_viewed`, `collab_joined`, `collab_photo_added`, plus the social types listed under Social feed.
 
 ### Collaborative albums (`lib/collabUtils.ts`, `app/collab/page.tsx`)
 
@@ -160,6 +170,8 @@ Tagged users under a post caption (`post.taggedUsers`) and deleting a feed post 
 
 **Post detail page**: `app/post/[id]/page.tsx` — a single post (via `fetchPostById` in `lib/socialUtils.ts`, which reuses the same `enrichPosts` batching as the feed) with its full comment thread always expanded, like/comment/delete. Reached from a post's image in the feed, a post grid tile on `/u/[id]`, or a notification's action text. RLS applies exactly as in the feed ("own or followed"), so `fetchPostById` returning `null` — rendered as a "not available" placeholder — covers both a deleted post and one you're not allowed to see (e.g. tagged by someone you don't follow).
 
+**In-app "Send"** (`components/ShareToModal.tsx`, `sharePostToUser` in `lib/socialUtils.ts`, migration `0011_share_post_to_user.sql`) sits alongside the public-link share. It sends a post to someone you follow or who follows you through the `share_post_to_user` `SECURITY DEFINER` RPC, which checks that the caller can see the post and inserts a `post_shared` notification for the recipient. There is no DM/inbox table; the notification *is* the delivery.
+
 ### Backend (optional)
 
 `backend/main.py` is a FastAPI server. The frontend polls `GET /health` on load; if it responds the app enters "API mode" (server-side EXIF+face via `/analyze`, POI lookup via `/nearby-places`). If offline, falls back to browser-mode. **Not required** for any core functionality. `/health`'s response includes `utils_available`, `places_available`, `gemini_available` — each backend feature degrades independently (missing deps or an unset `GOOGLE_API_KEY` return a JSON `error` field from that endpoint rather than a 500).
@@ -176,7 +188,7 @@ To install InsightFace tier: `pip install insightface onnxruntime` (already in `
 
 `lib/types.ts` — `MapPhoto` (`lat?`/`lng?` are optional; photos without GPS still appear in Albums but are filtered out of the map) and `FacePhoto`. `rowToMapPhoto` / `rowToFacePhoto` convert a `public.photos` row into each — that table is a *single unified table* (one row can be a map photo, a face photo, or both, via `is_map_photo`/`is_face_photo` booleans), not a `photos`/`face_photos` split; a `saved_photos` join table backs favorites. `image_url` is stored directly on the row as the full Storage public URL (bucket `user-photos`) — there's no separate path column. `photos` also carries `landmark_name`/`landmark_confidence`/`landmark_description`/`landmark_analyzed_at` (nullable — presence of `landmark_analyzed_at` is what gates whether `/recognize-landmark` gets called again for that photo). Before writing any new migration against `photos`/`saved_photos`, check the live schema in the Supabase dashboard (Table Editor) rather than assuming — an earlier session drafted a competing two-table schema without checking first and had to throw it away.
 
-`MapPhoto.captureTimestamp` is an ISO 8601 string populated alongside the display-only `captureDate`/`captureTime` (which are locale-formatted via `toLocaleDateString()`/`toLocaleTimeString()` and are **not** safe to sort or compare). Anything that needs chronological order — e.g. the map's route line — must sort by `captureTimestamp` (falling back to `uploadedAt` for photos saved before this field existed), never by `captureDate`.
+`MapPhoto.captureTimestamp` is an ISO 8601 string populated alongside the display-only `captureDate`/`captureTime` (which are locale-formatted via `toLocaleDateString()`/`toLocaleTimeString()` and are **not** safe to sort or compare). A missing date is stored as the sentinel `"Not available"`, or `"날짜 없음"` on older rows. Check for both. Anything that needs chronological order — e.g. the map's route line — must sort by `captureTimestamp` (falling back to `uploadedAt` for photos saved before this field existed), never by `captureDate`.
 
 `lib/photosApi.ts` is the only place that talks to the `photos`/`saved_photos` tables — `fetchMapPhotos`/`fetchFacePhotos`/`fetchAllPhotos` (filter+convert), `fetchSavedIds`/`toggleSavedPhoto`, `upsertPhoto` (insert-or-update by id; only the columns present in the input are written, so a partial update never clobbers unrelated columns already on the row — e.g. adding `is_map_photo: true` to an existing face-only row doesn't touch its `boxes`/`descriptors`), `renamePhoto`, `deletePhotoEverywhere` (the delete uses `.select("id")` to confirm a row was actually removed and throws if RLS silently matched zero rows, rather than reporting success on a no-op delete; callers in `app/albums/page.tsx`/`app/faces/page.tsx` catch this and surface an alert instead of updating local state as if it succeeded). `lib/savedUtils.ts` (`toggleSaved`/`getSavedIds`/`deletePhotoEverywhere`) is a thin per-caller wrapper that resolves the current user id and delegates to `photosApi` — pages import from `savedUtils`, not `photosApi`, for those three. Unauthenticated/guest sessions get empty results everywhere rather than an error (in practice unreachable — `AuthGuard` requires login on every page that calls these).
 
@@ -184,7 +196,9 @@ To install InsightFace tier: `pip install insightface onnxruntime` (already in `
 
 Uses `react-leaflet` with OpenStreetMap tiles (free, no API key). Leaflet default icons overridden with `L.divIcon` showing a circular photo thumbnail + count badge for clustered markers. Loaded client-side only (Leaflet requires `window`). Only photos with `lat` and `lng` defined are shown.
 
-Two optional overlay toggles, mutually exclusive with the marker view when heatmap is on:
+A **Pins / Regions** toggle (`viewMode`) switches between the Leaflet map and `components/KoreaRegionMap.tsx`, an SVG choropleth of South Korea's 17 provinces. It uses no Leaflet: `lib/koreaGeo.ts` projects `public/data/skorea-provinces.geo.json` itself and maps each photo's reverse-geocoded `location` string to a province via `matchRegionCode`. Clicking a province filters the photo list below.
+
+In Pins view there are two optional overlay toggles, mutually exclusive with the marker view when heatmap is on:
 - **Route**: a `RouteLayer` component draws photos as a Polyline in chronological order (sorted by `captureTimestamp`, see above) — a white casing line for contrast against any tile color, an animated flowing dashed line on top (`route-flow-line` keyframe in `app/globals.css`), and a rotated arrow `Marker` at each segment midpoint (bearing computed via `bearingDeg()`) showing travel direction.
 - **Heatmap**: `HeatmapLayer` wraps the `leaflet.heat` plugin (`L.heatLayer`, imperatively added/removed via `useMap()` + `useEffect` since it has no react-leaflet component) — replaces the cluster markers while active.
 

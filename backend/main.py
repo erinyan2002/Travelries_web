@@ -46,9 +46,12 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
+    # Extra origins (e.g. the deployed Vercel site) come from ALLOWED_ORIGINS,
+    # comma-separated — the frontend calls this server straight from the browser.
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        *[o.strip().rstrip("/") for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()],
     ],
     allow_credentials=True,
     allow_methods=["*"],

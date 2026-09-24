@@ -232,20 +232,23 @@ export async function removeFaceFromPhoto(uid: string, photoId: string, boxIndex
 }
 
 // Deletes the photo row (saved_photos cascades via its FK) and any collab_photos
-// row this user added under the same filename.
-export async function deletePhotoEverywhere(uid: string, photoId: string, fileName?: string): Promise<void> {
-  // .select("id") forces the delete to report which rows it actually removed — a
+// row this user shared from it.
+export async function deletePhotoEverywhere(uid: string, photoId: string): Promise<void> {
+  // .select() forces the delete to report which rows it actually removed — a
   // plain .delete() reports success even when RLS silently matched zero rows, which
   // would otherwise leave the row (and its is_face_photo entry) behind with no error.
-  const { data, error } = await supabase.from("photos").delete().eq("id", photoId).eq("user_id", uid).select("id");
+  const { data, error } = await supabase.from("photos").delete().eq("id", photoId).eq("user_id", uid).select("id, image_url");
   if (error) throw new Error(error.message);
   if (!data || data.length === 0) throw new Error("Photo not found or already deleted");
-  if (fileName) {
-    // Best-effort cleanup of any OTHER row with the same filename — e.g. a face-only
-    // row saved separately from the map row for the same upload, or a duplicate
-    // re-upload — so deleting a photo from one view (Albums) doesn't leave a
-    // same-named row lingering in another (Faces). No error if nothing else matches.
-    await supabase.from("photos").delete().eq("user_id", uid).eq("file_name", fileName);
-    await supabase.from("collab_photos").delete().eq("added_by", uid).eq("file_name", fileName);
+
+  // Matched by image_url, NOT file_name: camera filenames (IMG_1234.jpg) repeat
+  // across trips/devices, and the old file_name match deleted unrelated photos —
+  // other personal rows and other collab photos — that merely shared a name.
+  // image_url is unique per photo (<uid>/<photoId>.<ext>), and addPhotoToAlbum
+  // reuses it as-is for a Storage-hosted photo. (A base64-fallback photo gets a
+  // fresh collab URL, so it's left in the collab album — never over-delete.)
+  const imageUrl = data[0].image_url as string | null;
+  if (imageUrl && !imageUrl.startsWith("data:")) {
+    await supabase.from("collab_photos").delete().eq("added_by", uid).eq("image_url", imageUrl);
   }
 }

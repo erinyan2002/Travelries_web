@@ -104,8 +104,14 @@ def _faces_from_tile(app, rgb_tile: np.ndarray, offset_x: int, offset_y: int) ->
         bbox = f.bbox.copy().astype(float)
         bbox[0] += offset_x;  bbox[2] += offset_x
         bbox[1] += offset_y;  bbox[3] += offset_y
-        dets.append((float(f.det_score), bbox, f.embedding, f.age, f.gender))
+        dets.append((float(f.det_score), bbox, f.normed_embedding, f.age, f.gender))
     return dets
+
+
+# NOTE: normed_embedding (unit length), not the raw f.embedding (norm ~20+).
+# The frontend clusters by Euclidean distance with a fixed threshold, which is
+# only meaningful on unit vectors — raw ArcFace embeddings put even the same
+# person dozens of units apart, so no two backend-detected faces ever grouped.
 
 
 def _faces_from_scaled(app, rgb: np.ndarray, scale: float) -> list:
@@ -117,7 +123,7 @@ def _faces_from_scaled(app, rgb: np.ndarray, scale: float) -> list:
     dets = []
     for f in faces:
         bbox = f.bbox.copy().astype(float) / scale
-        dets.append((float(f.det_score), bbox, f.embedding, f.age, f.gender))
+        dets.append((float(f.det_score), bbox, f.normed_embedding, f.age, f.gender))
     return dets
 
 

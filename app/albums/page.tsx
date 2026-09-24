@@ -14,6 +14,7 @@ import {
 import { sharePhoto } from "@/lib/shareUtils";
 import ShareCardModal from "@/components/ShareCardModal";
 import { loadImage, drawImageCover } from "@/lib/canvasCard";
+import { BACKEND_URL } from "@/lib/backend";
 
 // Draws a 1080x1920 Instagram-story-style card for a single photo: the photo
 // itself (cropped to a rounded frame), its location/date beneath it, and a
@@ -73,7 +74,6 @@ async function drawPhotoStoryCard(ctx: CanvasRenderingContext2D, w: number, h: n
 type Filter    = "All" | "With People" | "Scenery";
 type DateRange = "all" | "week" | "month" | "year";
 
-const BACKEND_URL = "http://localhost:8000";
 
 // Downscale before sending to Claude — cuts image tokens (and cost) with no
 // meaningful loss for landmark recognition. Server also enforces this as a backstop.
@@ -638,7 +638,7 @@ export default function AlbumsPage() {
   async function handleDelete(id: string) {
     const fileName = photos.find((p) => p.id === id)?.fileName;
     try {
-      await deletePhotoEverywhere(id, fileName);
+      await deletePhotoEverywhere(id);
       // deletePhotoEverywhere also sweeps every other row sharing this filename —
       // drop those from local state too, not just the clicked id, so a same-named
       // duplicate card doesn't linger looking deletable when it's already gone.
