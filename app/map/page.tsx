@@ -285,14 +285,22 @@ export default function MapPage() {
   async function handleClear() {
     const { data: { user } } = await supabase.auth.getUser();
     const uid = user?.id ?? "guest";
+    const failed: typeof photos = [];
     if (uid !== "guest") {
       for (const p of photos) {
-        await deletePhotoEverywhere(p.id);
+        try {
+          await deletePhotoEverywhere(p.id);
+        } catch (err) {
+          if (err instanceof Error && err.message === "Photo not found or already deleted") continue;
+          console.error(`Delete failed for ${p.fileName}:`, err);
+          failed.push(p);
+        }
       }
     }
-    setPhotos([]);
+    setPhotos(failed);
     setActiveCluster(null);
     setShowDeleteConfirm(false);
+    if (failed.length > 0) alert(`${failed.length} photo(s) couldn't be deleted. Please try again.`);
   }
 
   return (

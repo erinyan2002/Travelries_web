@@ -3,6 +3,7 @@
 // photo row can be a map photo, a face photo, or both, via is_map_photo/is_face_photo.
 import { supabase } from "./supabase";
 import { MapPhoto, FacePhoto, rowToMapPhoto, rowToFacePhoto } from "./types";
+import { base64ToBlob } from "./imageUtils";
 
 export async function currentUserId(): Promise<string | null> {
   const { data: { user } } = await supabase.auth.getUser();
@@ -251,4 +252,56 @@ export async function deletePhotoEverywhere(uid: string, photoId: string): Promi
   if (imageUrl && !imageUrl.startsWith("data:")) {
     await supabase.from("collab_photos").delete().eq("added_by", uid).eq("image_url", imageUrl);
   }
+}
+
+// Uploads a photo's image to Storage and returns its public URL. Never falls back
+// to storing the base64 data URL in the DB row (that bloated `photos` rows to
+// ~150-300 KB each and slowed every list query) — a failed upload throws instead.
+// The path is deterministic per photo id, and both the face save and Save to Map
+// upload the same file for the same id, so "already exists" just means the other
+// one got there first: reuse that URL.
+export async function uploadToUserPhotos(uid: string, photoId: string, dataUrl: string): Promise<string> {
+  const { blob, mimeType } = base64ToBlob(dataUrl);
+  const ext = mimeType.split("/")[1] ?? "jpg";
+  const path = `${uid}/${photoId}.${ext}`;
+  const publicUrl = supabase.storage.from("user-photos").getPublicUrl(path).data.publicUrl;
+  let lastError = "";
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const { error } = await supabase.storage
+      .from("user-photos")
+      .upload(path, blob, { contentType: mimeType });
+    if (!error) return publicUrl;
+    if (/already exists|duplicate/i.test(error.message)) return publicUrl;
+    lastError = error.message;
+  }
+  throw new Error(`Image upload failed: ${lastError}`);
+}
+
+// One-time cleanup for rows saved before uploads stopped falling back to inline
+// base64 (face-only saves always stored the image inline): moves each such image
+// into Storage and points the row at it. Best-effort — a row that fails is just
+// left as-is and retried on the next call.
+export async function migrateInlineImages(uid: string): Promise<number> {
+  const { data, error } = await supabase
+    .from("photos")
+    .select("id")
+    .eq("user_id", uid)
+    .like("image_url", "data:%");
+  if (error || !data?.length) return 0;
+  let moved = 0;
+  // One row at a time: each image_url is a few hundred KB of base64.
+  for (const { id } of data as { id: string }[]) {
+    try {
+      const { data: row } = await supabase.from("photos").select("image_url").eq("id", id).eq("user_id", uid).single();
+      const dataUrl = row?.image_url as string | undefined;
+      if (!dataUrl?.startsWith("data:")) continue;
+      const imageUrl = await uploadToUserPhotos(uid, id, dataUrl);
+      const { error: updateError } = await supabase.from("photos").update({ image_url: imageUrl }).eq("id", id).eq("user_id", uid);
+      if (updateError) throw new Error(updateError.message);
+      moved++;
+    } catch (err) {
+      console.warn(`Moving inline image for photo ${id} to Storage failed:`, err);
+    }
+  }
+  return moved;
 }

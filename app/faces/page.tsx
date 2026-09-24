@@ -114,6 +114,23 @@ function clusterByPerson(photos: FacePhoto[], threshold: number): PersonCluster[
   return clusters.sort((a, b) => b.faces.length - a.faces.length).map((c, i) => ({ ...c, label: `Person ${i + 1}` }));
 }
 
+// Writes one person_id onto every given face, batched per photo row and keeping
+// any other face's existing tag on the same row. Shared by merge, rename and the
+// one-time localStorage-label migration.
+async function assignPersonToFaces(uid: string, faces: FaceEntry[], personId: string): Promise<void> {
+  const updates = new Map<string, { photo: FacePhoto; indices: number[] }>();
+  for (const face of faces) {
+    const entry = updates.get(face.photo.id) ?? { photo: face.photo, indices: [] };
+    entry.indices.push(face.boxIndex);
+    updates.set(face.photo.id, entry);
+  }
+  for (const { photo, indices } of updates.values()) {
+    const current = photo.personIds ? [...photo.personIds] : new Array(photo.boxes?.length ?? 0).fill(null);
+    indices.forEach((i) => { current[i] = personId; });
+    await updateFacePersonIds(uid, photo.id, photo.fileName, photo.imageUrl, current);
+  }
+}
+
 // Confirmed groups (manual tag at upload, or "merge into..." on this page) are
 // pulled out before clusterByPerson() runs and assembled here from photos.person_ids
 // — a manual override always wins over descriptor distance and never re-splits.
@@ -416,7 +433,6 @@ export default function FacesPage() {
   const [activeTab,       setActiveTab]       = useState<"people" | "photos">("people");
   const [selectedPhoto,   setSelectedPhoto]   = useState<FacePhoto | null>(null);
   const [selectedCluster, setSelectedCluster] = useState<{ cluster: PersonCluster; idx: number } | null>(null);
-  const [customLabels,    setCustomLabels]    = useState<Record<string, string>>({});
   const [editingId,       setEditingId]       = useState<string | null>(null);
   const [confirmClearAll, setConfirmClearAll] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -432,26 +448,41 @@ export default function FacesPage() {
       const u = user?.id ?? "guest";
       setUid(u);
 
-      const faces = u === "guest" ? [] : await fetchFacePhotos(u);
-      const peopleList = u === "guest" ? [] : await fetchPeople(u);
+      let faces = u === "guest" ? [] : await fetchFacePhotos(u);
+      let peopleList = u === "guest" ? [] : await fetchPeople(u);
 
-      const rawLabels: Record<string, string> = JSON.parse(localStorage.getItem(`face-labels-${u}`) ?? "{}");
-      // Discard labels stored in old pX format (cluster IDs are now photoId_boxIndex)
-      const validLabels = Object.fromEntries(
-        Object.entries(rawLabels).filter(([k]) => !k.match(/^p\d+$/))
-      );
-      setCustomLabels(validLabels);
+      // One-time migration: names given to auto-clusters used to live only in this
+      // browser's localStorage (lost on another device). Turn each still-matching
+      // one into a real `people` row + person_ids tags, then drop the old map.
+      if (u !== "guest") {
+        const key = `face-labels-${u}`;
+        let rawLabels: Record<string, string> = {};
+        try { rawLabels = JSON.parse(localStorage.getItem(key) ?? "{}"); } catch { /* corrupt — ignore */ }
+        const entries = Object.entries(rawLabels).filter(([k, v]) => !k.match(/^p\d+$/) && v?.trim());
+        if (entries.length > 0) {
+          try {
+            const autoClusters = buildPersonGroups(faces, peopleList, MATCH_THRESHOLD).filter((c) => !c.personId);
+            for (const [clusterId, name] of entries) {
+              const cluster = autoClusters.find((c) => c.id === clusterId);
+              if (!cluster) continue; // cluster no longer exists — label is stale
+              const created = await createPerson(u, name.trim());
+              await assignPersonToFaces(u, cluster.faces, created.id);
+            }
+            localStorage.removeItem(key);
+            [faces, peopleList] = await Promise.all([fetchFacePhotos(u), fetchPeople(u)]);
+          } catch (err) {
+            // Leave the localStorage map in place so the next load retries.
+            console.error("Migrating face labels failed:", err);
+          }
+        }
+      }
+
       setStoredPhotos(faces);
       setPeople(peopleList);
       setLoading(false);
     }
     load();
   }, []);
-
-  useEffect(() => {
-    if (!uid) return;
-    localStorage.setItem(`face-labels-${uid}`, JSON.stringify(customLabels));
-  }, [customLabels, uid]);
 
   // Removes one face from a photo (see removeFaceFromPhoto) and keeps every
   // open view in sync: the photo's own local state, and — since PersonModal/
@@ -492,18 +523,13 @@ export default function FacesPage() {
   }
 
   async function handleDelete(id: string) {
-    const fileName = storedPhotos.find((p) => p.id === id)?.fileName;
     try {
       await deletePhotoEverywhere(id);
-      // deletePhotoEverywhere also sweeps every other row sharing this filename —
-      // drop those from local state too, not just the clicked id, so a same-named
-      // duplicate card doesn't linger looking deletable when it's already gone.
-      setStoredPhotos((prev) => prev.filter((p) => p.id !== id && (!fileName || p.fileName !== fileName)));
+      setStoredPhotos((prev) => prev.filter((p) => p.id !== id));
     } catch (err) {
-      // A duplicate-filename sibling delete earlier in this session may have already
-      // swept this exact row — treat that as already-deleted, not a real failure.
+      // Already gone (e.g. deleted in another tab) — just drop it locally.
       if (err instanceof Error && err.message === "Photo not found or already deleted") {
-        setStoredPhotos((prev) => prev.filter((p) => p.id !== id && (!fileName || p.fileName !== fileName)));
+        setStoredPhotos((prev) => prev.filter((p) => p.id !== id));
       } else {
         console.error("Delete failed:", err);
         alert("Couldn't delete this photo. Please try again.");
@@ -520,16 +546,13 @@ export default function FacesPage() {
       try {
         await deletePhotoEverywhere(p.id);
       } catch (err) {
-        // deletePhotoEverywhere also sweeps other rows sharing this filename, so an
-        // earlier iteration here may have already removed this one — not a real failure.
+        // Already gone (e.g. deleted in another tab) — not a real failure.
         if (err instanceof Error && err.message === "Photo not found or already deleted") continue;
         console.error(`Delete failed for ${p.fileName}:`, err);
         failed.push(p);
       }
     }
-    localStorage.removeItem(`face-labels-${uid}`);
     setStoredPhotos(failed);
-    setCustomLabels({});
     setConfirmClearAll(false);
     if (failed.length > 0) {
       alert(`${failed.length} photo(s) couldn't be deleted. Please try again.`);
@@ -540,10 +563,10 @@ export default function FacesPage() {
   const hasDescriptors = storedPhotos.some((p) => p.descriptors?.length);
   const totalFaces    = storedPhotos.reduce((s, p) => s + (p.faceCount ?? 0), 0);
 
-  // Confirmed (merged/tagged) clusters are named from the `people` table; everything
-  // else still uses the localStorage custom-name map keyed by the cluster's seed id.
+  // Confirmed clusters are named from the `people` table; auto-clusters show their
+  // "Person N" placeholder until renamed (which turns them into a confirmed person).
   function labelOf(cluster: PersonCluster): string {
-    return cluster.personId ? cluster.label : (customLabels[cluster.id] ?? cluster.label);
+    return cluster.label;
   }
 
   async function commitRename(cluster: PersonCluster) {
@@ -558,7 +581,19 @@ export default function FacesPage() {
         alert("Couldn't rename this person. Please try again.");
       }
     } else {
-      setCustomLabels((prev) => ({ ...prev, [cluster.id]: name }));
+      // Naming an auto-cluster makes it a real person (synced across devices) and
+      // pins its current faces to it, so the name can't drift to other faces if
+      // clustering regroups later.
+      if (!uid || name === cluster.label) return;
+      try {
+        const created = await createPerson(uid, name);
+        await assignPersonToFaces(uid, cluster.faces, created.id);
+        setPeople((prev) => [...prev, created]);
+        setStoredPhotos(await fetchFacePhotos(uid));
+      } catch (err) {
+        console.error("Rename failed:", err);
+        alert("Couldn't rename this person. Please try again.");
+      }
     }
   }
 
@@ -579,17 +614,7 @@ export default function FacesPage() {
         personId = created.id;
         setPeople((prev) => [...prev, created]);
       }
-      const updates = new Map<string, { photo: FacePhoto; indices: number[] }>();
-      for (const face of [...source.faces, ...target.faces]) {
-        const entry = updates.get(face.photo.id) ?? { photo: face.photo, indices: [] };
-        entry.indices.push(face.boxIndex);
-        updates.set(face.photo.id, entry);
-      }
-      for (const { photo, indices } of updates.values()) {
-        const current = photo.personIds ? [...photo.personIds] : new Array(photo.boxes?.length ?? 0).fill(null);
-        indices.forEach((i) => { current[i] = personId; });
-        await updateFacePersonIds(uid, photo.id, photo.fileName, photo.imageUrl, current);
-      }
+      await assignPersonToFaces(uid, [...source.faces, ...target.faces], personId);
       setStoredPhotos(await fetchFacePhotos(uid));
     } catch (err) {
       console.error("Merge failed:", err);

@@ -636,18 +636,13 @@ export default function AlbumsPage() {
   }
 
   async function handleDelete(id: string) {
-    const fileName = photos.find((p) => p.id === id)?.fileName;
     try {
       await deletePhotoEverywhere(id);
-      // deletePhotoEverywhere also sweeps every other row sharing this filename —
-      // drop those from local state too, not just the clicked id, so a same-named
-      // duplicate card doesn't linger looking deletable when it's already gone.
-      setPhotos((prev) => prev.filter((p) => p.id !== id && (!fileName || p.fileName !== fileName)));
+      setPhotos((prev) => prev.filter((p) => p.id !== id));
     } catch (err) {
-      // A duplicate-filename sibling delete earlier in this session may have already
-      // swept this exact row — treat that as already-deleted, not a real failure.
+      // Already gone (e.g. deleted in another tab) — just drop it locally.
       if (err instanceof Error && err.message === "Photo not found or already deleted") {
-        setPhotos((prev) => prev.filter((p) => p.id !== id && (!fileName || p.fileName !== fileName)));
+        setPhotos((prev) => prev.filter((p) => p.id !== id));
       } else {
         console.error("Delete failed:", err);
         alert("Couldn't delete this photo. Please try again.");

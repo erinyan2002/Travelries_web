@@ -10,7 +10,7 @@ import AnimatedNumber from "@/components/AnimatedNumber";
 import { fadeUp, staggerContainer } from "@/lib/motion";
 import { supabase } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
-import { fetchMapPhotos, fetchFacePhotos, upsertPhoto, renamePhoto } from "@/lib/photosApi";
+import { fetchMapPhotos, fetchFacePhotos, upsertPhoto, renamePhoto, uploadToUserPhotos, migrateInlineImages } from "@/lib/photosApi";
 import { fetchPeople, Person } from "@/lib/peopleApi";
 import {
   Camera, Upload, MapPin, Users, CalendarDays, Clock,
@@ -80,26 +80,6 @@ type PhotoInfo = {
   faceBoxes: Array<{ x: number; y: number; width: number; height: number }>;
 };
 
-
-function base64ToBlob(dataUrl: string): { blob: Blob; mimeType: string } {
-  const [header, data] = dataUrl.split(",");
-  const mimeType = header.match(/:(.*?);/)?.[1] ?? "image/jpeg";
-  const binary = atob(data);
-  const arr = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
-  return { blob: new Blob([arr], { type: mimeType }), mimeType };
-}
-
-async function uploadToUserPhotos(uid: string, photoId: string, dataUrl: string): Promise<string> {
-  const { blob, mimeType } = base64ToBlob(dataUrl);
-  const ext = mimeType.split("/")[1] ?? "jpg";
-  const path = `${uid}/${photoId}.${ext}`;
-  const { error } = await supabase.storage
-    .from("user-photos")
-    .upload(path, blob, { contentType: mimeType });
-  if (error) throw new Error(error.message);
-  return supabase.storage.from("user-photos").getPublicUrl(path).data.publicUrl;
-}
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -557,6 +537,8 @@ export default function HomePage() {
       const uid = user?.id ?? "guest";
       if (uid === "guest") return;
       setPeople(await fetchPeople(uid));
+      // Background, non-blocking: move any old inline-base64 images to Storage.
+      if ((await migrateInlineImages(uid)) > 0) refreshStats();
     })();
   }, []);
 
@@ -708,6 +690,7 @@ export default function HomePage() {
       // instead of racing to mint its own.
       const photoId = lastFacePhotoIdRef.current ?? crypto.randomUUID();
       lastFacePhotoIdRef.current = photoId;
+      const imageUrl = await uploadToUserPhotos(uid, photoId, dataUrl);
       await upsertPhoto(uid, {
         id: photoId,
         // The live current name, not the File object's original name — so a
@@ -715,7 +698,7 @@ export default function HomePage() {
         // updates synchronously; this whole function's own closure over `file`
         // wouldn't see it otherwise) actually lands on the row.
         fileName: customFileNameRef.current || file.name,
-        imageUrl: dataUrl,
+        imageUrl,
         faceCount: boxes.length,
         isFacePhoto: true,
         ...(boxes.length > 0       && { boxes }),
@@ -1000,15 +983,9 @@ export default function HomePage() {
         const dataUrl = await createThumbnailDataUrl(file, 1024, 0.90);
         const photoId = crypto.randomUUID();
 
-        // Upload to Supabase Storage; fall back to base64 if it fails
-        let imageUrl = dataUrl;
-        if (uid !== "guest") {
-          try {
-            imageUrl = await uploadToUserPhotos(uid, photoId, dataUrl);
-          } catch (uploadErr) {
-            console.warn(`Supabase upload failed for ${file.name}, storing locally:`, uploadErr);
-          }
-        }
+        // A failed upload throws into this file's catch below (marked as an error
+        // in the batch panel) rather than saving the image inline in the DB row.
+        const imageUrl = uid !== "guest" ? await uploadToUserPhotos(uid, photoId, dataUrl) : dataUrl;
 
         if (uid !== "guest") {
           await upsertPhoto(uid, {
@@ -1128,13 +1105,7 @@ export default function HomePage() {
       lastFacePhotoIdRef.current = photoId;
       const dataUrl = await createThumbnailDataUrl(selectedFile, 1024, 0.90);
 
-      // Upload to Supabase Storage; fall back to base64 if it fails
-      let imageUrl = dataUrl;
-      try {
-        imageUrl = await uploadToUserPhotos(uid, photoId, dataUrl);
-      } catch (uploadErr) {
-        console.warn("Supabase upload failed, storing locally:", uploadErr);
-      }
+      const imageUrl = await uploadToUserPhotos(uid, photoId, dataUrl);
 
       await upsertPhoto(uid, {
         id: photoId,

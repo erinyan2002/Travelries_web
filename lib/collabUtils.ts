@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { MapPhoto } from "./types";
+import { base64ToBlob } from "./imageUtils";
 
 export type CollabAlbum = {
   id: string;
@@ -49,15 +50,6 @@ export type CollabComment = {
   content: string;
   created_at: string;
 };
-
-function base64ToBlob(dataUrl: string): { blob: Blob; mimeType: string } {
-  const [header, data] = dataUrl.split(",");
-  const mimeType = header.match(/:(.*?);/)?.[1] ?? "image/jpeg";
-  const binary = atob(data);
-  const arr = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
-  return { blob: new Blob([arr], { type: mimeType }), mimeType };
-}
 
 export async function createAlbum(name: string, description: string): Promise<CollabAlbum> {
   const { data: { user } } = await supabase.auth.getUser();
