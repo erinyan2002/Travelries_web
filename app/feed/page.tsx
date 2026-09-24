@@ -7,7 +7,8 @@ import BottomNav from "@/components/BottomNav";
 import PageHero from "@/components/PageHero";
 import Avatar from "@/components/Avatar";
 import { supabase } from "@/lib/supabase";
-import { fetchMapPhotos } from "@/lib/photosApi";
+import { fetchMapPhotos, fetchPhotoPersonIds } from "@/lib/photosApi";
+import { fetchPeople } from "@/lib/peopleApi";
 import { MapPhoto } from "@/lib/types";
 import CommentThread from "@/components/CommentThread";
 import ShareToModal from "@/components/ShareToModal";
@@ -15,7 +16,7 @@ import {
   ensureProfile, searchProfiles, getFollowCounts, getFollowingIds,
   followUser, unfollowUser, createPost, deletePost, fetchFeed, toggleLike, createRepost,
   tagUserInPost,
-  fetchFollowingProfiles, fetchFollowerProfiles,
+  fetchFollowingProfiles, fetchFollowerProfiles, profilesByIds,
   Profile, Post,
 } from "@/lib/socialUtils";
 import {
@@ -46,6 +47,25 @@ function NewPostModal({
   const [tagQuery,   setTagQuery]   = useState("");
   const [tagResults, setTagResults] = useState<Profile[]>([]);
   const [tagged,     setTagged]     = useState<Profile[]>([]);
+  const [suggested,  setSuggested]  = useState<Profile[]>([]);
+
+  // Faces in the picked photo that were linked to a real account on the Faces
+  // page become one-tap tag suggestions.
+  async function selectPhoto(p: MapPhoto) {
+    setSelected(p);
+    setSuggested([]);
+    try {
+      const personIds = await fetchPhotoPersonIds(uid, p.id);
+      if (personIds.length === 0) return;
+      const people = await fetchPeople(uid);
+      const userIds = [...new Set(people
+        .filter((person) => personIds.includes(person.id) && person.linkedUserId && person.linkedUserId !== uid)
+        .map((person) => person.linkedUserId!))];
+      if (userIds.length > 0) setSuggested(await profilesByIds(userIds));
+    } catch (err) {
+      console.warn("Loading tag suggestions failed:", err);
+    }
+  }
 
   async function handleTagSearch(q: string) {
     setTagQuery(q);
@@ -85,7 +105,7 @@ function NewPostModal({
             )}
             {photos.map((p) => (
               // eslint-disable-next-line @next/next/no-img-element
-              <img key={p.id} src={p.imageUrl} alt={p.fileName} onClick={() => setSelected(p)}
+              <img key={p.id} src={p.imageUrl} alt={p.fileName} onClick={() => selectPhoto(p)}
                 className="w-full h-24 object-cover rounded-lg cursor-pointer hover:opacity-80 transition-opacity border border-slate-100" />
             ))}
           </div>
@@ -109,6 +129,17 @@ function NewPostModal({
                       {t.name || "Traveler"}
                       <button onClick={() => removeTag(t.id)} className="hover:text-blue-900"><X size={11} /></button>
                     </span>
+                  ))}
+                </div>
+              )}
+              {suggested.some((p) => !tagged.some((t) => t.id === p.id)) && (
+                <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                  <span className="text-[11px] font-semibold text-slate-400">In this photo:</span>
+                  {suggested.filter((p) => !tagged.some((t) => t.id === p.id)).map((p) => (
+                    <button key={p.id} onClick={() => addTag(p)}
+                      className="flex items-center gap-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-xs font-bold px-2.5 py-1 rounded-full transition-colors">
+                      + {p.name || "Traveler"}
+                    </button>
                   ))}
                 </div>
               )}

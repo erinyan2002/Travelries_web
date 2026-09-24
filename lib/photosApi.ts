@@ -305,3 +305,16 @@ export async function migrateInlineImages(uid: string): Promise<number> {
   }
   return moved;
 }
+
+// The manual person tags (people.id per face) on one photo — used to suggest
+// post tags for a photo whose faces are linked to real accounts.
+export async function fetchPhotoPersonIds(uid: string, photoId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("photos")
+    .select("person_ids")
+    .eq("id", photoId)
+    .eq("user_id", uid)
+    .maybeSingle();
+  if (error || !data) return [];
+  return ((data.person_ids as (string | null)[] | null) ?? []).filter((p): p is string => !!p);
+}

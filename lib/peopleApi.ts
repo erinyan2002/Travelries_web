@@ -5,19 +5,26 @@
 // from clusterByPerson()'s descriptor-distance grouping in app/faces/page.tsx.
 import { supabase } from "./supabase";
 
-export type Person = { id: string; name: string; createdAt: string };
+// linkedUserId: an app account this person is (see 0012_people_linked_user.sql)
+// — used to suggest tagging them when posting a photo with their face.
+export type Person = { id: string; name: string; createdAt: string; linkedUserId?: string | null };
 
 export async function fetchPeople(uid: string): Promise<Person[]> {
-  const { data, error } = await supabase
-    .from("people")
-    .select("id, name, created_at")
-    .eq("user_id", uid)
-    .order("name");
+  const query = (cols: string) => supabase.from("people").select(cols).eq("user_id", uid).order("name");
+  let { data, error } = await query("id, name, created_at, linked_user_id");
+  // linked_user_id only exists once 0012 has been run — don't let a missing
+  // migration take down the whole Faces page, just drop the link feature.
+  if (error) ({ data, error } = await query("id, name, created_at"));
   if (error) {
     console.error("fetchPeople failed:", error);
     return [];
   }
-  return (data ?? []).map((r) => ({ id: r.id as string, name: r.name as string, createdAt: r.created_at as string }));
+  return ((data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
+    id: r.id as string,
+    name: r.name as string,
+    createdAt: r.created_at as string,
+    linkedUserId: (r.linked_user_id as string | null | undefined) ?? null,
+  }));
 }
 
 export async function createPerson(uid: string, name: string): Promise<Person> {
@@ -32,5 +39,10 @@ export async function createPerson(uid: string, name: string): Promise<Person> {
 
 export async function renamePerson(personId: string, name: string): Promise<void> {
   const { error } = await supabase.from("people").update({ name }).eq("id", personId);
+  if (error) throw new Error(error.message);
+}
+
+export async function linkPersonToUser(personId: string, userId: string | null): Promise<void> {
+  const { error } = await supabase.from("people").update({ linked_user_id: userId }).eq("id", personId);
   if (error) throw new Error(error.message);
 }

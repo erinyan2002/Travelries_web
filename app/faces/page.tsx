@@ -6,7 +6,8 @@ import { supabase } from "@/lib/supabase";
 import { FacePhoto } from "@/lib/types";
 import { fetchFacePhotos, updateFacePersonIds, removeFaceFromPhoto } from "@/lib/photosApi";
 import { deletePhotoEverywhere } from "@/lib/savedUtils";
-import { fetchPeople, createPerson, renamePerson, Person } from "@/lib/peopleApi";
+import { fetchPeople, createPerson, renamePerson, linkPersonToUser, Person } from "@/lib/peopleApi";
+import { fetchFollowingProfiles, fetchFollowerProfiles, Profile } from "@/lib/socialUtils";
 import { FaceEntry, PersonCluster, MATCH_THRESHOLD, buildPersonGroups } from "@/lib/faceClustering";
 import { useRouter } from "next/navigation";
 import {
@@ -344,6 +345,7 @@ export default function FacesPage() {
   const [uid,             setUid]             = useState<string | null>(null);
   const [people,          setPeople]          = useState<Person[]>([]);
   const [merging,         setMerging]         = useState<string | null>(null);
+  const [friends,         setFriends]         = useState<Profile[]>([]);
   const router = useRouter();
 
   useEffect(() => {
@@ -379,6 +381,13 @@ export default function FacesPage() {
             console.error("Migrating face labels failed:", err);
           }
         }
+      }
+
+      if (u !== "guest") {
+        // Anyone you follow or who follows you can be linked to a person here.
+        const [following, followers] = await Promise.all([fetchFollowingProfiles(u), fetchFollowerProfiles(u)]);
+        const byId = new Map([...following, ...followers].map((p) => [p.id, p]));
+        setFriends([...byId.values()].sort((a, b) => (a.name || "").localeCompare(b.name || "")));
       }
 
       setStoredPhotos(faces);
@@ -525,6 +534,30 @@ export default function FacesPage() {
       alert("Couldn't merge these people. Please try again.");
     } finally {
       setMerging(null);
+    }
+  }
+
+  // Links a Person card to a friend's account so posting a photo with this face
+  // suggests tagging them (see NewPostModal in app/feed/page.tsx). An auto-cluster
+  // is first turned into a real person, named after the friend.
+  async function handleLink(cluster: PersonCluster, userId: string | null) {
+    if (!uid) return;
+    try {
+      let personId = cluster.personId;
+      if (!personId) {
+        if (!userId) return;
+        const friend = friends.find((f) => f.id === userId);
+        const created = await createPerson(uid, friend?.name || "Friend");
+        await assignPersonToFaces(uid, cluster.faces, created.id);
+        personId = created.id;
+        setPeople((prev) => [...prev, created]);
+        setStoredPhotos(await fetchFacePhotos(uid));
+      }
+      await linkPersonToUser(personId, userId);
+      setPeople((prev) => prev.map((p) => (p.id === personId ? { ...p, linkedUserId: userId } : p)));
+    } catch (err) {
+      console.error("Link failed:", err);
+      alert("Couldn't link this person. If this keeps happening, run supabase/migrations/0012_people_linked_user.sql.");
     }
   }
 
@@ -718,6 +751,24 @@ export default function FacesPage() {
                                   ))}
                                 </select>
                               )}
+                              {friends.length > 0 && (() => {
+                                const linkedId = people.find((p) => p.id === cluster.personId)?.linkedUserId ?? "";
+                                const linked = friends.find((f) => f.id === linkedId);
+                                return (
+                                  <select
+                                    value={linkedId}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={(e) => { e.stopPropagation(); handleLink(cluster, e.target.value || null); }}
+                                    className={`mt-1.5 w-full text-[10px] font-bold px-2 py-1 rounded-full border outline-none appearance-none text-center ${
+                                      linked ? "text-emerald-600 bg-emerald-50 border-emerald-100" : "text-slate-400 bg-slate-50 hover:bg-slate-100 border-slate-100"}`}
+                                  >
+                                    <option value="">{linked ? "Unlink account" : "👤 Link account…"}</option>
+                                    {friends.map((f) => (
+                                      <option key={f.id} value={f.id}>{f.id === linkedId ? `✓ ${f.name || "Traveler"}` : f.name || "Traveler"}</option>
+                                    ))}
+                                  </select>
+                                );
+                              })()}
                             </div>
                           );
                         })}
