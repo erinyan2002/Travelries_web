@@ -51,7 +51,7 @@ ALLOWED_ORIGINS=...   # optional, comma-separated extra CORS origins (e.g. the V
 
 **Travelries** is a travel photo app: upload photos (one or many) → extract GPS + EXIF → run client-side face detection → save to map/albums. It is a PWA (`app/manifest.ts`, `/pwa-icon-192` and `/pwa-icon-512` routes).
 
-The backend URL comes from `lib/backend.ts` (`NEXT_PUBLIC_BACKEND_URL`, default `http://localhost:8000`). The localhost default only works when the browser and the backend are on the same machine, so the deployed Vercel site stays in browser mode unless a deployed backend URL is set there and added to the backend's `ALLOWED_ORIGINS`. Every main page opens with the shared `components/PageHero.tsx` banner rather than a per-page header.
+The backend URL comes from `lib/backend.ts` (`NEXT_PUBLIC_BACKEND_URL`, default `http://localhost:8000`). The localhost default only works when the browser and the backend are on the same machine, so the deployed Vercel site stays in browser mode unless a deployed backend URL is set there and added to the backend's `ALLOWED_ORIGINS`. Every main page opens with the shared `components/PageHero.tsx` banner rather than a per-page header. Shared visual primitives live in `app/globals.css` (`tv-card`, `tv-modal`, `tv-overlay`, `tv-select`, `tv-btn-primary`/`tv-btn-soft`, plus the Pretendard font and the fixed pastel `body` background). Pages leave `<main>` transparent, so reuse these classes instead of re-spelling card, modal or button styles.
 
 ### Data storage split
 
