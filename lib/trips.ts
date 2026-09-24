@@ -1,0 +1,125 @@
+// Trip detection for the Albums "Trips" view: photos are split into trips by
+// date gaps, then each trip is split again by GPS location clusters.
+import { MapPhoto } from "./types";
+
+// Stable cache key for a trip's diary — the trip grouping itself is recomputed
+// client-side from the currently filtered photo list, so trip.id (an array index)
+// isn't safe to persist against. The sorted photo-id set is.
+export function tripKeyOf(trip: Trip): string {
+  return trip.photos.map((p) => p.id).sort().join(",");
+}
+
+export type Trip = {
+  id: string;
+  name: string;
+  dateRange: string;
+  photos: MapPhoto[];
+  locations: string[];
+};
+
+export function getPhotoDate(p: MapPhoto): Date {
+  // captureTimestamp (ISO) first — captureDate is a locale-formatted display
+  // string and only parsed below as a fallback for rows saved before it existed.
+  if (p.captureTimestamp) {
+    const t = new Date(p.captureTimestamp);
+    if (!isNaN(t.getTime())) return t;
+  }
+  const raw = (p.captureDate && p.captureDate !== "Not available" && p.captureDate !== "날짜 없음")
+    ? p.captureDate : p.uploadedAt;
+  if (!raw) return new Date(0);
+  let d = new Date(raw);
+  if (isNaN(d.getTime())) {
+    const m = raw.match(/(\d{4})[.\-\s]+(\d{1,2})[.\-\s]+(\d{1,2})/);
+    if (m) d = new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+  }
+  return isNaN(d.getTime()) ? new Date(0) : d;
+}
+
+export function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+export function clusterByGps(photos: MapPhoto[], radiusKm = 1.5): { centLat: number; centLng: number; photos: MapPhoto[]; name: string }[] {
+  const clusters: { centLat: number; centLng: number; photos: MapPhoto[]; name: string }[] = [];
+  const noGps: MapPhoto[] = [];
+
+  for (const photo of photos) {
+    if (photo.lat == null || photo.lng == null) { noGps.push(photo); continue; } // 0 is a valid coordinate
+    let nearest: typeof clusters[0] | null = null;
+    let minDist = Infinity;
+    for (const c of clusters) {
+      const d = haversineKm(photo.lat, photo.lng, c.centLat, c.centLng);
+      if (d < minDist) { minDist = d; nearest = c; }
+    }
+    if (nearest && minDist <= radiusKm) {
+      const n = nearest.photos.length + 1;
+      nearest.centLat = (nearest.centLat * (n - 1) + photo.lat) / n;
+      nearest.centLng = (nearest.centLng * (n - 1) + photo.lng) / n;
+      nearest.photos.push(photo);
+    } else {
+      clusters.push({ centLat: photo.lat, centLng: photo.lng, photos: [photo], name: photo.location?.split(",")[0]?.trim() || "Unknown" });
+    }
+  }
+
+  if (noGps.length > 0) {
+    if (clusters.length > 0) {
+      clusters.reduce((a, b) => a.photos.length >= b.photos.length ? a : b).photos.push(...noGps);
+    } else {
+      clusters.push({ centLat: 0, centLng: 0, photos: noGps, name: "Unknown location" });
+    }
+  }
+
+  return clusters.sort((a, b) => b.photos.length - a.photos.length);
+}
+
+export function detectTrips(photos: MapPhoto[], gapDays = 4): Trip[] {
+  if (photos.length === 0) return [];
+  const dated = photos
+    .map(p => ({ photo: p, date: getPhotoDate(p) }))
+    .filter(({ date }) => date.getTime() > 0)
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
+  if (dated.length === 0) return [];
+
+  // Step 1: group by date gap
+  const dateGroups: { photo: MapPhoto; date: Date }[][] = [];
+  let current: { photo: MapPhoto; date: Date }[] = [];
+  for (const item of dated) {
+    if (current.length === 0) { current.push(item); continue; }
+    const gap = (item.date.getTime() - current[current.length - 1].date.getTime()) / 86400000;
+    if (gap > gapDays) { dateGroups.push(current); current = [item]; }
+    else current.push(item);
+  }
+  if (current.length > 0) dateGroups.push(current);
+
+  const fmt = (d: Date) =>
+    `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
+
+  const trips: Trip[] = [];
+
+  // Step 2: within each date group, split by GPS location clusters
+  for (const group of dateGroups) {
+    const ps = group.map(g => g.photo);
+    const ds = group.map(g => g.date);
+    const start = ds[0], end = ds[ds.length - 1];
+    const range = fmt(start) === fmt(end) ? fmt(start) : `${fmt(start)} – ${fmt(end)}`;
+
+    const locClusters = clusterByGps(ps);
+
+    for (const lc of locClusters) {
+      const clusterDates = lc.photos.map(p => getPhotoDate(p)).filter(d => d.getTime() > 0).sort((a, b) => a.getTime() - b.getTime());
+      const cStart = clusterDates[0] ?? start;
+      const cEnd = clusterDates[clusterDates.length - 1] ?? end;
+      const cRange = locClusters.length === 1
+        ? range
+        : fmt(cStart) === fmt(cEnd) ? fmt(cStart) : `${fmt(cStart)} – ${fmt(cEnd)}`;
+      const locs = [...new Set(lc.photos.map(p => p.location?.split(",")[0]?.trim()).filter(Boolean))] as string[];
+      trips.push({ id: `trip-${trips.length}`, name: lc.name, dateRange: cRange, photos: lc.photos, locations: locs });
+    }
+  }
+
+  return trips.reverse();
+}

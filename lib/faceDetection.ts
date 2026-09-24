@@ -3,6 +3,7 @@
 // fallbacks. See the "Face detection" section of CLAUDE.md.
 import * as faceapi from "face-api.js";
 import { detectFacesMediaPipe } from "./mediapipeDetector";
+import { boxIoU, pickCropMatch, dedupeFaces } from "./faceMatching";
 
 export type DetectionResult = {
   count:       number;
@@ -13,35 +14,6 @@ export type DetectionResult = {
   genders:     string[];
   expressions: string[];
 };
-
-function boxIoU(
-  a: { x: number; y: number; width: number; height: number },
-  b: { x: number; y: number; width: number; height: number }
-): number {
-  const x1 = Math.max(a.x, b.x), y1 = Math.max(a.y, b.y);
-  const x2 = Math.min(a.x + a.width, b.x + b.width);
-  const y2 = Math.min(a.y + a.height, b.y + b.height);
-  const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
-  if (inter === 0) return 0;
-  return inter / (a.width * a.height + b.width * b.height - inter);
-}
-
-function descriptorDistance(a: number[], b: number[]): number {
-  if (!a.length || a.length !== b.length) return Infinity;
-  let sum = 0;
-  for (let i = 0; i < a.length; i++) sum += (a[i] - b[i]) ** 2;
-  return Math.sqrt(sum);
-}
-
-// A face-api detection inside a MediaPipe crop must overlap that MediaPipe box
-// at least this much to count as confirming it (rather than being a neighbour's
-// face that also fell inside the padded crop).
-const CROP_MATCH_IOU = 0.3;
-// Final same-face dedupe. The same face seen through two slightly different
-// crops gives descriptors ~0.1-0.3 apart; two different people in one photo are
-// essentially never under 0.4 (face-api's own same-person threshold is 0.6).
-const DEDUPE_IOU = 0.4;
-const DEDUPE_DESC_DIST = 0.4;
 
 export async function runFaceDetection(
   imgEl: HTMLImageElement,
@@ -130,16 +102,7 @@ export async function runFaceDetection(
       // the neighbour's fully-visible face, not this box's partially-cut one —
       // so the neighbour got counted twice and this person vanished. Only accept
       // the face-api detection that actually overlaps THIS MediaPipe box.
-      const pickMatch = (cands: Confirmed[]): Confirmed | null => {
-        let best: Confirmed | null = null, bestIoU = CROP_MATCH_IOU;
-        for (const c of cands) {
-          const ov = boxIoU(c.box, box);
-          if (ov >= bestIoU) { best = c; bestIoU = ov; }
-        }
-        return best;
-      };
-
-      const match = pickMatch(await detectInCrop(tinyOpts)) ?? pickMatch(await detectInCrop(retryOpts));
+      const match = pickCropMatch(await detectInCrop(tinyOpts), box) ?? pickCropMatch(await detectInCrop(retryOpts), box);
       if (!match) {
         // face-api found no face matching this box even on the permissive retry —
         // treat that as MediaPipe having localized non-face content (its own
@@ -157,12 +120,7 @@ export async function runFaceDetection(
     // real face (overlapping crops). One person can't appear twice in one photo,
     // so drop any face that overlaps or is a near-identical descriptor match of a
     // higher-scoring one already kept.
-    const kept: Confirmed[] = [];
-    for (const c of [...confirmed].sort((a, b) => b.score - a.score)) {
-      const dup = kept.some((k) =>
-        boxIoU(c.box, k.box) >= DEDUPE_IOU || descriptorDistance(c.descriptor, k.descriptor) < DEDUPE_DESC_DIST);
-      if (!dup) kept.push(c);
-    }
+    const kept = dedupeFaces(confirmed);
     kept.sort((a, b) => a.box.x - b.box.x); // stable left-to-right numbering
 
     return {
