@@ -12,6 +12,7 @@ import os
 import time
 from typing import Optional
 
+import httpx
 from google import genai
 from google.genai import errors, types
 from PIL import Image
@@ -19,41 +20,66 @@ from pydantic import BaseModel
 
 logger = logging.getLogger("gemini_utils")
 
-MODEL = "gemini-3.5-flash-lite"
+# Tried in order; a busy/slow model falls through to the next one immediately
+# instead of sleeping and retrying the same overloaded model. Benchmarked
+# 2026-09-25 on the free tier: gemini-3.5-flash with minimal thinking answered a
+# diary in ~1.7s, while gemini-3.5-flash-lite (the old sole model) took up to
+# 110s or hit 503/504. `thinking_level` values are model-specific (flash-lite
+# and newer flashes reject MINIMAL), so only the first entry sets one.
+MODEL_CHAIN: list[tuple[str, Optional[types.ThinkingConfig]]] = [
+    ("gemini-3.5-flash", types.ThinkingConfig(thinking_level="minimal")),
+    ("gemini-3.5-flash-lite", None),
+    ("gemini-3.1-flash-lite", None),
+]
+MODEL = MODEL_CHAIN[0][0]  # for logging
+
+# Per-attempt HTTP timeout, so one stalled model can't hang the request —
+# the next model in the chain gets a turn instead.
+PER_CALL_TIMEOUT_MS = 15_000
 
 # Landmark photos are analyzed once and cached (see lib/photosApi.ts saveLandmarkResult),
 # so this only bounds cost on the rare request that skips the client-side resize.
 MAX_IMAGE_DIMENSION = 1024
 
-# The free tier regularly answers 503 "model is experiencing high demand" (and
-# 429 when rate-limited) for a few seconds at a time — a short backoff retry
-# turns most of those into a success instead of an error shown to the user.
-RETRY_DELAYS_S = (2, 5)
-RETRYABLE_STATUS = {429, 500, 503}
+# Overload/rate-limit/timeout answers worth handing to the next model.
+FALLTHROUGH_STATUS = {429, 500, 503, 504}
 
 
-def _generate_with_retry(client, **kwargs):
-    for attempt, delay in enumerate((*RETRY_DELAYS_S, None)):
+def _generate_with_fallback(client, *, config: types.GenerateContentConfig, **kwargs):
+    """Runs generate_content down MODEL_CHAIN. Returns (response, model_name)."""
+    last_exc: Exception | None = None
+    for model, thinking in MODEL_CHAIN:
+        cfg = config.model_copy(update={
+            "thinking_config": thinking,
+            # No tools are passed, so automatic function calling is pure overhead.
+            "automatic_function_calling": types.AutomaticFunctionCallingConfig(disable=True),
+        })
+        t = time.monotonic()
         try:
-            return client.models.generate_content(**kwargs)
+            return client.models.generate_content(model=model, config=cfg, **kwargs), model
         except errors.APIError as e:
-            if delay is None or getattr(e, "code", None) not in RETRYABLE_STATUS:
+            if getattr(e, "code", None) not in FALLTHROUGH_STATUS:
                 raise
-            logger.warning("Gemini %s on attempt %d — retrying in %ss", e.code, attempt + 1, delay)
-            time.sleep(delay)
+            last_exc = e
+            logger.warning("Gemini %s from %s after %.1fs — trying next model", e.code, model, time.monotonic() - t)
+        except httpx.TimeoutException as e:
+            last_exc = e
+            logger.warning("Gemini %s timed out after %.1fs — trying next model", model, time.monotonic() - t)
+    assert last_exc is not None
+    raise last_exc
 
 
 def friendly_error(e: Exception) -> str:
     """User-facing message for a failed Gemini call (shown in the app)."""
     code = getattr(e, "code", None)
-    if code in (429, 503):
+    if code in FALLTHROUGH_STATUS or isinstance(e, httpx.TimeoutException):
         return "The AI service is busy right now. Please try again in a minute."
     return str(e)
 
 
 class LandmarkResult(BaseModel):
     landmark: Optional[str]      # e.g. "Gyeongbokgung Palace", or null if none recognized
-    confidence: str              # "high" | "medium" | "low"
+    confidence: Optional[str] = None  # "high" | "medium" | "low"; null when no landmark
     description: Optional[str]   # one short sentence, or null
 
 
@@ -63,7 +89,10 @@ def _client() -> genai.Client:
             "GOOGLE_API_KEY is not set — get a free key at aistudio.google.com/apikey "
             "and set it in the environment before calling this endpoint."
         )
-    return genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
+    return genai.Client(
+        api_key=os.environ["GOOGLE_API_KEY"],
+        http_options=types.HttpOptions(timeout=PER_CALL_TIMEOUT_MS),
+    )
 
 
 def generate_travel_diary(entries: list[dict], language: str = "ko") -> str:
@@ -86,9 +115,8 @@ def generate_travel_diary(entries: list[dict], language: str = "ko") -> str:
     start = time.monotonic()
     try:
         client = _client()  # kept alive for the duration of the call — see recognize_landmark for why
-        response = _generate_with_retry(
+        response, used_model = _generate_with_fallback(
             client,
-            model=MODEL,
             contents=f"Photos from this trip, in order:\n{photo_summary}",
             config=types.GenerateContentConfig(
                 system_instruction=(
@@ -107,7 +135,7 @@ def generate_travel_diary(entries: list[dict], language: str = "ko") -> str:
     usage = response.usage_metadata
     logger.info(
         "generate_travel_diary ok in %.2fs — model=%s photos=%d input_tokens=%d output_tokens=%d",
-        time.monotonic() - start, MODEL, len(entries),
+        time.monotonic() - start, used_model, len(entries),
         usage.prompt_token_count or 0, usage.candidates_token_count or 0,
     )
     return response.text or ""
@@ -148,9 +176,8 @@ def recognize_landmark(
         # garbage-collected (closing its httpx client) before that thread runs,
         # raising "Cannot send a request, as the client has been closed."
         client = _client()
-        response = _generate_with_retry(
+        response, used_model = _generate_with_fallback(
             client,
-            model=MODEL,
             contents=[
                 types.Part.from_bytes(data=image_bytes, mime_type=media_type),
                 (
@@ -158,22 +185,26 @@ def recognize_landmark(
                     + location_hint +
                     " If yes, name it and rate your confidence. If no specific landmark is "
                     "recognizable (e.g. a generic street, beach, or indoor scene), set landmark to null."
+                    ' Reply with ONLY this JSON: {"landmark": string or null, '
+                    '"confidence": "high" | "medium" | "low" | null, "description": one short sentence or null}'
                 ),
             ],
+            # JSON mode WITHOUT response_schema: with a schema attached,
+            # gemini-3.5-flash stalled past 90s on a photo it answered in ~3s
+            # as plain JSON (measured 2026-09-25). Shape is validated below instead.
             config=types.GenerateContentConfig(
                 max_output_tokens=512,
                 response_mime_type="application/json",
-                response_schema=LandmarkResult,
             ),
         )
     except Exception:
         logger.exception("recognize_landmark failed after %.2fs (model=%s, bytes=%d)", time.monotonic() - start, MODEL, len(image_bytes))
         raise
     usage = response.usage_metadata
-    result: LandmarkResult = response.parsed
+    result = LandmarkResult.model_validate_json(response.text or "{}")
     logger.info(
         "recognize_landmark ok in %.2fs — model=%s input_tokens=%d output_tokens=%d result=%r",
-        time.monotonic() - start, MODEL,
+        time.monotonic() - start, used_model,
         usage.prompt_token_count or 0, usage.candidates_token_count or 0, result.landmark,
     )
     return result
