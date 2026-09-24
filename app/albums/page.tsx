@@ -12,6 +12,7 @@ import {
   X, CalendarDays, SlidersHorizontal, Search, Calendar, Share2, Loader2, MapPin, Sparkles, LayoutTemplate,
 } from "lucide-react";
 import { sharePhoto } from "@/lib/shareUtils";
+import { shareTrip } from "@/lib/tripShareUtils";
 import ShareCardModal from "@/components/ShareCardModal";
 import { loadImage, drawImageCover } from "@/lib/canvasCard";
 import { BACKEND_URL } from "@/lib/backend";
@@ -144,7 +145,7 @@ function ShareLinkModal({ url, onClose }: { url: string; onClose: () => void }) 
           <p className="font-bold text-slate-900">Share link ready!</p>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1"><X size={18} /></button>
         </div>
-        <p className="text-xs text-slate-400 mb-3">Anyone with this link can view the photo.</p>
+        <p className="text-xs text-slate-400 mb-3">Anyone with this link can view it — no account needed.</p>
         <div className="flex gap-2">
           <input readOnly value={url}
             className="flex-1 text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-slate-600 truncate outline-none" />
@@ -422,6 +423,7 @@ export default function AlbumsPage() {
   const [selectedPhoto,    setSelectedPhoto]    = useState<MapPhoto | null>(null);
   const [savedIds,         setSavedIds]         = useState<Set<string>>(new Set());
   const [sharingId,        setSharingId]        = useState<string | null>(null);
+  const [sharingTripKey,   setSharingTripKey]   = useState<string | null>(null);
   const [shareResultUrl,   setShareResultUrl]   = useState<string | null>(null);
   const [confirmDeleteId,  setConfirmDeleteId]  = useState<string | null>(null);
   const [personFilterNames, setPersonFilterNames] = useState<Set<string> | null>(null); // legacy ?faceNames= links
@@ -569,6 +571,21 @@ export default function AlbumsPage() {
       alert(`Failed to create share link:\n${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setSharingId(null);
+    }
+  }
+
+  // Public link for the whole trip (/trip/[id]) — includes the AI diary if one
+  // was already generated/cached for it, but never triggers a new generation.
+  async function handleShareTrip(trip: Trip) {
+    const key = tripKeyOf(trip);
+    setSharingTripKey(key);
+    try {
+      const diary = uid ? await fetchTripDiary(uid, key) : null;
+      setShareResultUrl(await shareTrip(trip, diary));
+    } catch (err) {
+      alert(`Failed to create trip link:\n${err instanceof Error ? err.message : String(err)}\n\nIf this keeps happening, run supabase/migrations/0013_trip_shares.sql.`);
+    } finally {
+      setSharingTripKey(null);
     }
   }
 
@@ -851,6 +868,12 @@ export default function AlbumsPage() {
                       onClick={() => handleGenerateDiary(trip)}
                       className="flex-1 flex items-center justify-center gap-1.5 text-sm font-bold text-slate-500 hover:text-blue-600 hover:bg-blue-50 py-3 transition-colors">
                       <Sparkles size={14} /> AI Diary
+                    </button>
+                    <button
+                      onClick={() => handleShareTrip(trip)}
+                      disabled={sharingTripKey === tripKeyOf(trip)}
+                      className="flex-1 flex items-center justify-center gap-1.5 text-sm font-bold text-slate-500 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-60 py-3 transition-colors">
+                      {sharingTripKey === tripKeyOf(trip) ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />} Share
                     </button>
                   </div>
 

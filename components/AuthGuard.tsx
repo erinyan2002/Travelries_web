@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase";
 const PUBLIC_PATHS = ["/login", "/signup", "/forgot-password", "/reset-password"];
 
 function isPublicPath(path: string) {
-  return PUBLIC_PATHS.includes(path) || path.startsWith("/share/");
+  return PUBLIC_PATHS.includes(path) || path.startsWith("/share/") || path.startsWith("/trip/");
 }
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
