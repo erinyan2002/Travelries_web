@@ -62,7 +62,7 @@ export default function UserProfilePage() {
   if (loading) return null;
   if (!profile) {
     return (
-      <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28 flex items-center justify-center">
+      <main className="min-h-screen px-6 py-8 pb-28 flex items-center justify-center">
         <p className="text-slate-400 text-sm">User not found.</p>
         <BottomNav />
       </main>
@@ -73,13 +73,13 @@ export default function UserProfilePage() {
   const canSeePosts = isSelf || following;
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28">
+    <main className="min-h-screen px-6 py-8 pb-28">
       <div className="max-w-2xl mx-auto space-y-5">
         <button onClick={() => router.back()} className="flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700 transition-colors">
           <ArrowLeft size={16} /> Back
         </button>
 
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex items-center gap-5">
+        <div className="tv-card p-6 flex items-center gap-5">
           <Avatar name={profile.name || "Traveler"} url={profile.avatar_url} size="lg" />
           <div className="min-w-0 flex-1">
             <p className="text-lg font-bold text-slate-900 truncate">{profile.name || "Traveler"}</p>
@@ -106,13 +106,13 @@ export default function UserProfilePage() {
         </div>
 
         {!canSeePosts ? (
-          <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-14 text-center">
+          <div className="bg-white/60 backdrop-blur-sm rounded-3xl border-2 border-dashed border-sky-200 p-14 text-center">
             <Lock size={28} className="text-slate-300 mx-auto mb-3" />
             <p className="font-bold text-slate-700 mb-1">Follow to see their posts</p>
             <p className="text-slate-400 text-sm">Posts are only visible to people {profile.name || "this traveler"} follows back.</p>
           </div>
         ) : posts.length === 0 ? (
-          <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-14 text-center">
+          <div className="bg-white/60 backdrop-blur-sm rounded-3xl border-2 border-dashed border-sky-200 p-14 text-center">
             <p className="font-bold text-slate-700 mb-1">No posts yet</p>
           </div>
         ) : (

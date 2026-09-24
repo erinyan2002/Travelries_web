@@ -72,9 +72,9 @@ export default function ShareCardModal({ title, fileName, onClose, draw }: Share
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-[5000] flex items-center justify-center p-4 overflow-y-auto" onClick={onClose}>
+    <div className="fixed inset-0 tv-overlay z-[5000] flex items-center justify-center p-4 overflow-y-auto" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl p-4 max-w-xs w-full shadow-2xl flex flex-col items-center gap-3 my-auto max-h-[92vh] overflow-y-auto"
+        className="tv-modal p-4 max-w-xs w-full flex flex-col items-center gap-3 my-auto max-h-[92vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between w-full flex-shrink-0">
@@ -105,7 +105,7 @@ export default function ShareCardModal({ title, fileName, onClose, draw }: Share
             <Download size={15} /> Save
           </button>
           <button onClick={handleShare} disabled={!ready || busy}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 transition-colors disabled:opacity-50">
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 text-white font-bold text-sm hover:from-sky-600 hover:to-blue-700 shadow-md shadow-blue-200/70 transition-all disabled:opacity-50">
             {busy ? <Loader2 size={15} className="animate-spin" /> : <Share2 size={15} />} Share
           </button>
         </div>

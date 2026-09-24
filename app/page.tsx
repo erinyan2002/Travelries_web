@@ -744,7 +744,7 @@ export default function HomePage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28">
+    <main className="min-h-screen px-6 py-8 pb-28">
       <div className="max-w-5xl mx-auto">
 
         {/* Header — soft pastel hero banner */}
@@ -807,7 +807,7 @@ export default function HomePage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
           {/* ── Upload Section ── */}
-          <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <section className="tv-card overflow-hidden">
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
@@ -967,7 +967,7 @@ export default function HomePage() {
           </section>
 
           {/* ── Analysis Result Section ── */}
-          <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <section className="tv-card overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <span className="text-sky-500 font-bold text-lg leading-none">✦</span>

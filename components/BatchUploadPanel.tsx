@@ -36,7 +36,7 @@ export default function BatchUploadPanel({ items, onItemsChange, onRename, onClo
     const saved = items.filter((b) => b.status === "done").length;
     const totalFacesFound = items.reduce((sum, b) => sum + (b.status === "done" ? b.faceCount ?? 0 : 0), 0);
     return (
-      <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-6">
+      <section className="tv-card overflow-hidden mb-6">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-md shadow-blue-200">

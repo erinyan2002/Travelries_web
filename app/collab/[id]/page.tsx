@@ -51,9 +51,9 @@ function InviteModal({ inviteCode, onClose }: { inviteCode: string; onClose: () 
   const canNativeShare = typeof navigator !== "undefined" && !!navigator.share;
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center p-4"
+    <div className="fixed inset-0 tv-overlay z-[3000] flex items-center justify-center p-4"
       onClick={onClose}>
-      <div className="bg-white rounded-2xl max-w-[460px] w-full shadow-2xl"
+      <div className="tv-modal max-w-[460px] w-full"
         onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <div>
@@ -157,9 +157,9 @@ function PhotoPicker({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center p-4"
+    <div className="fixed inset-0 tv-overlay z-[3000] flex items-center justify-center p-4"
       onClick={onClose}>
-      <div className="bg-white rounded-2xl max-w-[600px] w-full shadow-2xl flex flex-col max-h-[85vh]"
+      <div className="tv-modal max-w-[600px] w-full flex flex-col max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <div>
@@ -429,7 +429,7 @@ export default function CollabAlbumPage() {
 
   if (album === undefined) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-slate-400 text-sm animate-pulse">Loading...</div>
       </div>
     );
@@ -437,7 +437,7 @@ export default function CollabAlbumPage() {
 
   if (!album) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 flex items-center justify-center p-4">
+      <div className="min-h-screen flex items-center justify-center p-4">
         <div className="text-center">
           <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <FolderOpen size={28} className="text-slate-300" />
@@ -450,7 +450,7 @@ export default function CollabAlbumPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28">
+    <main className="min-h-screen px-6 py-8 pb-28">
       <div className="max-w-4xl mx-auto">
 
         {/* Header */}
@@ -523,7 +523,7 @@ export default function CollabAlbumPage() {
         {/* Photos */}
         {tab === "photos" && (
           photos.length === 0 ? (
-            <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-16 text-center">
+            <div className="bg-white/60 backdrop-blur-sm rounded-3xl border-2 border-dashed border-sky-200 p-16 text-center">
               <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
                 <Images size={28} className="text-slate-300" />
               </div>

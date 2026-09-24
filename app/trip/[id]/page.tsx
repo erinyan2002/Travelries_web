@@ -26,7 +26,7 @@ export default function TripSharePage() {
 
   if (share === undefined) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-slate-400 text-sm animate-pulse">Loading...</div>
       </div>
     );
@@ -34,7 +34,7 @@ export default function TripSharePage() {
 
   if (!share) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 flex items-center justify-center p-4">
+      <div className="min-h-screen flex items-center justify-center p-4">
         <div className="text-center">
           <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4 opacity-40">
             <AppLogo size="lg" />
@@ -42,7 +42,7 @@ export default function TripSharePage() {
           <p className="font-bold text-slate-700 mb-1">Trip not found</p>
           <p className="text-slate-400 text-sm mb-4">This link may have expired or been removed.</p>
           <Link href="/"
-            className="inline-block px-4 py-2 bg-blue-500 text-white text-sm font-bold rounded-xl hover:bg-blue-600 transition-colors">
+            className="inline-block px-4 py-2 bg-gradient-to-r from-sky-500 to-blue-600 text-white text-sm font-bold rounded-xl hover:bg-gradient-to-r from-sky-500 to-blue-600 transition-all">
             Open Travelries
           </Link>
         </div>
@@ -55,7 +55,7 @@ export default function TripSharePage() {
     .map((p) => ({ lat: p.lat!, lng: p.lng! }));
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-4 py-6">
+    <main className="min-h-screen px-4 py-6">
       <div className="max-w-2xl mx-auto">
         <div className="flex items-center gap-2 mb-4">
           <AppLogo size="sm" />
@@ -88,13 +88,13 @@ export default function TripSharePage() {
         </div>
 
         {points.length > 0 && (
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-2 mb-4">
+          <div className="tv-card p-2 mb-4">
             <TripRouteMap points={points} />
           </div>
         )}
 
         {share.diary && (
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mb-4">
+          <div className="tv-card p-5 mb-4">
             <p className="text-xs font-bold text-blue-500 flex items-center gap-1 mb-2"><Sparkles size={12} /> Travel diary</p>
             <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">{share.diary}</p>
           </div>

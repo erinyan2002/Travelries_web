@@ -140,8 +140,8 @@ function ShareLinkModal({ url, onClose }: { url: string; onClose: () => void }) 
     setTimeout(() => setCopied(false), 2000);
   }
   return (
-    <div className="fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl p-5 max-w-[440px] w-full shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 tv-overlay z-[3000] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="tv-modal p-5 max-w-[440px] w-full" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-1">
           <p className="font-bold text-slate-900">Share link ready!</p>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1"><X size={18} /></button>
@@ -151,7 +151,7 @@ function ShareLinkModal({ url, onClose }: { url: string; onClose: () => void }) 
           <input readOnly value={url}
             className="flex-1 text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-slate-600 truncate outline-none" />
           <button onClick={handleCopy}
-            className="px-4 py-2.5 bg-blue-500 text-white text-sm font-bold rounded-xl hover:bg-blue-600 transition-colors whitespace-nowrap">
+            className="px-4 py-2.5 bg-gradient-to-r from-sky-500 to-blue-600 text-white text-sm font-bold rounded-xl hover:bg-gradient-to-r from-sky-500 to-blue-600 transition-all whitespace-nowrap">
             {copied ? "Copied!" : "Copy"}
           </button>
         </div>
@@ -167,8 +167,8 @@ function DiaryModal({
   onClose: () => void; onRegenerate: () => void;
 }) {
   return (
-    <div className="fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl p-5 max-w-[440px] w-full shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 tv-overlay z-[3000] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="tv-modal p-5 max-w-[440px] w-full" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Sparkles size={18} className="text-blue-500" />
@@ -320,7 +320,7 @@ function PhotoModal({
             <LayoutTemplate size={15} /> Story
           </button>
           <button onClick={() => onShare(photo)} disabled={sharing}
-            className="flex-1 flex items-center justify-center gap-2 bg-blue-500 text-white py-2.5 rounded-xl text-sm font-bold hover:bg-blue-600 transition-colors disabled:opacity-60">
+            className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-sky-500 to-blue-600 text-white py-2.5 rounded-xl text-sm font-bold hover:bg-gradient-to-r from-sky-500 to-blue-600 transition-all disabled:opacity-60">
             {sharing ? <Loader2 size={15} className="animate-spin" /> : <Share2 size={15} />} Share
           </button>
         </div>
@@ -349,8 +349,8 @@ function PhotoModal({
 
 function DeleteConfirmModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
   return (
-    <div className="fixed inset-0 bg-black/60 z-[4000] flex items-center justify-center p-4" onClick={onCancel}>
-      <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 tv-overlay z-[4000] flex items-center justify-center p-4" onClick={onCancel}>
+      <div className="tv-modal max-w-sm w-full p-6" onClick={(e) => e.stopPropagation()}>
         <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <Trash2 size={22} className="text-red-500" />
         </div>
@@ -391,7 +391,7 @@ function AlbumsSkeleton() {
   return (
     <div className="space-y-5 animate-pulse">
       {[0, 1].map((g) => (
-        <div key={g} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div key={g} className="tv-card overflow-hidden">
           <div className="flex items-center gap-2 px-5 py-3.5 border-b border-slate-100 bg-slate-50">
             <div className="w-4 h-4 bg-slate-200 rounded-full" />
             <div className="h-4 bg-slate-200 rounded-full w-32" />
@@ -646,7 +646,7 @@ export default function AlbumsPage() {
   const isFiltering = searchQuery.trim() !== "" || filter !== "All" || dateRange !== "all";
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28">
+    <main className="min-h-screen px-6 py-8 pb-28">
       <div className="max-w-5xl mx-auto">
 
         <PageHero icon={Images} title="Albums" subtitle="Browse your saved travel photos by date."
@@ -773,7 +773,7 @@ export default function AlbumsPage() {
 
         {/* Grid, skeleton, or empty state */}
         {loading ? <AlbumsSkeleton /> : filtered.length === 0 ? (
-          <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-16 text-center">
+          <div className="bg-white/60 backdrop-blur-sm rounded-3xl border-2 border-dashed border-sky-200 p-16 text-center">
             <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
               {isFiltering
                 ? <Search size={28} className="text-slate-300" />
@@ -792,7 +792,7 @@ export default function AlbumsPage() {
           </div>
         ) : viewMode === "trips" ? (
           trips.length === 0 ? (
-            <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-12 text-center">
+            <div className="bg-white/60 backdrop-blur-sm rounded-3xl border-2 border-dashed border-sky-200 p-12 text-center">
               <MapPin size={28} className="text-slate-300 mx-auto mb-3" />
               <p className="font-bold text-slate-700 mb-1">No trips detected</p>
               <p className="text-slate-400 text-sm">Photos need date info to be grouped into trips.</p>
@@ -918,7 +918,7 @@ export default function AlbumsPage() {
             )}
           <div className="space-y-5">
             {grouped.map(([groupName, items]) => (
-              <section key={groupName} id={`group-${groupName}`} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <section key={groupName} id={`group-${groupName}`} className="tv-card overflow-hidden">
                 <div className="flex items-center gap-2 px-5 py-3.5 border-b border-slate-100 bg-slate-50">
                   <CalendarDays size={16} className="text-blue-500 flex-shrink-0" />
                   <h2 className="font-bold text-slate-800 text-base flex-1">{groupName}</h2>

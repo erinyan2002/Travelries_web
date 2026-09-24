@@ -343,7 +343,7 @@ export default function StatsPage() {
 
   if (!stats) {
     return (
-      <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28 flex flex-col items-center justify-center gap-3">
+      <main className="min-h-screen px-6 py-8 pb-28 flex flex-col items-center justify-center gap-3">
         <motion.div
           animate={{ rotate: 360 }}
           transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
@@ -356,7 +356,7 @@ export default function StatsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28">
+    <main className="min-h-screen px-6 py-8 pb-28">
       <div className="max-w-5xl mx-auto">
 
         <PageHero
@@ -396,7 +396,7 @@ export default function StatsPage() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, amount: 0.3 }}
             transition={{ duration: 0.4 }}
-            className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5"
+            className="tv-card p-5"
           >
             <div className="flex items-center gap-2 mb-4">
               <div className="w-7 h-7 rounded-lg bg-indigo-50 flex items-center justify-center">
@@ -418,7 +418,7 @@ export default function StatsPage() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, amount: 0.3 }}
             transition={{ duration: 0.4, delay: 0.05 }}
-            className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5"
+            className="tv-card p-5"
           >
             <div className="flex items-center gap-2 mb-5">
               <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center">
@@ -464,7 +464,7 @@ export default function StatsPage() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, amount: 0.3 }}
           transition={{ duration: 0.4 }}
-          className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 mb-5"
+          className="tv-card p-5 mb-5"
         >
           <div className="flex items-center gap-2 mb-1">
             <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center">
@@ -482,7 +482,7 @@ export default function StatsPage() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, amount: 0.2 }}
           transition={{ duration: 0.4 }}
-          className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
+          className="tv-card overflow-hidden"
         >
           <div className="flex items-center gap-2 px-5 py-3.5 border-b border-slate-100 bg-slate-50">
             <Clock size={16} className="text-slate-400" />

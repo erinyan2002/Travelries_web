@@ -24,8 +24,8 @@ function timeAgo(iso: string): string {
 
 function DeletePostConfirmModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
   return (
-    <div className="fixed inset-0 bg-black/60 z-[4000] flex items-center justify-center p-4" onClick={onCancel}>
-      <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 tv-overlay z-[4000] flex items-center justify-center p-4" onClick={onCancel}>
+      <div className="tv-modal max-w-sm w-full p-6" onClick={(e) => e.stopPropagation()}>
         <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <Trash2 size={22} className="text-red-500" />
         </div>
@@ -84,7 +84,7 @@ export default function PostDetailPage() {
 
   if (!post) {
     return (
-      <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28 flex flex-col items-center justify-center gap-3">
+      <main className="min-h-screen px-6 py-8 pb-28 flex flex-col items-center justify-center gap-3">
         <p className="text-slate-400 text-sm">This post isn&apos;t available — it may have been deleted, or you may need to follow the author to see it.</p>
         <button onClick={() => router.back()} className="flex items-center gap-1.5 text-sm font-semibold text-blue-600 hover:text-blue-700 transition-colors">
           <ArrowLeft size={16} /> Back
@@ -95,13 +95,13 @@ export default function PostDetailPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28">
+    <main className="min-h-screen px-6 py-8 pb-28">
       <div className="max-w-2xl mx-auto space-y-5">
         <button onClick={() => router.back()} className="flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700 transition-colors">
           <ArrowLeft size={16} /> Back
         </button>
 
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="tv-card overflow-hidden">
           <div className="flex items-center gap-2.5 px-4 py-3">
             <Link href={`/u/${post.userId}`} className="flex items-center gap-2.5 flex-1 min-w-0">
               <Avatar name={post.authorName} url={post.authorAvatarUrl} />

@@ -140,14 +140,14 @@ export default function CleanupPage() {
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-40">
+    <main className="min-h-screen px-6 py-8 pb-40">
       <div className="max-w-5xl mx-auto">
         <PageHero icon={Wand2} title="Clean Up" subtitle="Find near-duplicate and blurry photos to tidy up." />
 
         {progress === null ? (
           <p className="text-sm text-slate-400 text-center py-12 animate-pulse">Loading photos…</p>
         ) : analyzing ? (
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 text-center">
+          <div className="tv-card p-6 text-center">
             <Loader2 size={22} className="animate-spin text-blue-500 mx-auto mb-3" />
             <p className="text-sm font-bold text-slate-700">Analyzing photos… {progress.done} / {progress.total}</p>
             <div className="h-2 bg-slate-100 rounded-full overflow-hidden mt-3">
@@ -155,7 +155,7 @@ export default function CleanupPage() {
             </div>
           </div>
         ) : groups.length === 0 && blurry.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-8 text-center">
+          <div className="tv-card p-8 text-center">
             <CheckCircle2 size={28} className="text-emerald-500 mx-auto mb-2" />
             <p className="font-bold text-slate-700">All tidy!</p>
             <p className="text-sm text-slate-400 mt-1">No near-duplicate or blurry photos found in {analyzed.length} photos.</p>
@@ -168,7 +168,7 @@ export default function CleanupPage() {
                 <p className="text-xs text-slate-400 mb-3">{groups.length} group{groups.length !== 1 ? "s" : ""} of near-identical shots. The sharpest is kept; tap to change what gets deleted.</p>
                 <div className="space-y-3">
                   {groups.map((g) => (
-                    <div key={g[0].id} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-3 flex gap-2 overflow-x-auto">
+                    <div key={g[0].id} className="tv-card p-3 flex gap-2 overflow-x-auto">
                       {g.map((a, i) => renderThumb(a, i === 0))}
                     </div>
                   ))}
@@ -179,7 +179,7 @@ export default function CleanupPage() {
               <section>
                 <h2 className="font-bold text-slate-800 flex items-center gap-2 mb-1"><Droplets size={16} className="text-blue-500" /> Possibly blurry</h2>
                 <p className="text-xs text-slate-400 mb-3">Low-detail photos: out of focus or shaken, or just a plain scene like sky or water. Check before deleting.</p>
-                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-3 flex flex-wrap gap-2">
+                <div className="tv-card p-3 flex flex-wrap gap-2">
                   {blurry.map((a) => renderThumb(a))}
                 </div>
               </section>
@@ -201,8 +201,8 @@ export default function CleanupPage() {
       )}
 
       {confirm && (
-        <div className="fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center p-4" onClick={() => !deleting && setConfirm(false)}>
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 tv-overlay z-[3000] flex items-center justify-center p-4" onClick={() => !deleting && setConfirm(false)}>
+          <div className="tv-modal p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
             <p className="font-bold text-slate-900 mb-1">Delete {selected.size} photo{selected.size !== 1 ? "s" : ""}?</p>
             <p className="text-sm text-slate-500 mb-5">They&apos;ll be removed from your map, albums and faces. This can&apos;t be undone.</p>
             <div className="flex gap-2">

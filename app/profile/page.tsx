@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   User, Mail, CalendarDays, Pencil, Check, X,
-  KeyRound, Eye, EyeOff, AlertCircle, CheckCircle2, LogOut, Camera, Loader2,
-} from "lucide-react";
+  KeyRound, Eye, EyeOff, AlertCircle, CheckCircle2, LogOut, Camera, Loader2, UserCircle } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
+import PageHero from "@/components/PageHero";
 import { supabase } from "@/lib/supabase";
 
 type Profile = { id: string; name: string; created_at: string; avatar_url?: string | null };
@@ -174,10 +174,10 @@ export default function ProfilePage() {
   const displayName = profile.name || email;
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28">
+    <main className="min-h-screen px-6 py-8 pb-28">
       <div className="max-w-lg mx-auto space-y-5">
 
-        <h1 className="text-2xl font-extrabold text-slate-800 mb-2">My Profile</h1>
+        <PageHero icon={UserCircle} title="My Profile" subtitle="Your account, photo and password." />
 
         {/* Avatar card */}
         <div className="relative overflow-hidden bg-gradient-to-br from-sky-50 to-blue-50 rounded-2xl border border-sky-100 shadow-sm p-6 flex items-center gap-5">
@@ -213,7 +213,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Account info */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="tv-card overflow-hidden">
           <p className="px-6 py-3 text-xs font-bold uppercase tracking-widest text-slate-400 border-b border-slate-100">
             Account Details
           </p>
@@ -232,7 +232,7 @@ export default function ProfilePage() {
                   autoFocus
                   className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
                 />
-                <button onClick={saveName} className="bg-blue-600 text-white px-3 py-2 rounded-xl hover:bg-blue-700 transition-colors">
+                <button onClick={saveName} className="bg-gradient-to-r from-sky-500 to-blue-600 text-white px-3 py-2 rounded-xl hover:from-sky-600 hover:to-blue-700 shadow-md shadow-blue-200/70 transition-all">
                   <Check size={16} />
                 </button>
                 <button onClick={() => setEditingName(false)} className="bg-slate-100 text-slate-600 px-3 py-2 rounded-xl hover:bg-slate-200 transition-colors">
@@ -276,7 +276,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Change password */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="tv-card overflow-hidden">
           <button
             onClick={() => { setShowPwSection((v) => !v); setPwMsg(null); }}
             className="w-full flex items-center justify-between px-6 py-4 hover:bg-slate-50 transition-colors"

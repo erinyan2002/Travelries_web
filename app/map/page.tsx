@@ -137,7 +137,7 @@ function PhotoModal({ cluster, onClose }: { cluster: Cluster; onClose: () => voi
 
   return (
     <div className="fixed inset-0 bg-black/88 z-[3000] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl max-w-[520px] w-full overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="tv-modal max-w-[520px] w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
           <div className="min-w-0 flex-1">
             <p className="font-bold text-slate-900 text-sm truncate">{photo.fileName}</p>
@@ -202,8 +202,8 @@ function PhotoModal({ cluster, onClose }: { cluster: Cluster; onClose: () => voi
 
 function DeleteConfirmModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
   return (
-    <div className="fixed inset-0 bg-black/60 z-[4000] flex items-center justify-center p-4" onClick={onCancel}>
-      <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 tv-overlay z-[4000] flex items-center justify-center p-4" onClick={onCancel}>
+      <div className="tv-modal max-w-sm w-full p-6" onClick={(e) => e.stopPropagation()}>
         <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <Trash2 size={22} className="text-red-500" />
         </div>
@@ -304,7 +304,7 @@ export default function MapPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28">
+    <main className="min-h-screen px-6 py-8 pb-28">
       <div className="max-w-5xl mx-auto">
 
         <PageHero
@@ -382,7 +382,7 @@ export default function MapPage() {
           </div>
         )}
 
-        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <section className="tv-card overflow-hidden">
           <div className="flex items-center gap-2 px-5 py-3.5 border-b border-slate-100 bg-slate-50">
             <MapPin size={16} className="text-blue-500" />
             <h2 className="font-bold text-slate-800">Saved Photos</h2>

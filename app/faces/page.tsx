@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo } from "react";
 import BottomNav from "@/components/BottomNav";
+import PageHero from "@/components/PageHero";
 import { supabase } from "@/lib/supabase";
 import { FacePhoto } from "@/lib/types";
 import { fetchFacePhotos, updateFacePersonIds, removeFaceFromPhoto } from "@/lib/photosApi";
@@ -569,51 +570,42 @@ export default function FacesPage() {
   });
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-4 pt-6 pb-28">
+    <main className="min-h-screen px-4 pt-6 pb-28">
       <div className="max-w-2xl mx-auto">
 
         {/* ── Hero header ── */}
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-sky-100 via-sky-50 to-blue-100 border border-sky-200/60 p-6 mb-5 shadow-sm">
-          <div className="absolute -top-10 -right-10 w-40 h-40 bg-sky-200/50 rounded-full blur-2xl" />
-          <div className="absolute -bottom-6 -left-6 w-28 h-28 bg-blue-200/40 rounded-full blur-2xl" />
-          <div className="relative">
-            <div className="flex items-center gap-3 mb-5">
-              <div className="w-11 h-11 bg-gradient-to-br from-sky-400 to-blue-500 rounded-2xl flex items-center justify-center shadow-md shadow-blue-200">
-                <Scan size={20} className="text-white" />
+        <PageHero
+          icon={Scan}
+          title="Faces"
+          subtitle="AI-powered face detection & clustering"
+          action={storedPhotos.length > 0 && (
+            <button
+              onClick={() => setConfirmClearAll(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/90 text-red-500 text-xs font-bold rounded-xl transition-all border border-red-100 hover:bg-red-50"
+            >
+              <Trash2 size={12} /> Clear All
+            </button>
+          )}
+        >
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { label: "People",  value: loading ? "—" : clusters.length,        icon: Users     },
+              { label: "Faces",   value: loading ? "—" : totalFaces,             icon: Eye       },
+              { label: "Photos",  value: loading ? "—" : storedPhotos.length,    icon: ImageIcon },
+            ].map(({ label, value, icon: Icon }) => (
+              <div key={label} className="bg-white/80 border border-white rounded-2xl p-3 text-center backdrop-blur-sm shadow-sm">
+                <Icon size={14} className="text-sky-500 mx-auto mb-1" />
+                <p className="text-xl font-black text-slate-800 leading-none">{value}</p>
+                <p className="text-slate-500 text-[10px] font-semibold mt-0.5">{label}</p>
               </div>
-              <div className="flex-1">
-                <h1 className="text-2xl font-black text-slate-800 tracking-tight leading-none">Faces</h1>
-                <p className="text-slate-500 text-xs mt-0.5">AI-powered face detection & clustering</p>
-              </div>
-              {storedPhotos.length > 0 && (
-                <button
-                  onClick={() => setConfirmClearAll(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-red-500 text-xs font-bold rounded-xl transition-all border border-red-100 hover:bg-red-50"
-                >
-                  <Trash2 size={12} /> Clear All
-                </button>
-              )}
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { label: "People",  value: loading ? "—" : clusters.length,        icon: Users     },
-                { label: "Faces",   value: loading ? "—" : totalFaces,             icon: Eye       },
-                { label: "Photos",  value: loading ? "—" : storedPhotos.length,    icon: ImageIcon },
-              ].map(({ label, value, icon: Icon }) => (
-                <div key={label} className="bg-white/80 border border-white rounded-2xl p-3 text-center backdrop-blur-sm shadow-sm">
-                  <Icon size={14} className="text-sky-500 mx-auto mb-1" />
-                  <p className="text-xl font-black text-slate-800 leading-none">{value}</p>
-                  <p className="text-slate-500 text-[10px] font-semibold mt-0.5">{label}</p>
-                </div>
-              ))}
-            </div>
+            ))}
           </div>
-        </div>
+        </PageHero>
 
         {loading ? <FacesSkeleton /> : storedPhotos.length === 0 ? (
 
           /* ── Empty state ── */
-          <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-14 text-center">
+          <div className="tv-card rounded-3xl p-14 text-center">
             <div className="w-20 h-20 bg-gradient-to-br from-sky-100 to-blue-100 rounded-3xl flex items-center justify-center mx-auto mb-5 shadow-inner">
               <Users size={32} className="text-blue-300" />
             </div>
@@ -679,7 +671,7 @@ export default function FacesPage() {
                           return (
                             <div key={cluster.id}
                               onClick={() => { if (!isEditing) setSelectedCluster({ cluster: { ...cluster, label: displayLabel }, idx }); }}
-                              className="bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 active:scale-[0.97] transition-all cursor-pointer p-4 text-center group">
+                              className="tv-card hover:shadow-md hover:-translate-y-0.5 active:scale-[0.97] transition-all cursor-pointer p-4 text-center group">
                               <div className="flex justify-center mb-3">
                                 {repBox ? (
                                   <FaceChip imageUrl={rep.photo.imageUrl} box={repBox} index={rep.boxIndex}
@@ -756,7 +748,7 @@ export default function FacesPage() {
                                     const target = clusters.find((c) => c.id === targetId);
                                     if (target) handleMerge(cluster, target);
                                   }}
-                                  className="mt-1.5 w-full text-[10px] font-bold text-slate-400 bg-slate-50 hover:bg-slate-100 disabled:opacity-50 px-2 py-1 rounded-full border border-slate-100 outline-none appearance-none text-center"
+                                  className="mt-1.5 tv-select"
                                 >
                                   <option value="">{merging === cluster.id ? "Merging…" : "🔗 Merge with…"}</option>
                                   {clusters.filter((c) => c.id !== cluster.id).map((c) => (
@@ -772,8 +764,7 @@ export default function FacesPage() {
                                     value={linkedId}
                                     onClick={(e) => e.stopPropagation()}
                                     onChange={(e) => { e.stopPropagation(); handleLink(cluster, e.target.value || null); }}
-                                    className={`mt-1.5 w-full text-[10px] font-bold px-2 py-1 rounded-full border outline-none appearance-none text-center ${
-                                      linked ? "text-emerald-600 bg-emerald-50 border-emerald-100" : "text-slate-400 bg-slate-50 hover:bg-slate-100 border-slate-100"}`}
+                                    className={`mt-1.5 tv-select ${linked ? "!text-emerald-700 !bg-emerald-50 !border-emerald-200" : ""}`}
                                   >
                                     <option value="">{linked ? "Unlink account" : "👤 Link account…"}</option>
                                     {friends.map((f) => (
@@ -893,7 +884,7 @@ export default function FacesPage() {
 
       {/* ── Clear All confirm modal ── */}
       {confirmClearAll && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[3000] flex items-center justify-center p-6">
+        <div className="fixed inset-0 tv-overlay z-[3000] flex items-center justify-center p-6">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6 text-center">
             <div className="w-14 h-14 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <Trash2 size={26} className="text-red-500" />
@@ -916,7 +907,7 @@ export default function FacesPage() {
 
       {/* ── Single photo confirm modal ── */}
       {confirmDeleteId && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[3000] flex items-center justify-center p-6">
+        <div className="fixed inset-0 tv-overlay z-[3000] flex items-center justify-center p-6">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6 text-center">
             <div className="w-14 h-14 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <Trash2 size={26} className="text-red-500" />

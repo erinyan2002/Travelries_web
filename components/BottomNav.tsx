@@ -36,7 +36,7 @@ export default function BottomNav() {
     >
       {/* More items than fit on a phone-width screen — scroll horizontally rather than
           squeezing every item down to illegibility (fixed-width items + flex-shrink-0). */}
-      <div className="no-scrollbar bg-white/95 backdrop-blur-xl border border-slate-200 rounded-full px-3 py-2 shadow-xl flex items-center gap-1 overflow-x-auto">
+      <div className="no-scrollbar bg-white/75 backdrop-blur-xl border border-white rounded-full px-3 py-2 shadow-[0_2px_6px_rgba(15,23,42,0.06),0_18px_40px_-16px_rgba(30,64,175,0.35)] flex items-center gap-1 overflow-x-auto">
         {navItems.map(({ href, icon: Icon, label }) => {
           const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
           return (
@@ -44,19 +44,19 @@ export default function BottomNav() {
               key={href}
               href={href}
               className={`relative flex-shrink-0 w-16 flex flex-col items-center gap-1 py-2 px-1 rounded-full transition-colors duration-150 ${
-                active ? "text-blue-600" : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                active ? "text-sky-700" : "text-slate-500 hover:text-slate-800 hover:bg-white/70"
               }`}
             >
               {active && (
                 <motion.span
                   layoutId="bottom-nav-active-pill"
-                  className="absolute inset-0 bg-blue-50 rounded-full"
+                  className="absolute inset-0 bg-gradient-to-br from-sky-100 to-indigo-100 rounded-full ring-1 ring-sky-200/70"
                   transition={{ type: "spring", stiffness: 500, damping: 35 }}
                 />
               )}
               <motion.span whileTap={{ scale: 0.85 }} className="relative z-10 flex flex-col items-center gap-1">
                 <Icon size={20} strokeWidth={active ? 2.5 : 2} />
-                <span className={`text-[11px] font-semibold ${active ? "text-blue-600" : "text-slate-500"}`}>
+                <span className={`text-[11px] font-semibold ${active ? "text-sky-700" : "text-slate-500"}`}>
                   {label}
                 </span>
               </motion.span>

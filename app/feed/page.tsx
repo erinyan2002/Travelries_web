@@ -91,8 +91,8 @@ function NewPostModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl p-5 max-w-lg w-full shadow-2xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 tv-overlay z-[3000] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="tv-modal p-5 max-w-lg w-full max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">
           <p className="font-bold text-slate-900">New Post</p>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1"><X size={18} /></button>
@@ -168,7 +168,7 @@ function NewPostModal({
                 Back
               </button>
               <button onClick={handlePost} disabled={posting}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 transition-colors disabled:opacity-60">
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 text-white font-bold text-sm hover:from-sky-600 hover:to-blue-700 shadow-md shadow-blue-200/70 transition-all disabled:opacity-60">
                 {posting ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />} Post
               </button>
             </div>
@@ -186,8 +186,8 @@ function FollowListModal({
   followingIds: Set<string>; onToggleFollow: (id: string) => void; onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl p-5 max-w-sm w-full shadow-2xl max-h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 tv-overlay z-[3000] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="tv-modal p-5 max-w-sm w-full max-h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">
           <p className="font-bold text-slate-900">{title}</p>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1"><X size={18} /></button>
@@ -227,8 +227,8 @@ function FollowListModal({
 
 function DeletePostConfirmModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
   return (
-    <div className="fixed inset-0 bg-black/60 z-[4000] flex items-center justify-center p-4" onClick={onCancel}>
-      <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 tv-overlay z-[4000] flex items-center justify-center p-4" onClick={onCancel}>
+      <div className="tv-modal max-w-sm w-full p-6" onClick={(e) => e.stopPropagation()}>
         <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <Trash2 size={22} className="text-red-500" />
         </div>
@@ -369,7 +369,7 @@ export default function FeedPage() {
   if (loading) return null;
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28">
+    <main className="min-h-screen px-6 py-8 pb-28">
       <div className="max-w-2xl mx-auto space-y-5">
 
         <PageHero
@@ -395,7 +395,7 @@ export default function FeedPage() {
         />
 
         {/* Find people */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+        <div className="tv-card p-4">
           <div className="relative mb-2">
             <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             <input
@@ -434,7 +434,7 @@ export default function FeedPage() {
 
         {/* Feed */}
         {posts.length === 0 ? (
-          <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-14 text-center">
+          <div className="bg-white/60 backdrop-blur-sm rounded-3xl border-2 border-dashed border-sky-200 p-14 text-center">
             <Users size={28} className="text-slate-300 mx-auto mb-3" />
             <p className="font-bold text-slate-700 mb-1">Your feed is empty</p>
             <p className="text-slate-400 text-sm">Follow other travelers, or post one of your own photos.</p>
@@ -442,7 +442,7 @@ export default function FeedPage() {
         ) : (
           <div className="space-y-4">
             {posts.map((post) => (
-              <div key={post.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div key={post.id} className="tv-card overflow-hidden">
                 {post.repostOf && (
                   <p className="flex items-center gap-1.5 px-4 pt-2.5 text-[11px] font-semibold text-slate-400">
                     <Repeat2 size={12} /> {post.authorName} reposted from {post.repostOf.authorName}

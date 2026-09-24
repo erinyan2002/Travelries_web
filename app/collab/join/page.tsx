@@ -26,7 +26,7 @@ function JoinForm() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 flex items-center justify-center px-6 pb-28">
+    <main className="min-h-screen flex items-center justify-center px-6 pb-28">
       <div className="max-w-[400px] w-full">
         <div className="flex items-center gap-3 mb-8">
           <div className="w-10 h-10 bg-violet-600 rounded-xl flex items-center justify-center shadow-md shadow-violet-200">
@@ -38,7 +38,7 @@ function JoinForm() {
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        <div className="tv-card p-6">
           <label className="text-xs font-bold text-slate-600 mb-2 block">Invite Code</label>
           <input
             value={code}

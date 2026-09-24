@@ -45,7 +45,7 @@ export default function CollabPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28">
+    <main className="min-h-screen px-6 py-8 pb-28">
       <div className="max-w-3xl mx-auto">
 
         <PageHero
@@ -69,7 +69,7 @@ export default function CollabPage() {
         {loading ? (
           <div className="text-center text-slate-400 text-sm py-16 animate-pulse">Loading...</div>
         ) : albums.length === 0 ? (
-          <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-16 text-center">
+          <div className="bg-white/60 backdrop-blur-sm rounded-3xl border-2 border-dashed border-sky-200 p-16 text-center">
             <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <FolderOpen size={28} className="text-slate-300" />
             </div>
@@ -90,7 +90,7 @@ export default function CollabPage() {
           <div className="grid gap-3">
             {albums.map((album) => (
               <Link key={album.id} href={`/collab/${album.id}`}
-                className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 hover:border-blue-300 hover:shadow-md transition-all block">
+                className="tv-card p-5 hover:border-blue-300 hover:shadow-md transition-all block">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
@@ -117,9 +117,9 @@ export default function CollabPage() {
       </div>
 
       {showCreate && (
-        <div className="fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center p-4"
+        <div className="fixed inset-0 tv-overlay z-[3000] flex items-center justify-center p-4"
           onClick={() => setShowCreate(false)}>
-          <div className="bg-white rounded-2xl p-6 max-w-[440px] w-full shadow-2xl"
+          <div className="tv-modal p-6 max-w-[440px] w-full"
             onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-bold text-slate-900">Create Album</h2>
@@ -143,7 +143,7 @@ export default function CollabPage() {
                   className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all resize-none" />
               </div>
               <button onClick={handleCreate} disabled={creating || !name.trim()}
-                className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50">
+                className="w-full py-3 bg-gradient-to-r from-sky-500 to-blue-600 text-white font-bold rounded-xl hover:from-sky-600 hover:to-blue-700 shadow-md shadow-blue-200/70 transition-all disabled:opacity-50">
                 {creating ? "Creating..." : "Create Album"}
               </button>
             </div>

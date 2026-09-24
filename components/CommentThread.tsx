@@ -103,7 +103,7 @@ export default function CommentThread({
                 className="flex-1 text-xs bg-white border border-slate-200 rounded-full px-3 py-1.5 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
               />
               <button onClick={() => handleAdd(c.id)}
-                className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-full bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+                className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-full bg-gradient-to-r from-sky-500 to-blue-600 text-white hover:from-sky-600 hover:to-blue-700 shadow-md shadow-blue-200/70 transition-all">
                 <Send size={11} />
               </button>
             </div>
@@ -139,7 +139,7 @@ export default function CommentThread({
           className="flex-1 text-xs bg-white border border-slate-200 rounded-full px-3 py-2 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
         />
         <button onClick={() => handleAdd()}
-          className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-full bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+          className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-full bg-gradient-to-r from-sky-500 to-blue-600 text-white hover:from-sky-600 hover:to-blue-700 shadow-md shadow-blue-200/70 transition-all">
           <Send size={13} />
         </button>
       </div>
