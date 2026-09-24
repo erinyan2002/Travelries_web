@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import BottomNav from "@/components/BottomNav";
 import PageHero from "@/components/PageHero";
+import ActionMenu from "@/components/ActionMenu";
+import Avatar from "@/components/Avatar";
 import { supabase } from "@/lib/supabase";
 import { FacePhoto } from "@/lib/types";
 import { fetchFacePhotos, updateFacePersonIds, removeFaceFromPhoto } from "@/lib/photosApi";
@@ -13,7 +15,7 @@ import { FaceEntry, PersonCluster, MATCH_THRESHOLD, buildPersonGroups } from "@/
 import { useRouter } from "next/navigation";
 import {
   Users, ImageIcon, Images, MapPin, CalendarDays, Trash2, X,
-  Terminal, AlertTriangle, Eye, Scan, Pencil, Check, Plane,
+  Terminal, AlertTriangle, Eye, Scan, Pencil, Check, Plane, Combine, UserPlus, UserCheck, Loader2,
 } from "lucide-react";
 
 
@@ -719,58 +721,64 @@ export default function FacesPage() {
                                   const ids = [...new Set(cluster.faces.map((f) => f.photo.id))].join(",");
                                   return `/albums?photoIds=${encodeURIComponent(ids)}&personLabel=${encodeURIComponent(displayLabel)}${view ? `&view=${view}` : ""}`;
                                 };
+                                const linkedId = people.find((p) => p.id === cluster.personId)?.linkedUserId ?? null;
+                                const linked = friends.find((f) => f.id === linkedId);
+                                const chip = "w-full flex items-center justify-center gap-1 text-[11px] font-bold px-2 py-1.5 rounded-full transition-colors";
                                 return (
-                                  <div className="mt-1.5 grid grid-cols-2 gap-1">
+                                  <div className="mt-3 grid grid-cols-2 gap-1.5">
                                     <button
                                       onClick={(e) => { e.stopPropagation(); router.push(albumsUrl()); }}
-                                      className="flex items-center justify-center gap-1 text-[10px] font-bold text-blue-500 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded-full transition-colors"
+                                      className={`${chip} text-sky-700 bg-sky-50 hover:bg-sky-100`}
                                     >
-                                      <Images size={9} /> Photos
+                                      <Images size={12} /> Photos
                                     </button>
                                     <button
                                       onClick={(e) => { e.stopPropagation(); router.push(albumsUrl("trips")); }}
-                                      className="flex items-center justify-center gap-1 text-[10px] font-bold text-indigo-500 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded-full transition-colors"
+                                      className={`${chip} text-indigo-600 bg-indigo-50 hover:bg-indigo-100`}
                                     >
-                                      <Plane size={9} /> Trips
+                                      <Plane size={12} /> Trips
                                     </button>
+                                    <ActionMenu
+                                      icon={merging === cluster.id ? <Loader2 size={12} className="animate-spin" /> : <Combine size={12} />}
+                                      label={merging === cluster.id ? "Merging…" : "Merge"}
+                                      title="Same person as…"
+                                      disabled={clusters.length < 2 || merging === cluster.id}
+                                      emptyText="No other people yet"
+                                      options={clusters.filter((c) => c.id !== cluster.id).map((c) => {
+                                        const r = c.faces[0];
+                                        const b = r?.photo.boxes?.[r.boxIndex];
+                                        return {
+                                          value: c.id,
+                                          label: labelOf(c),
+                                          leading: r && b
+                                            ? <FaceChip imageUrl={r.photo.imageUrl} box={b} index={r.boxIndex} size={26} ringClass="ring-slate-200" />
+                                            : <span className="w-[26px] h-[26px] rounded-full bg-slate-100 flex-shrink-0" />,
+                                        };
+                                      })}
+                                      onSelect={(id) => {
+                                        const target = clusters.find((c) => c.id === id);
+                                        if (target) handleMerge(cluster, target);
+                                      }}
+                                    />
+                                    <ActionMenu
+                                      icon={linked ? <UserCheck size={12} /> : <UserPlus size={12} />}
+                                      label={linked ? (linked.name || "Linked") : "Account"}
+                                      title="Link to a friend's account"
+                                      tone={linked ? "emerald" : "slate"}
+                                      disabled={friends.length === 0}
+                                      emptyText="Follow someone to link them"
+                                      options={[
+                                        ...friends.map((f) => ({
+                                          value: f.id,
+                                          label: f.name || "Traveler",
+                                          leading: <Avatar name={f.name || "Traveler"} url={f.avatar_url} size="sm" />,
+                                          selected: f.id === linkedId,
+                                        })),
+                                        ...(linked ? [{ value: "", label: "Unlink account", danger: true }] : []),
+                                      ]}
+                                      onSelect={(id) => { if (id !== linkedId) handleLink(cluster, id || null); }}
+                                    />
                                   </div>
-                                );
-                              })()}
-                              {clusters.length > 1 && (
-                                <select
-                                  value=""
-                                  disabled={merging === cluster.id}
-                                  onClick={(e) => e.stopPropagation()}
-                                  onChange={(e) => {
-                                    e.stopPropagation();
-                                    const targetId = e.target.value;
-                                    e.target.value = "";
-                                    const target = clusters.find((c) => c.id === targetId);
-                                    if (target) handleMerge(cluster, target);
-                                  }}
-                                  className="mt-1.5 tv-select"
-                                >
-                                  <option value="">{merging === cluster.id ? "Merging…" : "🔗 Merge with…"}</option>
-                                  {clusters.filter((c) => c.id !== cluster.id).map((c) => (
-                                    <option key={c.id} value={c.id}>{labelOf(c)}</option>
-                                  ))}
-                                </select>
-                              )}
-                              {friends.length > 0 && (() => {
-                                const linkedId = people.find((p) => p.id === cluster.personId)?.linkedUserId ?? "";
-                                const linked = friends.find((f) => f.id === linkedId);
-                                return (
-                                  <select
-                                    value={linkedId}
-                                    onClick={(e) => e.stopPropagation()}
-                                    onChange={(e) => { e.stopPropagation(); handleLink(cluster, e.target.value || null); }}
-                                    className={`mt-1.5 tv-select ${linked ? "!text-emerald-700 !bg-emerald-50 !border-emerald-200" : ""}`}
-                                  >
-                                    <option value="">{linked ? "Unlink account" : "👤 Link account…"}</option>
-                                    {friends.map((f) => (
-                                      <option key={f.id} value={f.id}>{f.id === linkedId ? `✓ ${f.name || "Traveler"}` : f.name || "Traveler"}</option>
-                                    ))}
-                                  </select>
                                 );
                               })()}
                             </div>

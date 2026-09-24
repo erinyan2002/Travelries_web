@@ -1,6 +1,8 @@
 -- Adds persistence for the two Claude-backed AI features so results are cached
 -- instead of re-calling the API every time a photo/trip is viewed again.
--- Safe to re-run — every ADD COLUMN / CREATE is IF NOT EXISTS.
+-- Safe to re-run — every ADD COLUMN / CREATE TABLE is IF NOT EXISTS, and every
+-- policy is dropped and recreated (Postgres has no CREATE POLICY IF NOT EXISTS —
+-- an earlier version of this file used it and failed to run at all).
 --
 -- Run this whole file in the Supabase SQL editor (Database > SQL Editor > New query).
 -- Double-check the `user_id` column type/reference below matches the live `photos`
@@ -30,18 +32,22 @@ create table if not exists public.trip_diaries (
 
 alter table public.trip_diaries enable row level security;
 
-create policy if not exists "trip_diaries_select_own"
+drop policy if exists "trip_diaries_select_own" on public.trip_diaries;
+create policy "trip_diaries_select_own"
   on public.trip_diaries for select
   using (auth.uid() = user_id);
 
-create policy if not exists "trip_diaries_insert_own"
+drop policy if exists "trip_diaries_insert_own" on public.trip_diaries;
+create policy "trip_diaries_insert_own"
   on public.trip_diaries for insert
   with check (auth.uid() = user_id);
 
-create policy if not exists "trip_diaries_update_own"
+drop policy if exists "trip_diaries_update_own" on public.trip_diaries;
+create policy "trip_diaries_update_own"
   on public.trip_diaries for update
   using (auth.uid() = user_id);
 
-create policy if not exists "trip_diaries_delete_own"
+drop policy if exists "trip_diaries_delete_own" on public.trip_diaries;
+create policy "trip_diaries_delete_own"
   on public.trip_diaries for delete
   using (auth.uid() = user_id);

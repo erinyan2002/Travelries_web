@@ -13,7 +13,7 @@ import time
 from typing import Optional
 
 from google import genai
-from google.genai import types
+from google.genai import errors, types
 from PIL import Image
 from pydantic import BaseModel
 
@@ -24,6 +24,31 @@ MODEL = "gemini-3.5-flash-lite"
 # Landmark photos are analyzed once and cached (see lib/photosApi.ts saveLandmarkResult),
 # so this only bounds cost on the rare request that skips the client-side resize.
 MAX_IMAGE_DIMENSION = 1024
+
+# The free tier regularly answers 503 "model is experiencing high demand" (and
+# 429 when rate-limited) for a few seconds at a time — a short backoff retry
+# turns most of those into a success instead of an error shown to the user.
+RETRY_DELAYS_S = (2, 5)
+RETRYABLE_STATUS = {429, 500, 503}
+
+
+def _generate_with_retry(client, **kwargs):
+    for attempt, delay in enumerate((*RETRY_DELAYS_S, None)):
+        try:
+            return client.models.generate_content(**kwargs)
+        except errors.APIError as e:
+            if delay is None or getattr(e, "code", None) not in RETRYABLE_STATUS:
+                raise
+            logger.warning("Gemini %s on attempt %d — retrying in %ss", e.code, attempt + 1, delay)
+            time.sleep(delay)
+
+
+def friendly_error(e: Exception) -> str:
+    """User-facing message for a failed Gemini call (shown in the app)."""
+    code = getattr(e, "code", None)
+    if code in (429, 503):
+        return "The AI service is busy right now. Please try again in a minute."
+    return str(e)
 
 
 class LandmarkResult(BaseModel):
@@ -61,7 +86,8 @@ def generate_travel_diary(entries: list[dict], language: str = "ko") -> str:
     start = time.monotonic()
     try:
         client = _client()  # kept alive for the duration of the call — see recognize_landmark for why
-        response = client.models.generate_content(
+        response = _generate_with_retry(
+            client,
             model=MODEL,
             contents=f"Photos from this trip, in order:\n{photo_summary}",
             config=types.GenerateContentConfig(
@@ -122,7 +148,8 @@ def recognize_landmark(
         # garbage-collected (closing its httpx client) before that thread runs,
         # raising "Cannot send a request, as the client has been closed."
         client = _client()
-        response = client.models.generate_content(
+        response = _generate_with_retry(
+            client,
             model=MODEL,
             contents=[
                 types.Part.from_bytes(data=image_bytes, mime_type=media_type),

@@ -1,6 +1,3 @@
-/* Pretendard: one typeface that pairs Korean (location names, diaries) with
-   Latin UI text cleanly — the system fallback mixed Apple SD Gothic with SF. */
-@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css");
 @import "tailwindcss";
 
 :root {
@@ -41,11 +38,6 @@ body {
   /* Modal panel */
   .tv-modal {
     @apply bg-white rounded-3xl shadow-2xl ring-1 ring-slate-900/5;
-  }
-  /* Pill <select> used as an action picker (Merge with…, Link account…) —
-     visibly tappable, not greyed-out-looking */
-  .tv-select {
-    @apply w-full text-[11px] font-bold text-slate-600 bg-white border border-slate-200 hover:border-sky-300 hover:bg-sky-50/60 px-2.5 py-1.5 rounded-full outline-none appearance-none text-center cursor-pointer transition-colors disabled:opacity-50 focus:ring-2 focus:ring-sky-100;
   }
   .tv-btn-primary {
     @apply inline-flex items-center justify-center gap-1.5 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white font-bold rounded-xl shadow-md shadow-blue-200/70 transition-all active:scale-[0.98] disabled:opacity-60;

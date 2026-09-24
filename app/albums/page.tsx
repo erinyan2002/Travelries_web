@@ -475,7 +475,9 @@ export default function AlbumsPage() {
       const data = await res.json();
       if (data.diary) {
         setDiaryText(data.diary);
-        if (uid) await saveTripDiary(uid, key, data.diary, "ko");
+        // Caching is best-effort: a failed save must not turn a successfully
+        // generated diary into a "backend offline" error.
+        if (uid) saveTripDiary(uid, key, data.diary, "ko").catch((err) => console.warn("Caching diary failed:", err));
       } else {
         setDiaryError(data.error ?? "Couldn't generate the diary. Please try again in a moment.");
       }

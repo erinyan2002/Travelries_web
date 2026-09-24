@@ -32,7 +32,7 @@ except Exception:
     _PLACES_OK = False
 
 try:
-    from utils.gemini_utils import generate_travel_diary, recognize_landmark
+    from utils.gemini_utils import generate_travel_diary, recognize_landmark, friendly_error
     _GEMINI_OK = True
 except Exception:
     _GEMINI_OK = False
@@ -161,7 +161,7 @@ def generate_diary(body: DiaryRequest):
         return {"diary": diary}
     except Exception as e:
         logger.error("/generate-diary error: %s", e)
-        return {"diary": None, "error": str(e)}
+        return {"diary": None, "error": friendly_error(e)}
 
 
 @app.post("/recognize-landmark")
@@ -180,7 +180,7 @@ async def recognize_landmark_endpoint(file: UploadFile = File(...), lat: float |
         return result.model_dump()
     except Exception as e:
         logger.error("/recognize-landmark error: %s", e)
-        return {"landmark": None, "error": str(e)}
+        return {"landmark": None, "error": friendly_error(e)}
 
 
 

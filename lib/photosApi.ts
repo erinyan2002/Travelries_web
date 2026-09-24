@@ -175,7 +175,8 @@ export async function fetchTripDiary(uid: string, tripKey: string): Promise<stri
     .eq("trip_key", tripKey)
     .maybeSingle();
   if (error) {
-    console.error("fetchTripDiary failed:", error);
+    // warn, not error: a cache miss path shouldn't trip Next's dev error overlay.
+    console.warn("fetchTripDiary failed:", error.message);
     return null;
   }
   return (data?.diary_text as string) ?? null;
