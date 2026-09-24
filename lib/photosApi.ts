@@ -31,6 +31,12 @@ export async function fetchFacePhotos(uid: string): Promise<FacePhoto[]> {
   return (await fetchPhotoRows(uid)).filter((r) => r.is_face_photo).map(rowToFacePhoto);
 }
 
+// Specific photos as MapPhoto regardless of is_map_photo — e.g. every photo a
+// person appears in, including face-only saves that were never added to the map.
+export async function fetchPhotosByIds(uid: string, ids: Set<string>): Promise<MapPhoto[]> {
+  return (await fetchPhotoRows(uid)).filter((r) => ids.has(r.id as string)).map(rowToMapPhoto);
+}
+
 // For pages that need both counts (Stats) without two round trips.
 export async function fetchAllPhotos(uid: string): Promise<{ mapPhotos: MapPhoto[]; facePhotos: FacePhoto[] }> {
   const rows = await fetchPhotoRows(uid);

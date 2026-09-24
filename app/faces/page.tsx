@@ -12,7 +12,7 @@ import { FaceEntry, PersonCluster, MATCH_THRESHOLD, buildPersonGroups } from "@/
 import { useRouter } from "next/navigation";
 import {
   Users, ImageIcon, Images, MapPin, CalendarDays, Trash2, X,
-  Terminal, AlertTriangle, Eye, Scan, Pencil, Check,
+  Terminal, AlertTriangle, Eye, Scan, Pencil, Check, Plane,
 } from "lucide-react";
 
 
@@ -721,16 +721,29 @@ export default function FacesPage() {
                               <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full mt-1.5 ${color.bg} ${color.text}`}>
                                 {cluster.faces.length} appearance{cluster.faces.length !== 1 ? "s" : ""}
                               </span>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const names = [...new Set(cluster.faces.map(f => f.photo.fileName))].join(",");
-                                  router.push(`/albums?faceNames=${encodeURIComponent(names)}&personLabel=${encodeURIComponent(displayLabel)}`);
-                                }}
-                                className="mt-1.5 w-full flex items-center justify-center gap-1 text-[10px] font-bold text-blue-500 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-full transition-colors"
-                              >
-                                <Images size={9} /> See in Albums
-                              </button>
+                              {(() => {
+                                // By photo id, not filename — names like IMG_1234.jpg repeat.
+                                const albumsUrl = (view?: string) => {
+                                  const ids = [...new Set(cluster.faces.map((f) => f.photo.id))].join(",");
+                                  return `/albums?photoIds=${encodeURIComponent(ids)}&personLabel=${encodeURIComponent(displayLabel)}${view ? `&view=${view}` : ""}`;
+                                };
+                                return (
+                                  <div className="mt-1.5 grid grid-cols-2 gap-1">
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); router.push(albumsUrl()); }}
+                                      className="flex items-center justify-center gap-1 text-[10px] font-bold text-blue-500 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded-full transition-colors"
+                                    >
+                                      <Images size={9} /> Photos
+                                    </button>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); router.push(albumsUrl("trips")); }}
+                                      className="flex items-center justify-center gap-1 text-[10px] font-bold text-indigo-500 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded-full transition-colors"
+                                    >
+                                      <Plane size={9} /> Trips
+                                    </button>
+                                  </div>
+                                );
+                              })()}
                               {clusters.length > 1 && (
                                 <select
                                   value=""

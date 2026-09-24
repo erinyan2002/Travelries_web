@@ -6,7 +6,7 @@ import PageHero from "@/components/PageHero";
 import { toggleSaved, getSavedIds, deletePhotoEverywhere } from "@/lib/savedUtils";
 import { supabase } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
-import { fetchMapPhotos, saveLandmarkResult, fetchTripDiary, saveTripDiary } from "@/lib/photosApi";
+import { fetchMapPhotos, fetchPhotosByIds, saveLandmarkResult, fetchTripDiary, saveTripDiary } from "@/lib/photosApi";
 import {
   Images, Users, Image as ImageIcon, Star, Download, Trash2,
   X, CalendarDays, SlidersHorizontal, Search, Calendar, Share2, Loader2, MapPin, Sparkles, LayoutTemplate,
@@ -424,7 +424,11 @@ export default function AlbumsPage() {
   const [sharingId,        setSharingId]        = useState<string | null>(null);
   const [shareResultUrl,   setShareResultUrl]   = useState<string | null>(null);
   const [confirmDeleteId,  setConfirmDeleteId]  = useState<string | null>(null);
-  const [personFilterNames, setPersonFilterNames] = useState<Set<string> | null>(null);
+  const [personFilterNames, setPersonFilterNames] = useState<Set<string> | null>(null); // legacy ?faceNames= links
+  const [personFilterIds,   setPersonFilterIds]   = useState<Set<string> | null>(null);
+  // Face-only photos pulled in just for the person view (not map photos) — dropped
+  // again when the person filter is cleared.
+  const [personExtraIds,    setPersonExtraIds]    = useState<Set<string>>(new Set());
   const [personFilterLabel, setPersonFilterLabel] = useState<string | null>(null);
   const [viewMode,          setViewMode]          = useState<"monthly" | "trips">("monthly");
   const [expandedTripId,    setExpandedTripId]    = useState<string | null>(null);
@@ -484,16 +488,28 @@ export default function AlbumsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       const resolvedUid = user?.id ?? "guest";
       setUid(resolvedUid === "guest" ? null : resolvedUid);
-      const stored = resolvedUid === "guest" ? [] : await fetchMapPhotos(resolvedUid);
-      setPhotos(stored);
-      setSavedIds(await getSavedIds());
-      setLoading(false);
+      let stored = resolvedUid === "guest" ? [] : await fetchMapPhotos(resolvedUid);
       const params = new URLSearchParams(window.location.search);
+      const photoIds = params.get("photoIds");
       const faceNames = params.get("faceNames");
-      if (faceNames) {
+      if (photoIds) {
+        const ids = new Set(photoIds.split(",").filter(Boolean));
+        if (resolvedUid !== "guest") {
+          const mapIds = new Set(stored.map((p) => p.id));
+          const extras = (await fetchPhotosByIds(resolvedUid, ids)).filter((p) => !mapIds.has(p.id));
+          stored = [...stored, ...extras];
+          setPersonExtraIds(new Set(extras.map((p) => p.id)));
+        }
+        setPersonFilterIds(ids);
+        setPersonFilterLabel(params.get("personLabel"));
+      } else if (faceNames) {
         setPersonFilterNames(new Set(faceNames.split(",")));
         setPersonFilterLabel(params.get("personLabel"));
       }
+      if (params.get("view") === "trips") setViewMode("trips");
+      setPhotos(stored);
+      setSavedIds(await getSavedIds());
+      setLoading(false);
     }
     load();
   }, []);
@@ -574,6 +590,7 @@ export default function AlbumsPage() {
       if (filter === "With People" && (p.faceCount ?? 0) === 0) return false;
       if (filter === "Scenery"     && (p.faceCount ?? 0) > 0)  return false;
       if (!isInDateRange(p, dateRange)) return false;
+      if (personFilterIds && !personFilterIds.has(p.id)) return false;
       if (personFilterNames && !personFilterNames.has(p.fileName)) return false;
       if (q) {
         const inName     = p.fileName.toLowerCase().includes(q);
@@ -582,7 +599,7 @@ export default function AlbumsPage() {
       }
       return true;
     });
-  }, [photos, filter, dateRange, searchQuery, personFilterNames]);
+  }, [photos, filter, dateRange, searchQuery, personFilterIds, personFilterNames]);
 
   const trips = useMemo(() => detectTrips(filtered), [filtered]);
 
@@ -617,14 +634,22 @@ export default function AlbumsPage() {
         <PageHero icon={Images} title="Albums" subtitle="Browse your saved travel photos by date." />
 
         {/* Person filter banner */}
-        {personFilterNames && (
+        {(personFilterIds || personFilterNames) && (
           <div className="flex items-center gap-2 mb-4 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3">
             <Users size={14} className="text-blue-600 flex-shrink-0" />
             <p className="text-sm font-bold text-blue-700 flex-1">
-              Photos of <span className="text-blue-900">{personFilterLabel || "person"}</span>
+              {viewMode === "trips" ? (
+                <>Trips with <span className="text-blue-900">{personFilterLabel || "this person"}</span>
+                  <span className="font-semibold text-blue-500"> · {trips.length} trip{trips.length !== 1 ? "s" : ""}, {new Set(trips.flatMap((t) => t.locations)).size} place{new Set(trips.flatMap((t) => t.locations)).size !== 1 ? "s" : ""}</span></>
+              ) : (
+                <>Photos of <span className="text-blue-900">{personFilterLabel || "person"}</span></>
+              )}
             </p>
             <button
               onClick={() => {
+                setPhotos((prev) => prev.filter((p) => !personExtraIds.has(p.id)));
+                setPersonExtraIds(new Set());
+                setPersonFilterIds(null);
                 setPersonFilterNames(null);
                 setPersonFilterLabel(null);
                 window.history.replaceState({}, "", "/albums");
