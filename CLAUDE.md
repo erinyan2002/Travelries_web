@@ -65,12 +65,13 @@ The backend URL comes from `lib/backend.ts` (`NEXT_PUBLIC_BACKEND_URL`, default 
   - `shares` — public photo share links, managed via `lib/shareUtils.ts`
   - `trip_diaries` — cached AI-generated diary text per trip, keyed by `(user_id, trip_key)`; see the AI diary/landmark caching note under Albums below
   - `follows`, `posts`, `post_likes`, `post_comments`, `post_tags` — social feed layer, managed via `lib/socialUtils.ts`; see Social feed below
+  - `trip_shares` — public whole-trip share snapshots (migration 0013), see Sharing below
   - RPC: `join_collab_album(p_invite_code)`, `record_share_view(p_share_id)`, `tag_user_in_post`, `share_post_to_user` (see Social feed)
 - **Supabase Storage buckets**: `user-photos` (personal photos), `collab-photos` (collab album images), `shares` (shared photo images).
 
 ### Auth flow
 
-`AuthGuard` (`components/AuthGuard.tsx`) wraps the entire app in `app/layout.tsx`. It calls `supabase.auth.getSession()` on mount and subscribes to `onAuthStateChange`. While the session check is in flight it renders a full-screen 🌍 spinner. Unauthenticated users are redirected to `/login`; public paths are `/login`, `/signup`, `/forgot-password`, `/reset-password`, and `/share/[id]` (matched with `path.startsWith("/share/")`).
+`AuthGuard` (`components/AuthGuard.tsx`) wraps the entire app in `app/layout.tsx`. It calls `supabase.auth.getSession()` on mount and subscribes to `onAuthStateChange`. While the session check is in flight it renders a full-screen 🌍 spinner. Unauthenticated users are redirected to `/login`; public paths are `/login`, `/signup`, `/forgot-password`, `/reset-password`, `/share/[id]` and `/trip/[id]` (matched with `path.startsWith("/share/")` / `"/trip/"`).
 
 `NotificationBell` is rendered directly in `app/layout.tsx` (not inside `Header`) so it floats over all pages globally.
 
@@ -114,10 +115,15 @@ Result stored in `FacePhoto` with normalized bounding boxes (`x_norm`, `y_norm`,
 - **"🔗 Merge with…"** on each Person card in `app/faces/page.tsx` — picking another card calls `handleMerge`, which reuses either side's existing `person_id` (creating one via `createPerson` if neither has one yet) and batches `updateFacePersonIds` calls (one per affected photo row, preserving that row's other face tags) across every face in both groups. Renaming a confirmed cluster calls `renamePerson`. Renaming an auto-cluster calls `createPerson` and pins its current faces to it via `assignPersonToFaces` (the same helper merge uses), so every name is synced through the DB. On load, any leftover `face-labels-<uid>` localStorage names are migrated this way once, then the key is removed.
 - **Upload-time tagging** in `app/page.tsx`'s multi-face save picker (see Home page above) — each selected face thumbnail gets an optional "Who?" `<select>` sourced from `fetchPeople`; a pick is threaded through `saveFacesToAlbum` as `personIds` (index-aligned with the same `indices` used for `boxes`/`descriptors`) so a newly uploaded face can be saved directly into an existing person instead of waiting on auto-clustering to (maybe) group it correctly.
 
+**Linking a person to an account** (migration `0012_people_linked_user.sql`, `people.linked_user_id`): each Person card has a "Link account" picker over the user's followers and following (`handleLink`; linking an auto-cluster first turns it into a `people` row). `NewPostModal` in `app/feed/page.tsx` reads the picked photo's `person_ids` (`fetchPhotoPersonIds`) and offers linked friends as one-tap tag suggestions. `fetchPeople` retries without `linked_user_id` if that column is missing, so an un-run migration only disables linking.
+
+**Photos / Trips buttons** on a Person card open `/albums?photoIds=…&personLabel=…` (plus `&view=trips` for Trips). Albums filters by photo id; the older `?faceNames=` filename filter is still accepted. For a person filter, Albums also pulls in that person's face-only photos (`fetchPhotosByIds`), which aren't map photos, and drops them again when the filter is cleared.
+
 **Per-face removal** (`removeFaceFromPhoto` in `lib/photosApi.ts`, `handleRemoveFace` in `app/faces/page.tsx`) drops one face without deleting the photo. It **tombstones in place** — box zeroed, descriptor set to `[]`, `person_ids[i]` set to null — and never splices. Cluster ids and manual person tags are keyed by array index, so shifting indices would silently reassign other people on the same photo. `isFaceRemoved()` treats an empty descriptor as removed only when the photo has *some* real descriptors (legacy/fallback paths saved all-empty descriptor arrays). Any new code that iterates `boxes`/`descriptors` must skip tombstones the same way.
 
 ### Other pages
 
+- **`app/cleanup/page.tsx`** (linked from the Albums header): suggests near-duplicate and blurry photos to delete. Every photo (`fetchEveryPhoto`) is downloaded and analyzed in the browser, four at a time: a 64-bit dHash plus capture-time proximity for similar groups, with the sharpest photo kept and the rest pre-selected; Laplacian variance flags blur. The pure logic and its uncalibrated thresholds live in `lib/photoCleanup.ts`. Deletes go through `deletePhotoEverywhere` behind a confirm modal.
 - **`app/saved/page.tsx`**: Grid of photos starred via `toggleSaved`. Downloads are triggered via a temporary `<a>` element against the image URL.
 - **`app/stats/page.tsx`**: Aggregated read-only view computed from `fetchAllPhotos`/`getSavedIds` (`lib/photosApi.ts`) on mount. A **"Year in Review"** button renders a Spotify-Wrapped-style share card (`drawYearReviewCard`, see Share cards below) from the same `Stats` object already computed for the page — no extra fetch.
 - **`app/profile/page.tsx`**: Reads/writes `profiles` table; validates old password via a re-`signInWithPassword` call before calling `updateUser`.
@@ -144,7 +150,11 @@ Real-time notifications via Supabase Realtime. `subscribeToNotifications(userId,
 
 Users create shared albums with an invite code. Others join via `joinAlbumByCode` (calls `join_collab_album` RPC). Roles: owner / contributor / viewer. Photos are uploaded to the `collab-photos` storage bucket and stored in `collab_photos` table. Individual album detail pages live at `/collab/[id]`.
 
-### Sharing (`lib/shareUtils.ts`)
+### Sharing (`lib/shareUtils.ts`, `lib/tripShareUtils.ts`)
+
+**Whole trips**: the Share button on an Albums trip card calls `shareTrip`, which inserts a `trip_shares` row: a snapshot of the photos (sorted chronologically, inline-base64 ones skipped), locations, date range, and the cached AI diary if one exists (it never generates one). `/trip/[id]` is public and renders a route map (`components/TripRouteMap.tsx`, loaded via `next/dynamic` with `ssr: false`), the diary, and the photos.
+
+**Single photos**:
 
 `sharePhoto(photo)` uploads the base64 image to the `shares` storage bucket, inserts a row into `shares`, and returns a public URL (`/share/[id]`). The share page is public (no auth required). Views are tracked via the `record_share_view` RPC.
 

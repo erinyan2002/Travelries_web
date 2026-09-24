@@ -37,6 +37,11 @@ export async function fetchPhotosByIds(uid: string, ids: Set<string>): Promise<M
   return (await fetchPhotoRows(uid)).filter((r) => ids.has(r.id as string)).map(rowToMapPhoto);
 }
 
+// Every photo row as MapPhoto (map photos and face-only saves alike).
+export async function fetchEveryPhoto(uid: string): Promise<MapPhoto[]> {
+  return (await fetchPhotoRows(uid)).map(rowToMapPhoto);
+}
+
 // For pages that need both counts (Stats) without two round trips.
 export async function fetchAllPhotos(uid: string): Promise<{ mapPhotos: MapPhoto[]; facePhotos: FacePhoto[] }> {
   const rows = await fetchPhotoRows(uid);

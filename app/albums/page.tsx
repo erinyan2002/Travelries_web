@@ -9,8 +9,9 @@ import { MapPhoto } from "@/lib/types";
 import { fetchMapPhotos, fetchPhotosByIds, saveLandmarkResult, fetchTripDiary, saveTripDiary } from "@/lib/photosApi";
 import {
   Images, Users, Image as ImageIcon, Star, Download, Trash2,
-  X, CalendarDays, SlidersHorizontal, Search, Calendar, Share2, Loader2, MapPin, Sparkles, LayoutTemplate,
+  X, CalendarDays, SlidersHorizontal, Search, Calendar, Share2, Loader2, MapPin, Sparkles, LayoutTemplate, Wand2,
 } from "lucide-react";
+import Link from "next/link";
 import { sharePhoto } from "@/lib/shareUtils";
 import { shareTrip } from "@/lib/tripShareUtils";
 import ShareCardModal from "@/components/ShareCardModal";
@@ -648,7 +649,13 @@ export default function AlbumsPage() {
     <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50/40 px-6 py-8 pb-28">
       <div className="max-w-5xl mx-auto">
 
-        <PageHero icon={Images} title="Albums" subtitle="Browse your saved travel photos by date." />
+        <PageHero icon={Images} title="Albums" subtitle="Browse your saved travel photos by date."
+          action={
+            <Link href="/cleanup"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-blue-600 text-xs font-bold rounded-xl border border-blue-100 hover:bg-blue-50 transition-colors">
+              <Wand2 size={12} /> Clean up
+            </Link>
+          } />
 
         {/* Person filter banner */}
         {(personFilterIds || personFilterNames) && (
