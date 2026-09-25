@@ -9,7 +9,7 @@ import { MapPhoto } from "@/lib/types";
 import { fetchMapPhotos, fetchPhotosByIds, saveLandmarkResult, fetchTripDiary, saveTripDiary } from "@/lib/photosApi";
 import {
   Images, Users, Image as ImageIcon, Star, Download, Trash2,
-  X, CalendarDays, SlidersHorizontal, Search, Calendar, Share2, Loader2, MapPin, Sparkles, LayoutTemplate, Wand2,
+  X, CalendarDays, SlidersHorizontal, Search, Calendar, Share2, Loader2, MapPin, Sparkles, LayoutTemplate, Wand2, Check,
 } from "lucide-react";
 import Link from "next/link";
 import { sharePhoto } from "@/lib/shareUtils";
@@ -167,19 +167,23 @@ const DIARY_LANGS: { value: DiaryLang; label: string }[] = [
 ];
 const DIARY_LANG_STORAGE = "diary-lang";
 
-// trip_diaries is unique per (user_id, trip_key), so each language gets its own
-// key. Korean keeps the bare key — every diary cached before English existed
-// was Korean, and stays a cache hit.
-function diaryCacheKey(tripKey: string, lang: DiaryLang): string {
-  return lang === "ko" ? tripKey : `${tripKey}|${lang}`;
+// trip_diaries is unique per (user_id, trip_key), so the cache key carries the
+// photo set, a version and the language. "v2" = diaries written by a model that
+// SEES the photos (v1 only got text metadata and tended to describe just one of
+// several same-place photos) — bumping it makes old v1 diaries regenerate once.
+function diaryCacheKey(photoSetKey: string, lang: DiaryLang): string {
+  return `${photoSetKey}|v2|${lang}`;
 }
 
 function DiaryModal({
   tripName, loading, diary, error, cached, lang, onLangChange, onClose, onRegenerate,
+  photos, selected, onToggle, selectionChanged, onWriteSelected,
 }: {
   tripName: string; loading: boolean; diary: string | null; error: string | null; cached: boolean;
   lang: DiaryLang; onLangChange: (lang: DiaryLang) => void;
   onClose: () => void; onRegenerate: () => void;
+  photos: MapPhoto[]; selected: Set<string>; onToggle: (id: string) => void;
+  selectionChanged: boolean; onWriteSelected: () => void;
 }) {
   return (
     <div className="fixed inset-0 tv-overlay z-[3000] flex items-center justify-center p-4" onClick={onClose}>
@@ -191,6 +195,38 @@ function DiaryModal({
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1"><X size={18} /></button>
         </div>
+        {/* Which photos the diary covers (all by default). The AI sees each photo. */}
+        {photos.length > 1 && (
+          <div className="mb-4">
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+              {lang === "ko" ? `일기에 넣을 사진 (${selected.size}/${photos.length})` : `Photos in this diary (${selected.size}/${photos.length})`}
+            </p>
+            <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+              {photos.map((p) => {
+                const on = selected.has(p.id);
+                return (
+                  <button key={p.id} onClick={() => onToggle(p.id)} disabled={loading}
+                    className={`relative flex-shrink-0 w-16 h-16 rounded-xl overflow-hidden ring-2 transition-all ${
+                      on ? "ring-blue-500" : "ring-transparent opacity-40 grayscale"}`}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={p.imageUrl} alt={p.fileName} className="w-full h-full object-cover" />
+                    {on && (
+                      <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-blue-500 text-white flex items-center justify-center">
+                        <Check size={10} strokeWidth={3} />
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {selectionChanged && (
+              <button onClick={onWriteSelected} disabled={loading || selected.size === 0}
+                className="tv-btn-primary text-xs px-3.5 py-2 mt-2">
+                <Sparkles size={13} /> {lang === "ko" ? `선택한 ${selected.size}장으로 쓰기` : `Write with ${selected.size} photo${selected.size === 1 ? "" : "s"}`}
+              </button>
+            )}
+          </div>
+        )}
         {/* Language: each is generated once, then cached separately. */}
         <div className="inline-flex p-1 mb-4 rounded-xl bg-slate-100">
           {DIARY_LANGS.map(({ value, label }) => (
@@ -474,6 +510,10 @@ export default function AlbumsPage() {
   const [diaryError,        setDiaryError]        = useState<string | null>(null);
   const [diaryCached,       setDiaryCached]       = useState(false);
   // Remembered per browser (a viewer preference); English by default to match the UI.
+  const [diarySelected,     setDiarySelected]     = useState<Set<string>>(new Set());
+  // The photo-id set the diary on screen was written from — the picker offers
+  // "Write with N photos" once the selection differs from it.
+  const [diaryWrittenFor,   setDiaryWrittenFor]   = useState<string>("");
   const [diaryLang,         setDiaryLang]         = useState<DiaryLang>(() => {
     try {
       const v = typeof window !== "undefined" ? localStorage.getItem(DIARY_LANG_STORAGE) : null;
@@ -485,16 +525,34 @@ export default function AlbumsPage() {
   function changeDiaryLang(lang: DiaryLang) {
     setDiaryLang(lang);
     try { localStorage.setItem(DIARY_LANG_STORAGE, lang); } catch { /* storage unavailable — fine */ }
-    if (diaryTrip) handleGenerateDiary(diaryTrip, false, lang);
+    if (diaryTrip) handleGenerateDiary(diaryTrip, false, lang, diarySelected);
   }
 
-  async function handleGenerateDiary(trip: Trip, forceRegenerate = false, lang: DiaryLang = diaryLang) {
+  function toggleDiaryPhoto(id: string) {
+    setDiarySelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  // `selectedIds` defaults to every photo in the trip. The cache key is the
+  // sorted set of photos actually used, so "all photos" is the same key as
+  // before (tripKeyOf) and each subset caches separately.
+  async function handleGenerateDiary(
+    trip: Trip, forceRegenerate = false, lang: DiaryLang = diaryLang, selectedIds?: Set<string>,
+  ) {
+    const ids = selectedIds && selectedIds.size > 0 ? selectedIds : new Set(trip.photos.map((p) => p.id));
+    const photos = trip.photos.filter((p) => ids.has(p.id));
+    const setKey = [...ids].sort().join(",");
     setDiaryTrip(trip);
+    setDiarySelected(new Set(ids));
+    setDiaryWrittenFor(setKey);
     setDiaryLoading(true);
     setDiaryText(null);
     setDiaryError(null);
     setDiaryCached(false);
-    const key = diaryCacheKey(tripKeyOf(trip), lang);
+    const key = diaryCacheKey(setKey, lang);
     try {
       if (!forceRegenerate && uid) {
         const cached = await fetchTripDiary(uid, key);
@@ -509,8 +567,9 @@ export default function AlbumsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           language: lang,
-          entries: trip.photos.map((p) => ({
+          entries: photos.map((p) => ({
             fileName: p.fileName,
+            imageUrl: p.imageUrl.startsWith("data:") ? undefined : p.imageUrl,
             location: p.location,
             captureDate: p.captureDate,
             captureTime: p.captureTime,
@@ -1071,7 +1130,12 @@ export default function AlbumsPage() {
           lang={diaryLang}
           onLangChange={changeDiaryLang}
           onClose={() => setDiaryTrip(null)}
-          onRegenerate={() => handleGenerateDiary(diaryTrip, true)}
+          onRegenerate={() => handleGenerateDiary(diaryTrip, true, diaryLang, diarySelected)}
+          photos={diaryTrip.photos}
+          selected={diarySelected}
+          onToggle={toggleDiaryPhoto}
+          selectionChanged={[...diarySelected].sort().join(",") !== diaryWrittenFor}
+          onWriteSelected={() => handleGenerateDiary(diaryTrip, false, diaryLang, diarySelected)}
         />
       )}
       <BottomNav />

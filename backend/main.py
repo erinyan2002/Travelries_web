@@ -139,6 +139,7 @@ async def analyze_photo(file: UploadFile = File(...)):
 
 class DiaryEntry(BaseModel):
     fileName: str
+    imageUrl: str | None = None  # public Supabase Storage URL — lets the model see the photo
     location: str | None = None
     captureDate: str | None = None
     captureTime: str | None = None

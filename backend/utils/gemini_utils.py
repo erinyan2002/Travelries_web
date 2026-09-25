@@ -35,7 +35,7 @@ MODEL = MODEL_CHAIN[0][0]  # for logging
 
 # Per-attempt HTTP timeout, so one stalled model can't hang the request —
 # the next model in the chain gets a turn instead.
-PER_CALL_TIMEOUT_MS = 15_000
+PER_CALL_TIMEOUT_MS = 12_000
 
 # Landmark photos are analyzed once and cached (see lib/photosApi.ts saveLandmarkResult),
 # so this only bounds cost on the rare request that skips the client-side resize.
@@ -45,10 +45,21 @@ MAX_IMAGE_DIMENSION = 1024
 FALLTHROUGH_STATUS = {429, 500, 503, 504}
 
 
+# A model that just 503'd/504'd/timed out is skipped for a while instead of
+# being retried first on every request: on 2026-09-25 gemini-3.5-flash sat at
+# ~15s-then-504 for an extended stretch while flash-lite answered in ~1s, so
+# each diary paid a pointless 15s wait. The last model in the chain is never
+# skipped, so there's always something to try.
+MODEL_COOLDOWN_S = 300
+_cooldown_until: dict[str, float] = {}
+
+
 def _generate_with_fallback(client, *, config: types.GenerateContentConfig, **kwargs):
     """Runs generate_content down MODEL_CHAIN. Returns (response, model_name)."""
     last_exc: Exception | None = None
-    for model, thinking in MODEL_CHAIN:
+    now = time.monotonic()
+    chain = [m for m in MODEL_CHAIN if _cooldown_until.get(m[0], 0) <= now] or MODEL_CHAIN[-1:]
+    for model, thinking in chain:
         cfg = config.model_copy(update={
             "thinking_config": thinking,
             # No tools are passed, so automatic function calling is pure overhead.
@@ -61,9 +72,11 @@ def _generate_with_fallback(client, *, config: types.GenerateContentConfig, **kw
             if getattr(e, "code", None) not in FALLTHROUGH_STATUS:
                 raise
             last_exc = e
+            _cooldown_until[model] = time.monotonic() + MODEL_COOLDOWN_S
             logger.warning("Gemini %s from %s after %.1fs — trying next model", e.code, model, time.monotonic() - t)
         except httpx.TimeoutException as e:
             last_exc = e
+            _cooldown_until[model] = time.monotonic() + MODEL_COOLDOWN_S
             logger.warning("Gemini %s timed out after %.1fs — trying next model", model, time.monotonic() - t)
     assert last_exc is not None
     raise last_exc
@@ -102,57 +115,96 @@ def generate_travel_diary(entries: list[dict], language: str = "ko") -> str:
        "captureTime": "11:56:35", "faceCount": 2}
     Returns a short first-person diary entry covering the whole set as one trip/day.
     """
-    lines = []
-    for e in entries:
+    def meta(e: dict) -> str:
         parts = [p for p in [e.get("captureDate"), e.get("captureTime"), e.get("location")] if p]
         if e.get("faceCount"):
             parts.append(f"{e['faceCount']} people in the photo")
-        lines.append("- " + " / ".join(parts) if parts else f"- {e.get('fileName', 'photo')}")
-    photo_summary = "\n".join(lines) if lines else "(no metadata available)"
+        return " / ".join(parts) if parts else e.get("fileName", "photo")
 
     lang_name = {"ko": "Korean", "en": "English"}.get(language, language)
-    lang_instruction = f"Write in {lang_name}."
+
+    # Show the model the photos themselves, not just metadata: two shots at the
+    # same place and time are indistinguishable as text, so the diary used to
+    # describe only one of them. Each photo is interleaved with its metadata.
+    images = _fetch_diary_images(entries[:MAX_DIARY_IMAGES])
+    contents: list = ["Photos from this trip, in order:"]
+    for i, e in enumerate(entries):
+        contents.append(f"Photo {i + 1}: {meta(e)}")
+        img = images.get(i)
+        if img:
+            contents.append(types.Part.from_bytes(data=img[0], mime_type=img[1]))
 
     start = time.monotonic()
     try:
         client = _client()  # kept alive for the duration of the call — see recognize_landmark for why
         response, used_model = _generate_with_fallback(
             client,
-            contents=f"Photos from this trip, in order:\n{photo_summary}",
+            contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=(
-                    "You write short, warm first-person travel diary entries from a list of "
-                    "photo metadata (date, time, location, how many people are in each photo). "
-                    "Infer the flow of the trip from the order and locations. Do not invent "
-                    "specific events, food, or feelings that aren't implied by the metadata — "
-                    "keep it grounded but personable. 3-5 sentences. " + lang_instruction
+                    "You write short, warm first-person travel diary entries from a trip's photos "
+                    "and their metadata (date, time, location, how many people). Go through the "
+                    "trip in order and mention what EACH photo shows — every photo should be "
+                    "reflected, not just the first. Describe only what is visible or implied; "
+                    "don't invent names, food or events you can't see. "
+                    f"{max(3, min(len(entries) + 2, 8))} sentences at most. Write in {lang_name}."
                 ),
                 max_output_tokens=1024,
             ),
         )
     except Exception:
-        logger.exception("generate_travel_diary failed after %.2fs (model=%s, photos=%d)", time.monotonic() - start, MODEL, len(entries))
+        logger.exception("generate_travel_diary failed after %.2fs (photos=%d, images=%d)", time.monotonic() - start, len(entries), len(images))
         raise
     usage = response.usage_metadata
     logger.info(
-        "generate_travel_diary ok in %.2fs — model=%s photos=%d input_tokens=%d output_tokens=%d",
-        time.monotonic() - start, used_model, len(entries),
+        "generate_travel_diary ok in %.2fs — model=%s photos=%d images=%d input_tokens=%d output_tokens=%d",
+        time.monotonic() - start, used_model, len(entries), len(images),
         usage.prompt_token_count or 0, usage.candidates_token_count or 0,
     )
     return response.text or ""
 
 
-def _resize_for_api(image_bytes: bytes, media_type: str) -> tuple[bytes, str]:
-    """Downscale to MAX_IMAGE_DIMENSION on the longest side to bound token cost.
+MAX_DIARY_IMAGES = 8
+DIARY_IMAGE_DIM = 512  # small is plenty for "what's in the photo"
+
+
+def _fetch_diary_images(entries: list[dict]) -> dict[int, tuple[bytes, str]]:
+    """Downloads each entry's imageUrl (in parallel) and shrinks it. Only public
+    Supabase Storage URLs are fetched — the URL comes from the browser, so this
+    must not become a way to make the server request arbitrary addresses."""
+    from concurrent.futures import ThreadPoolExecutor
+    from urllib.parse import urlparse
+
+    def one(i_e):
+        i, e = i_e
+        url = e.get("imageUrl") or ""
+        u = urlparse(url)
+        if u.scheme != "https" or not (u.hostname or "").endswith(".supabase.co") \
+                or "/storage/v1/object/public/" not in u.path:
+            return i, None
+        try:
+            r = httpx.get(url, timeout=8.0, follow_redirects=False)
+            r.raise_for_status()
+            return i, _resize_for_api(r.content, r.headers.get("content-type", "image/jpeg"), DIARY_IMAGE_DIM)
+        except Exception as exc:  # a missing photo just means text-only for that one
+            logger.warning("diary image %d fetch failed: %s", i, exc)
+            return i, None
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        return {i: img for i, img in pool.map(one, enumerate(entries)) if img}
+
+
+def _resize_for_api(image_bytes: bytes, media_type: str, max_dim: int = MAX_IMAGE_DIMENSION) -> tuple[bytes, str]:
+    """Downscale to max_dim on the longest side to bound token cost.
     Server-side safety net — the frontend already resizes before upload."""
     try:
         img = Image.open(io.BytesIO(image_bytes))
         img.load()
     except Exception:
         return image_bytes, media_type  # not a decodable image — let the API reject it with a clear error
-    if max(img.size) <= MAX_IMAGE_DIMENSION:
+    if max(img.size) <= max_dim:
         return image_bytes, media_type
-    img.thumbnail((MAX_IMAGE_DIMENSION, MAX_IMAGE_DIMENSION), Image.LANCZOS)
+    img.thumbnail((max_dim, max_dim), Image.LANCZOS)
     if img.mode not in ("RGB", "L"):
         img = img.convert("RGB")
     buf = io.BytesIO()
