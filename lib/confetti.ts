@@ -1,5 +1,5 @@
 // A tiny dependency-free confetti burst: one throwaway full-screen canvas,
-// ~120 paper bits in the brand palette, gone after ~2.2s. Skipped when the
+// ~180 paper bits in the brand palette, gone after ~2.8s. Skipped when the
 // user asks for reduced motion.
 const COLORS = ["#38bdf8", "#0ea5e9", "#22d3ee", "#a5f3fc", "#fbbf24", "#fb7185", "#ffffff"];
 
@@ -22,14 +22,14 @@ export function burstConfetti(opts: { x?: number; y?: number; count?: number } =
   ctx.scale(dpr, dpr);
 
   const ox = (opts.x ?? 0.5) * w, oy = (opts.y ?? 0.45) * h;
-  const parts = Array.from({ length: opts.count ?? 120 }, () => {
+  const parts = Array.from({ length: opts.count ?? 180 }, () => {
     const angle = Math.random() * Math.PI * 2;
-    const speed = 6 + Math.random() * 9;
+    const speed = 7 + Math.random() * 11;
     return {
       x: ox, y: oy,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed - 7,
-      size: 6 + Math.random() * 6,
+      size: 10 + Math.random() * 8,
       rot: Math.random() * Math.PI,
       spin: (Math.random() - 0.5) * 0.4,
       tilt: Math.random() * Math.PI,
@@ -38,7 +38,7 @@ export function burstConfetti(opts: { x?: number; y?: number; count?: number } =
     };
   });
 
-  const DURATION = 2200;
+  const DURATION = 2800;
   const start = performance.now();
   function frame(now: number) {
     const t = now - start;
@@ -61,7 +61,7 @@ export function burstConfetti(opts: { x?: number; y?: number; count?: number } =
         ctx!.fill();
       } else {
         // Scaling by cos(tilt) makes each strip flip like falling paper.
-        ctx!.fillRect(-p.size / 2, -p.size / 4 * Math.cos(p.tilt), p.size, (p.size / 2) * Math.cos(p.tilt));
+        ctx!.fillRect(-p.size / 2, -p.size / 3 * Math.cos(p.tilt), p.size, (p.size / 1.5) * Math.cos(p.tilt));
       }
       ctx!.restore();
     }
