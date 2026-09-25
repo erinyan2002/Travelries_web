@@ -53,6 +53,9 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         *[o.strip().rstrip("/") for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()],
     ],
+    # Phones/laptops on the same private network hitting the dev server by LAN
+    # IP (http://192.168.x.x:3000) — see lib/backend.ts. Private ranges only.
+    allow_origin_regex=r"http://(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -79,6 +79,25 @@ ALLOWED_ORIGINS=https://your-app.vercel.app   # 배포 시 CORS 허용 주소
 `supabase/migrations/`의 SQL을 **번호 순서대로** Supabase SQL Editor에서 실행합니다(모두 재실행 안전).
 초기 테이블(`photos`, `profiles`, `notifications`, `collab_*`, `shares`)은 대시보드에서 만들어져 마이그레이션 파일이 없습니다. 현재 스키마·권한은 [`supabase/audit/rls_audit.sql`](supabase/audit/rls_audit.sql)(읽기 전용)으로 확인할 수 있습니다.
 
+## 휴대폰에서 테스트
+
+**방법 A: 배포 사이트 (가장 간단)**
+휴대폰 브라우저로 Vercel 주소를 엽니다. HTTPS라서 위치·카메라가 모두 동작하고, 공유 → "홈 화면에 추가"로 앱처럼 설치할 수 있습니다(PWA). 단, 백엔드를 배포하기 전에는 AI 다이어리와 랜드마크 인식이 동작하지 않습니다.
+
+**방법 B: 같은 Wi-Fi에서 로컬 서버 (백엔드 포함 전체 기능)**
+
+```bash
+npm run dev                                                    # 프론트엔드 (모든 네트워크 주소에서 접속 가능)
+cd backend && uvicorn main:app --reload --host 0.0.0.0         # 백엔드: --host 0.0.0.0 필수
+ipconfig getifaddr en0                                         # Mac의 Wi-Fi IP 확인 (예: 192.168.0.12)
+```
+
+휴대폰을 **같은 Wi-Fi**에 연결하고 `http://<Mac IP>:3000`을 엽니다. 백엔드 주소는 자동으로 `http://<Mac IP>:8000`이 됩니다.
+
+- 접속이 안 되면 macOS 설정 → 네트워크 → 방화벽에서 Node/Python의 들어오는 연결을 허용하세요.
+- HTTPS가 아니어서 "현재 위치 사용" 버튼은 휴대폰에서 동작하지 않습니다(사진 GPS와 지도 검색은 정상).
+- 레이아웃만 빠르게 볼 때는 Mac Chrome 개발자도구의 기기 모드(⌘⇧M)도 쓸 수 있습니다.
+
 ## 명령어
 
 ```bash

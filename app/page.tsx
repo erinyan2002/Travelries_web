@@ -21,6 +21,7 @@ import {
 import AppLogo from "@/components/AppLogo";
 import BatchUploadPanel, { BatchFile } from "@/components/BatchUploadPanel";
 import { BACKEND_URL } from "@/lib/backend";
+import { newId } from "@/lib/id";
 import { runFaceDetection, DetectionResult } from "@/lib/faceDetection";
 import {
   NearbyPlace, formatBytes, createThumbnailDataUrl, cropFaceThumbnails,
@@ -302,7 +303,7 @@ export default function HomePage() {
       // synchronously, before the upsert below, so a concurrent Save to Map click
       // (or a rename) during this write's network round-trip sees the same id
       // instead of racing to mint its own.
-      const photoId = lastFacePhotoIdRef.current ?? crypto.randomUUID();
+      const photoId = lastFacePhotoIdRef.current ?? newId();
       lastFacePhotoIdRef.current = photoId;
       const imageUrl = await uploadToUserPhotos(uid, photoId, dataUrl);
       await upsertPhoto(uid, {
@@ -595,7 +596,7 @@ export default function HomePage() {
           }
         }
         const dataUrl = await createThumbnailDataUrl(file, 1024, 0.90);
-        const photoId = crypto.randomUUID();
+        const photoId = newId();
 
         // A failed upload throws into this file's catch below (marked as an error
         // in the batch panel) rather than saving the image inline in the DB row.
@@ -715,7 +716,7 @@ export default function HomePage() {
       // set, instead of two rows for the same photo. Reserved synchronously (see
       // the matching comment in saveFacesToAlbum) so a concurrent face-save
       // in flight for the same file can't race this into minting a second id.
-      const photoId = lastFacePhotoIdRef.current ?? crypto.randomUUID();
+      const photoId = lastFacePhotoIdRef.current ?? newId();
       lastFacePhotoIdRef.current = photoId;
       const dataUrl = await createThumbnailDataUrl(selectedFile, 1024, 0.90);
 
