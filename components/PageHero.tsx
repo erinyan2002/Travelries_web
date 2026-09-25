@@ -38,7 +38,7 @@ export default function PageHero({
         style={{ backgroundImage: "radial-gradient(rgba(14,116,144,0.18) 1px, transparent 1px)", backgroundSize: "16px 16px",
                  maskImage: "linear-gradient(to left, black, transparent 70%)", WebkitMaskImage: "linear-gradient(to left, black, transparent 70%)" }}
       />
-      <div className="relative flex items-center gap-3">
+      <div className="relative flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-3">
         <motion.div
           whileHover={{ rotate: -8, scale: 1.05 }}
           transition={{ type: "spring", stiffness: 300, damping: 15 }}
@@ -50,7 +50,9 @@ export default function PageHero({
           <h1 className="text-2xl sm:text-[28px] leading-tight font-extrabold text-slate-800 tracking-tight">{title}</h1>
           {subtitle && <p className="text-slate-500 text-sm mt-0.5 line-clamp-2">{subtitle}</p>}
         </div>
-        {action && <div className="flex-shrink-0">{action}</div>}
+        {/* Phones: actions drop to their own row under the title (indented to line
+            up with it) instead of squeezing the title into "Collab Albu…". */}
+        {action && <div className="w-full sm:w-auto pl-14 sm:pl-0 flex-shrink-0">{action}</div>}
       </div>
       {children && <div className="relative mt-5">{children}</div>}
     </motion.div>

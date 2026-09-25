@@ -754,7 +754,7 @@ export default function HomePage() {
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] }}
-          className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-sky-100 via-sky-50 to-blue-100 border border-sky-200/60 px-6 pt-6 pb-7 mb-6 shadow-sm"
+          className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-sky-100 via-sky-50 to-blue-100 border border-sky-200/60 px-5 pt-5 pb-6 sm:px-6 sm:pt-6 sm:pb-7 mb-6 shadow-sm"
         >
           <div className="absolute -top-10 -right-10 w-40 h-40 bg-sky-200/50 rounded-full blur-2xl" />
           <div className="absolute -bottom-16 -left-8 w-44 h-44 bg-blue-200/40 rounded-full blur-2xl" />
@@ -763,7 +763,7 @@ export default function HomePage() {
             <motion.div whileHover={{ rotate: -8, scale: 1.05 }} transition={{ type: "spring", stiffness: 300, damping: 15 }}>
               <AppLogo size="md" className="shadow-md shadow-blue-200" />
             </motion.div>
-            <h1 className="text-4xl font-extrabold tracking-tight text-slate-800">
+            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-800">
               Travel<span className="bg-gradient-to-r from-sky-500 to-blue-500 bg-clip-text text-transparent">ries</span>
             </h1>
           </div>
@@ -777,15 +777,15 @@ export default function HomePage() {
             className="relative grid grid-cols-3 gap-3"
           >
             {[
-              { label: "Photos Saved",   value: dashStats.totalPhotos,    icon: Camera, gradient: "from-sky-400 to-blue-500" },
-              { label: "Places Visited", value: dashStats.totalLocations, icon: MapPin, gradient: "from-emerald-400 to-teal-500" },
-              { label: "Faces Detected", value: dashStats.totalFaces,     icon: Users,  gradient: "from-amber-400 to-orange-500" },
-            ].map(({ label, value, icon: Icon, gradient }) => (
+              { label: "Photos Saved",   short: "Photos", value: dashStats.totalPhotos,    icon: Camera, gradient: "from-sky-400 to-blue-500" },
+              { label: "Places Visited", short: "Places", value: dashStats.totalLocations, icon: MapPin, gradient: "from-emerald-400 to-teal-500" },
+              { label: "Faces Detected", short: "Faces",  value: dashStats.totalFaces,     icon: Users,  gradient: "from-amber-400 to-orange-500" },
+            ].map(({ label, short, value, icon: Icon, gradient }) => (
               <motion.div
                 key={label}
                 variants={fadeUp}
                 whileHover={{ y: -3, scale: 1.02, boxShadow: "0 10px 25px -5px rgba(0,0,0,0.08)" }}
-                className="bg-white/80 backdrop-blur rounded-2xl border border-white shadow-sm px-4 py-3 flex items-center gap-3"
+                className="bg-white/80 backdrop-blur rounded-2xl border border-white shadow-sm px-3 py-3 sm:px-4 flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3"
               >
                 <div className={`w-9 h-9 bg-gradient-to-br ${gradient} rounded-xl flex items-center justify-center flex-shrink-0 shadow-md`}>
                   <Icon size={17} className="text-white" />
@@ -794,7 +794,9 @@ export default function HomePage() {
                   <p className="text-xl font-extrabold text-slate-800 leading-tight">
                     <AnimatedNumber value={value} />
                   </p>
-                  <p className="text-[11px] text-slate-500 font-medium truncate">{label}</p>
+                  <p className="text-[11px] text-slate-500 font-medium truncate">
+                    <span className="sm:hidden">{short}</span><span className="hidden sm:inline">{label}</span>
+                  </p>
                 </div>
               </motion.div>
             ))}

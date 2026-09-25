@@ -44,12 +44,23 @@ export default function NotificationBell() {
   const [ring, setRing] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
+  // Mounted once in the root layout, so it must follow auth changes: checking
+  // only on mount left the bell missing after logging in (until a full reload)
+  // and stale after logging out.
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) return;
-      setUserId(user.id);
-      getNotifications().then(setNotes);
+    let current: string | null | undefined;
+    const apply = (uid: string | null) => {
+      if (uid === current) return; // e.g. TOKEN_REFRESHED — same user, nothing to reload
+      current = uid;
+      setUserId(uid);
+      if (uid) getNotifications().then(setNotes);
+      else setNotes([]);
+    };
+    supabase.auth.getUser().then(({ data: { user } }) => apply(user?.id ?? null));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      apply(session?.user.id ?? null);
     });
+    return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
