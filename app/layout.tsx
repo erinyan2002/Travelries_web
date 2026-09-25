@@ -31,10 +31,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
         />
         {/* Runs before paint: skip the intro after its first showing this session,
-            and for anyone who asked their OS for reduced motion. */}
+            and for anyone who asked their OS for reduced motion.
+            `?intro` in the URL always replays it (handy for demos). */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{if(sessionStorage.getItem("tv-intro-seen")||matchMedia("(prefers-reduced-motion: reduce)").matches)document.documentElement.dataset.introSeen="1"}catch(e){}`,
+            __html: `try{if(!/[?&]intro\\b/.test(location.search)&&(sessionStorage.getItem("tv-intro-seen")||matchMedia("(prefers-reduced-motion: reduce)").matches))document.documentElement.dataset.introSeen="1"}catch(e){}`,
           }}
         />
       </head>
