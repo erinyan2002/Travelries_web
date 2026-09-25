@@ -10,41 +10,60 @@ export async function currentUserId(): Promise<string | null> {
   return user?.id ?? null;
 }
 
-async function fetchPhotoRows(uid: string): Promise<Record<string, unknown>[]> {
-  const { data, error } = await supabase
-    .from("photos")
-    .select("*")
-    .eq("user_id", uid)
-    .order("uploaded_at", { ascending: false });
+// Column sets per view. `select("*")` used to ship every face descriptor
+// (128/512 floats per face, as JSON) to pages that never look at them — the
+// map, albums, saved, feed and stats views only need the metadata below.
+const MAP_COLUMNS =
+  "id, file_name, image_url, lat, lng, location, capture_date, capture_time, capture_timestamp, " +
+  "uploaded_at, face_count, landmark_name, landmark_confidence, landmark_description, landmark_analyzed_at, " +
+  "is_map_photo, is_face_photo";
+const FACE_COLUMNS =
+  "id, file_name, image_url, face_count, uploaded_at, boxes, descriptors, confidences, ages, genders, " +
+  "expressions, person_ids, lat, lng, location, is_map_photo, is_face_photo";
+
+async function fetchPhotoRows(
+  uid: string,
+  columns: string,
+  only?: "map" | "face",
+  ids?: string[],
+): Promise<Record<string, unknown>[]> {
+  let q = supabase.from("photos").select(columns).eq("user_id", uid);
+  // Filter in the database instead of downloading every row and dropping most.
+  if (only === "map") q = q.eq("is_map_photo", true);
+  if (only === "face") q = q.eq("is_face_photo", true);
+  if (ids) q = q.in("id", ids);
+  const { data, error } = await q.order("uploaded_at", { ascending: false });
   if (error) {
-    console.error("fetchPhotoRows failed:", error);
+    console.error("fetchPhotoRows failed:", error.message);
     return [];
   }
-  return data ?? [];
+  return (data ?? []) as unknown as Record<string, unknown>[];
 }
 
 export async function fetchMapPhotos(uid: string): Promise<MapPhoto[]> {
-  return (await fetchPhotoRows(uid)).filter((r) => r.is_map_photo).map(rowToMapPhoto);
+  return (await fetchPhotoRows(uid, MAP_COLUMNS, "map")).map(rowToMapPhoto);
 }
 
 export async function fetchFacePhotos(uid: string): Promise<FacePhoto[]> {
-  return (await fetchPhotoRows(uid)).filter((r) => r.is_face_photo).map(rowToFacePhoto);
+  return (await fetchPhotoRows(uid, FACE_COLUMNS, "face")).map(rowToFacePhoto);
 }
 
 // Specific photos as MapPhoto regardless of is_map_photo — e.g. every photo a
 // person appears in, including face-only saves that were never added to the map.
 export async function fetchPhotosByIds(uid: string, ids: Set<string>): Promise<MapPhoto[]> {
-  return (await fetchPhotoRows(uid)).filter((r) => ids.has(r.id as string)).map(rowToMapPhoto);
+  if (ids.size === 0) return [];
+  return (await fetchPhotoRows(uid, MAP_COLUMNS, undefined, [...ids])).map(rowToMapPhoto);
 }
 
 // Every photo row as MapPhoto (map photos and face-only saves alike).
 export async function fetchEveryPhoto(uid: string): Promise<MapPhoto[]> {
-  return (await fetchPhotoRows(uid)).map(rowToMapPhoto);
+  return (await fetchPhotoRows(uid, MAP_COLUMNS)).map(rowToMapPhoto);
 }
 
-// For pages that need both counts (Stats) without two round trips.
+// For pages that need both lists (Home dashboard, Stats) in one round trip.
+// Face entries here carry counts/metadata only — no boxes or descriptors.
 export async function fetchAllPhotos(uid: string): Promise<{ mapPhotos: MapPhoto[]; facePhotos: FacePhoto[] }> {
-  const rows = await fetchPhotoRows(uid);
+  const rows = await fetchPhotoRows(uid, MAP_COLUMNS);
   return {
     mapPhotos: rows.filter((r) => r.is_map_photo).map(rowToMapPhoto),
     facePhotos: rows.filter((r) => r.is_face_photo).map(rowToFacePhoto),

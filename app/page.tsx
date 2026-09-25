@@ -10,7 +10,7 @@ import AnimatedNumber from "@/components/AnimatedNumber";
 import { fadeUp, staggerContainer } from "@/lib/motion";
 import { supabase } from "@/lib/supabase";
 import { MapPhoto, FacePhoto } from "@/lib/types";
-import { fetchMapPhotos, fetchFacePhotos, upsertPhoto, renamePhoto, uploadToUserPhotos, migrateInlineImages } from "@/lib/photosApi";
+import { fetchAllPhotos, upsertPhoto, renamePhoto, uploadToUserPhotos, migrateInlineImages } from "@/lib/photosApi";
 import { fetchPeople, Person } from "@/lib/peopleApi";
 import {
   Camera, Upload, MapPin, Users, CalendarDays, Clock,
@@ -128,8 +128,9 @@ export default function HomePage() {
   async function refreshStats() {
     const { data: { user } } = await supabase.auth.getUser();
     const uid = user?.id ?? "guest";
-    const mapPhotos: MapPhoto[]   = uid === "guest" ? [] : await fetchMapPhotos(uid);
-    const facePhotos: FacePhoto[] = uid === "guest" ? [] : await fetchFacePhotos(uid);
+    // One round trip for both lists (was two full-table fetches).
+    const { mapPhotos, facePhotos }: { mapPhotos: MapPhoto[]; facePhotos: FacePhoto[] } =
+      uid === "guest" ? { mapPhotos: [], facePhotos: [] } : await fetchAllPhotos(uid);
     const locationSet = new Set(
       mapPhotos.map((p) => p.location?.split(",")[0]?.trim()).filter(Boolean)
     );
