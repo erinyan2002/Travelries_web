@@ -44,8 +44,16 @@ function InviteModal({ inviteCode, onClose }: { inviteCode: string; onClose: () 
   }
 
   async function nativeShare() {
-    if (!navigator.share) return;
-    await navigator.share({ title: "Join my Collab Album", url: inviteLink });
+    if (!navigator.share) return copyLink();
+    try {
+      await navigator.share({ title: "Join my Collab Album", url: inviteLink });
+    } catch (err) {
+      // AbortError = the user closed the share sheet (desktop Chrome also throws it
+      // when no share target is available) — not a failure. Unhandled, it crashed
+      // into Next's error overlay. Fall back to copying the link either way.
+      if (!(err instanceof Error && err.name === "AbortError")) console.warn("Share failed:", err);
+      await copyLink();
+    }
   }
 
   const canNativeShare = typeof navigator !== "undefined" && !!navigator.share;

@@ -180,9 +180,36 @@ export async function removePhotoFromAlbum(photoId: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+// The album this user already belongs to under `code`, if any. Members can read
+// their own albums under RLS; for a non-member this just comes back empty.
+async function memberAlbumIdForCode(uid: string, code: string): Promise<string | null> {
+  const { data: album } = await supabase.from("collab_albums").select("id").eq("invite_code", code).maybeSingle();
+  if (!album) return null;
+  const { data: membership } = await supabase
+    .from("collab_members").select("role").eq("album_id", album.id).eq("user_id", uid).maybeSingle();
+  return membership ? (album.id as string) : null;
+}
+
 export async function joinAlbumByCode(inviteCode: string): Promise<string> {
-  const { data, error } = await supabase.rpc("join_collab_album", { p_invite_code: inviteCode.trim() });
-  if (error) throw new Error(error.message);
+  const code = inviteCode.trim().toLowerCase();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Please log in again to join an album.");
+
+  // join_collab_album inserts a membership row unconditionally, so joining an
+  // album you're already in (e.g. your own — the creator is added as owner)
+  // failed with a raw duplicate-key error. Just open that album instead.
+  const existing = await memberAlbumIdForCode(user.id, code);
+  if (existing) return existing;
+
+  const { data, error } = await supabase.rpc("join_collab_album", { p_invite_code: code });
+  if (error) {
+    if (error.code === "23505") {
+      const again = await memberAlbumIdForCode(user.id, code);
+      if (again) return again;
+    }
+    if (/invalid invite code/i.test(error.message)) throw new Error("That invite code doesn't match any album. Check it and try again.");
+    throw new Error(error.message);
+  }
   return data as string;
 }
 

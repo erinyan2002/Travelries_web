@@ -12,15 +12,17 @@ function JoinForm() {
   const searchParams = useSearchParams();
   const [code,    setCode]    = useState(searchParams.get("code") ?? "");
   const [joining, setJoining] = useState(false);
+  const [error,   setError]   = useState<string | null>(null);
 
   async function handleJoin() {
     if (!code.trim()) return;
     setJoining(true);
+    setError(null);
     try {
       const albumId = await joinAlbumByCode(code.trim());
       router.push(`/collab/${albumId}`);
     } catch (err) {
-      alert(`Failed to join: ${err instanceof Error ? err.message : String(err)}`);
+      setError(err instanceof Error ? err.message : String(err));
       setJoining(false);
     }
   }
@@ -42,12 +44,13 @@ function JoinForm() {
           <label className="text-xs font-bold text-slate-600 mb-2 block">Invite Code</label>
           <input
             value={code}
-            onChange={(e) => setCode(e.target.value.toLowerCase())}
+            onChange={(e) => { setCode(e.target.value.toLowerCase()); setError(null); }}
             onKeyDown={(e) => e.key === "Enter" && handleJoin()}
             placeholder="e.g. a1b2c3d4"
             maxLength={8}
-            className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-mono outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition-all text-center text-lg tracking-widest mb-4"
+            className={`w-full px-4 py-3 rounded-xl border text-sm font-mono outline-none focus:ring-2 transition-all text-center text-lg tracking-widest ${error ? "border-red-300 focus:border-red-400 focus:ring-red-100 mb-2" : "border-slate-200 focus:border-violet-400 focus:ring-violet-100 mb-4"}`}
           />
+          {error && <p className="text-xs font-semibold text-red-500 text-center mb-4">{error}</p>}
           <button onClick={handleJoin} disabled={joining || !code.trim()}
             className="w-full py-3 bg-violet-600 text-white font-bold rounded-xl hover:bg-violet-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
             {joining ? "Joining..." : <><LogIn size={16} /> Join Album</>}
