@@ -13,6 +13,18 @@ export function boxIoU(a: Box, b: Box): number {
   return inter / (a.width * a.height + b.width * b.height - inter);
 }
 
+// Intersection over the SMALLER box's area — 1 when one box is fully inside the
+// other. Plain IoU misses that case (a box inside one ~4x its size has IoU ~0.25),
+// which let one face come out as two nested boxes.
+export function containment(a: Box, b: Box): number {
+  const x1 = Math.max(a.x, b.x), y1 = Math.max(a.y, b.y);
+  const x2 = Math.min(a.x + a.width, b.x + b.width);
+  const y2 = Math.min(a.y + a.height, b.y + b.height);
+  const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  const small = Math.min(a.width * a.height, b.width * b.height);
+  return small > 0 ? inter / small : 0;
+}
+
 export function descriptorDistance(a: number[], b: number[]): number {
   if (!a.length || a.length !== b.length) return Infinity;
   let sum = 0;
@@ -29,6 +41,8 @@ export const CROP_MATCH_IOU = 0.3;
 // essentially never under 0.4 (face-api's own same-person threshold is 0.6).
 export const DEDUPE_IOU = 0.4;
 export const DEDUPE_DESC_DIST = 0.4;
+// A box this much inside another is the same face (two people's faces never nest).
+export const DEDUPE_CONTAIN = 0.6;
 
 // Picks the face-api detection (from inside a padded crop) that confirms THIS
 // MediaPipe box, or null. The crop can also contain a neighbour's face; taking
@@ -43,14 +57,40 @@ export function pickCropMatch<T extends { box: Box }>(candidates: T[], mpBox: Bo
   return best;
 }
 
-// Drops any face that overlaps, or is a near-identical descriptor match of, a
-// higher-scoring face already kept — one person can't appear twice in a photo.
+function sameFace(a: ScoredFace, b: ScoredFace): boolean {
+  return boxIoU(a.box, b.box) >= DEDUPE_IOU
+    || containment(a.box, b.box) >= DEDUPE_CONTAIN
+    || descriptorDistance(a.descriptor, b.descriptor) < DEDUPE_DESC_DIST;
+}
+
+// Drops any face that overlaps, sits inside, or is a near-identical descriptor
+// match of a face already kept — one person can't appear twice in a photo.
+// Between a nested pair the LARGER box wins (the smaller is usually a partial
+// face); otherwise the higher score wins.
 export function dedupeFaces<T extends ScoredFace>(faces: T[]): T[] {
   const kept: T[] = [];
   for (const c of [...faces].sort((a, b) => b.score - a.score)) {
-    const dup = kept.some((k) =>
-      boxIoU(c.box, k.box) >= DEDUPE_IOU || descriptorDistance(c.descriptor, k.descriptor) < DEDUPE_DESC_DIST);
-    if (!dup) kept.push(c);
+    const i = kept.findIndex((k) => sameFace(c, k));
+    if (i === -1) kept.push(c);
+    else if (containment(c.box, kept[i].box) >= DEDUPE_CONTAIN
+             && c.box.width * c.box.height > kept[i].box.width * kept[i].box.height) kept[i] = c;
   }
   return kept;
+}
+
+// For already-saved photos: indices of faces that sit inside another face box
+// on the same photo (the smaller of each nested pair). Skips removed faces
+// (zero-size tombstones) and any face the user has manually tagged.
+export function nestedDuplicateIndices(boxes: Box[], personIds?: (string | null)[]): number[] {
+  const live = boxes.map((b, i) => ({ b, i })).filter(({ b }) => b.width > 0 && b.height > 0);
+  const drop = new Set<number>();
+  for (const a of live) {
+    for (const o of live) {
+      if (a.i === o.i || drop.has(o.i)) continue;
+      const aSmaller = a.b.width * a.b.height < o.b.width * o.b.height
+        || (a.b.width * a.b.height === o.b.width * o.b.height && a.i > o.i);
+      if (aSmaller && containment(a.b, o.b) >= DEDUPE_CONTAIN && !personIds?.[a.i]) drop.add(a.i);
+    }
+  }
+  return [...drop];
 }

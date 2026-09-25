@@ -12,6 +12,7 @@ import { deletePhotoEverywhere } from "@/lib/savedUtils";
 import { fetchPeople, createPerson, renamePerson, linkPersonToUser, Person } from "@/lib/peopleApi";
 import { fetchFollowingProfiles, fetchFollowerProfiles, Profile } from "@/lib/socialUtils";
 import { FaceEntry, PersonCluster, MATCH_THRESHOLD, buildPersonGroups } from "@/lib/faceClustering";
+import { nestedDuplicateIndices } from "@/lib/faceMatching";
 import { useRouter } from "next/navigation";
 import {
   Users, ImageIcon, Images, MapPin, CalendarDays, Trash2, X,
@@ -384,6 +385,20 @@ export default function FacesPage() {
             console.error("Migrating face labels failed:", err);
           }
         }
+      }
+
+      // One face saved as two nested boxes (an older detector bug, fixed at upload
+      // time) — tombstone the inner box on already-saved photos so the demo data
+      // doesn't show one person as two. Tagged faces are never touched.
+      if (u !== "guest") {
+        let cleaned = 0;
+        for (const photo of faces) {
+          for (const i of nestedDuplicateIndices(photo.boxes ?? [], photo.personIds)) {
+            try { await removeFaceFromPhoto(u, photo.id, i); cleaned++; }
+            catch (err) { console.warn("Removing duplicate face failed:", err); }
+          }
+        }
+        if (cleaned > 0) faces = await fetchFacePhotos(u);
       }
 
       if (u !== "guest") {

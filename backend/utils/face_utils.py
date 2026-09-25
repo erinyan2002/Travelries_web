@@ -85,13 +85,53 @@ def _iou_xyxy(a: np.ndarray, b: np.ndarray) -> float:
     return inter / ua
 
 
+# A box this much inside another is the same face seen by a different pass
+# (e.g. a tile seam cut the face, or the downscaled pass drew a looser box).
+# Two different people's faces never nest like that.
+CONTAIN_THR = 0.6
+# Same person: normed ArcFace embeddings this similar (cosine) on overlapping boxes.
+SAME_FACE_COS = 0.6
+
+
+def _area(b: np.ndarray) -> float:
+    return max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1])
+
+
+def _containment(a: np.ndarray, b: np.ndarray) -> float:
+    """Intersection over the SMALLER box's area (1.0 = one fully inside the other)."""
+    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
+    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
+    inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+    small = min(_area(a), _area(b))
+    return inter / small if small > 0 else 0.0
+
+
+def _same_face(d, k, iou_thr: float) -> bool:
+    if _iou_xyxy(d[1], k[1]) >= iou_thr or _containment(d[1], k[1]) >= CONTAIN_THR:
+        return True
+    ea, eb = d[2], k[2]
+    if ea is not None and eb is not None and _containment(d[1], k[1]) > 0:
+        return float(np.dot(ea, eb)) >= SAME_FACE_COS
+    return False
+
+
 def _nms(dets: list, iou_thr: float = NMS_IOU_THR) -> list:
-    """Greedy NMS. dets = list of (score, bbox_xyxy, embedding, age, gender)."""
+    """Greedy NMS. dets = list of (score, bbox_xyxy, embedding, age, gender).
+
+    Plain IoU missed a small box nested inside a bigger one for the SAME face
+    (IoU of a box inside one ~4x its size is only ~0.25), so one person came out
+    as two. Duplicates are also caught by containment and embedding similarity;
+    between two duplicates the LARGER box wins, since the smaller one is usually
+    a partial face from a tile edge.
+    """
     dets = sorted(dets, key=lambda d: d[0], reverse=True)
     kept: list = []
     for d in dets:
-        if all(_iou_xyxy(d[1], k[1]) < iou_thr for k in kept):
+        dup = next((i for i, k in enumerate(kept) if _same_face(d, k, iou_thr)), None)
+        if dup is None:
             kept.append(d)
+        elif _area(d[1]) > _area(kept[dup][1]) and _containment(d[1], kept[dup][1]) >= CONTAIN_THR:
+            kept[dup] = d
     return kept
 
 

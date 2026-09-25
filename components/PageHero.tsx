@@ -38,21 +38,21 @@ export default function PageHero({
         style={{ backgroundImage: "radial-gradient(rgba(14,116,144,0.18) 1px, transparent 1px)", backgroundSize: "16px 16px",
                  maskImage: "linear-gradient(to left, black, transparent 70%)", WebkitMaskImage: "linear-gradient(to left, black, transparent 70%)" }}
       />
-      <div className="relative flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-3">
-        <motion.div
-          whileHover={{ rotate: -8, scale: 1.05 }}
-          transition={{ type: "spring", stiffness: 300, damping: 15 }}
-          className={`w-11 h-11 sm:w-12 sm:h-12 bg-gradient-to-br ${iconGradient} rounded-2xl flex items-center justify-center flex-shrink-0 shadow-lg shadow-sky-200 ring-4 ring-white/70`}
+      <div className="relative flex flex-wrap sm:flex-nowrap items-center gap-x-3.5 gap-y-3">
+        {/* Compact badge: a ring/offset around it read as oversized and bled into
+            the title, and a hover tilt made it look crooked. */}
+        <div
+          className={`w-10 h-10 sm:w-11 sm:h-11 bg-gradient-to-br ${iconGradient} rounded-[14px] flex items-center justify-center flex-shrink-0 shadow-md shadow-sky-300/50`}
         >
-          <Icon size={22} className="text-white" />
-        </motion.div>
+          <Icon size={20} strokeWidth={2.2} className="text-white" />
+        </div>
         <div className="flex-1 min-w-0">
-          <h1 className="text-2xl sm:text-[28px] leading-tight font-extrabold text-slate-800 tracking-tight">{title}</h1>
+          <h1 className="text-[22px] sm:text-[26px] leading-tight font-extrabold text-slate-800 tracking-tight">{title}</h1>
           {subtitle && <p className="text-slate-500 text-sm mt-0.5 line-clamp-2">{subtitle}</p>}
         </div>
         {/* Phones: actions drop to their own row under the title (indented to line
             up with it) instead of squeezing the title into "Collab Albu…". */}
-        {action && <div className="w-full sm:w-auto pl-14 sm:pl-0 flex-shrink-0">{action}</div>}
+        {action && <div className="w-full sm:w-auto pl-[54px] sm:pl-0 flex-shrink-0">{action}</div>}
       </div>
       {children && <div className="relative mt-5">{children}</div>}
     </motion.div>

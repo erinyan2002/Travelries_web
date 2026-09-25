@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { boxIoU, descriptorDistance, pickCropMatch, dedupeFaces } from "./faceMatching";
+import { boxIoU, descriptorDistance, pickCropMatch, dedupeFaces, containment, nestedDuplicateIndices } from "./faceMatching";
 
 const box = (x: number, y: number, w = 100, h = 100) => ({ x, y, width: w, height: h });
 
@@ -52,5 +52,31 @@ describe("dedupeFaces", () => {
     const a = { box: box(0, 0), score: 0.9, descriptor: d(0.1) };
     const b = { box: box(300, 0), score: 0.8, descriptor: d(0.2) };
     expect(dedupeFaces([a, b])).toHaveLength(2);
+  });
+});
+
+describe("nested duplicate boxes (one face, two boxes)", () => {
+  // The exhibition-demo bug: a small partial-face box inside the full-face box.
+  const full = box(1450, 340, 150, 190);
+  const partial = box(1475, 445, 75, 85);
+
+  it("containment is 1 for a box fully inside another, while IoU stays low", () => {
+    expect(containment(partial, full)).toBe(1);
+    expect(boxIoU(partial, full)).toBeLessThan(0.4);
+  });
+
+  it("dedupeFaces keeps the larger box even when the partial one scored higher", () => {
+    const d = (v: number) => Array.from({ length: 128 }, () => v);
+    const kept = dedupeFaces([
+      { box: partial, score: 0.95, descriptor: d(0.1) },
+      { box: full, score: 0.7, descriptor: d(0.5) },
+    ]);
+    expect(kept.map((k) => k.box)).toEqual([full]);
+  });
+
+  it("nestedDuplicateIndices flags the inner box, not side-by-side faces or tagged ones", () => {
+    expect(nestedDuplicateIndices([full, partial, box(0, 0, 100, 100)])).toEqual([1]);
+    expect(nestedDuplicateIndices([full, partial], [null, "alice"])).toEqual([]);
+    expect(nestedDuplicateIndices([full, { x: 0, y: 0, width: 0, height: 0 }])).toEqual([]);
   });
 });
