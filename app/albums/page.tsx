@@ -371,6 +371,14 @@ function DeleteConfirmModal({ onConfirm, onCancel }: { onConfirm: () => void; on
   );
 }
 
+// Per-trip accent (cycled) for the Trips timeline: date label, rail dot, cover backdrop.
+const TRIP_ACCENTS = [
+  { text: "text-sky-600",     dot: "from-sky-400 to-blue-500",      bg: "from-sky-100 to-blue-100",      shadow: "shadow-sky-100" },
+  { text: "text-violet-600",  dot: "from-violet-400 to-purple-500", bg: "from-violet-100 to-fuchsia-100", shadow: "shadow-violet-100" },
+  { text: "text-emerald-600", dot: "from-emerald-400 to-teal-500",  bg: "from-emerald-100 to-teal-100",  shadow: "shadow-emerald-100" },
+  { text: "text-amber-600",   dot: "from-amber-400 to-orange-500",  bg: "from-amber-100 to-orange-100",  shadow: "shadow-amber-100" },
+];
+
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 function formatPhotoDate(raw: string | null | undefined): string {
@@ -800,108 +808,118 @@ export default function AlbumsPage() {
               <p className="text-slate-400 text-sm">Photos need date info to be grouped into trips.</p>
             </div>
           ) : (
-            <div className="space-y-5">
-              {trips.map((trip) => {
+            // Travel-journal timeline: a date rail on the left, one card per trip.
+            <div className="relative">
+              <div className="absolute left-[27px] sm:left-[35px] top-3 bottom-3 w-px bg-gradient-to-b from-sky-200 via-indigo-200 to-transparent" />
+              <div className="space-y-6">
+              {trips.map((trip, ti) => {
                 const isExpanded = expandedTripId === trip.id;
                 const n = trip.photos.length;
                 const photoWord = n === 1 ? "photo" : "photos";
+                const withPeople = trip.photos.filter((p) => (p.faceCount ?? 0) > 0).length;
+                const accent = TRIP_ACCENTS[ti % TRIP_ACCENTS.length];
+                // dateRange starts with "YYYY.MM.DD"
+                const [yy, mm, dd] = trip.dateRange.slice(0, 10).split(".");
+                const monthLabel = mm ? MONTHS[Number(mm) - 1]?.slice(0, 3).toUpperCase() : "";
+                const sharing = sharingTripKey === tripKeyOf(trip);
                 return (
-                <div key={trip.id} className="rounded-3xl overflow-hidden shadow-md bg-white border border-slate-100">
-
-                  {/* ── Cover collage with gradient overlay ── */}
-                  <div className="relative h-52 overflow-hidden cursor-pointer"
-                    onClick={() => trip.photos[0] && setSelectedPhoto(trip.photos[0])}>
-                    {n >= 4 ? (
-                      <div className="grid grid-cols-2 h-full gap-0.5">
-                        {trip.photos.slice(0, 4).map((photo, i) => (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img key={i} src={photo.imageUrl} alt="" onClick={(e) => { e.stopPropagation(); setSelectedPhoto(photo); }}
-                            className="w-full h-full object-cover hover:brightness-95 transition-all" />
-                        ))}
-                      </div>
-                    ) : n >= 2 ? (
-                      <div className="flex h-full gap-0.5">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={trip.photos[0].imageUrl} alt="" onClick={(e) => { e.stopPropagation(); setSelectedPhoto(trip.photos[0]); }}
-                          className="flex-[2] h-full object-cover hover:brightness-95 transition-all" />
-                        <div className="flex flex-col gap-0.5 flex-1">
-                          {trip.photos.slice(1, 3).map((photo, i) => (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img key={i} src={photo.imageUrl} alt="" onClick={(e) => { e.stopPropagation(); setSelectedPhoto(photo); }}
-                              className="flex-1 w-full object-cover hover:brightness-95 transition-all" />
-                          ))}
-                        </div>
-                      </div>
-                    ) : (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={trip.photos[0].imageUrl} alt=""
-                        className="w-full h-full object-cover" />
-                    )}
-
-                    {/* Gradient overlay */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent pointer-events-none" />
-
-                    {/* Photo count badge top-right */}
-                    <div className="absolute top-3.5 right-3.5 bg-black/40 backdrop-blur-sm text-white text-xs font-bold px-3 py-1 rounded-full pointer-events-none">
-                      {n} {photoWord}
+                <div key={trip.id} className="relative flex gap-3 sm:gap-5">
+                  {/* ── Date on the rail ── */}
+                  <div className="relative z-10 flex-shrink-0 w-14 sm:w-[72px] flex flex-col items-center pt-1">
+                    <div className={`w-14 sm:w-[72px] rounded-2xl bg-white border border-white shadow-md ${accent.shadow} text-center py-2`}>
+                      <p className={`text-[10px] font-black tracking-widest ${accent.text}`}>{monthLabel}</p>
+                      <p className="text-xl sm:text-2xl font-black text-slate-800 leading-none">{dd ? Number(dd) : "–"}</p>
+                      <p className="text-[10px] font-semibold text-slate-400 mt-0.5">{yy}</p>
                     </div>
+                    <span className={`mt-2 w-3 h-3 rounded-full bg-gradient-to-br ${accent.dot} ring-4 ring-white shadow`} />
+                  </div>
 
-                    {/* Location + date at bottom */}
-                    <div className="absolute bottom-0 left-0 right-0 px-4 pb-4 pointer-events-none">
-                      <div className="flex items-end justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 mb-0.5">
-                            <MapPin size={14} className="text-white/90 flex-shrink-0" />
-                            <h2 className="font-black text-white text-lg leading-tight truncate drop-shadow">{trip.name}</h2>
+                  {/* ── Trip card ── */}
+                  <div className="flex-1 min-w-0 tv-card tv-card-hover overflow-hidden">
+                    <div className="flex flex-col sm:flex-row">
+                      {/* Cover: stacked polaroids when there's more than one photo */}
+                      <button type="button" onClick={() => setSelectedPhoto(trip.photos[0])}
+                        className={`group relative flex-shrink-0 sm:w-56 h-48 sm:h-auto sm:min-h-[200px] overflow-hidden bg-gradient-to-br ${accent.bg}`}>
+                        {n >= 3 && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={trip.photos[2].imageUrl} alt="" aria-hidden
+                            className="absolute left-1/2 top-1/2 h-[76%] w-auto aspect-[4/5] -translate-x-[62%] -translate-y-1/2 -rotate-[9deg] object-cover object-[center_30%] rounded-lg border-4 border-white shadow-lg transition-transform duration-500 group-hover:-rotate-[13deg]" />
+                        )}
+                        {n >= 2 && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={trip.photos[1].imageUrl} alt="" aria-hidden
+                            className="absolute left-1/2 top-1/2 h-[76%] w-auto aspect-[4/5] -translate-x-[38%] -translate-y-1/2 rotate-[8deg] object-cover object-[center_30%] rounded-lg border-4 border-white shadow-lg transition-transform duration-500 group-hover:rotate-[12deg]" />
+                        )}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={trip.photos[0].imageUrl} alt={trip.name}
+                          className={n >= 2
+                            ? "absolute left-1/2 top-1/2 h-[82%] w-auto aspect-[4/5] -translate-x-1/2 -translate-y-1/2 object-cover object-[center_30%] rounded-lg border-4 border-white shadow-xl transition-transform duration-500 group-hover:scale-105"
+                            : "absolute inset-0 w-full h-full object-cover object-[center_30%] transition-transform duration-500 group-hover:scale-105"} />
+                        <span className="absolute top-2.5 left-2.5 bg-white/85 backdrop-blur-sm text-slate-700 text-[11px] font-bold px-2.5 py-1 rounded-full shadow-sm">
+                          {n} {photoWord}
+                        </span>
+                      </button>
+
+                      {/* Info */}
+                      <div className="flex-1 min-w-0 p-4 sm:p-5 flex flex-col">
+                        <div className="flex items-start gap-2">
+                          <MapPin size={17} className={`${accent.text} flex-shrink-0 mt-0.5`} />
+                          <h2 className="font-extrabold text-slate-800 text-lg leading-snug line-clamp-2">{trip.name}</h2>
+                        </div>
+                        <p className="text-xs font-semibold text-slate-400 mt-1 ml-[25px] flex items-center gap-1">
+                          <CalendarDays size={11} /> {trip.dateRange}
+                        </p>
+
+                        {trip.locations.length > 1 && (
+                          <div className="flex flex-wrap gap-1.5 mt-3">
+                            {trip.locations.slice(0, 4).map((loc) => (
+                              <span key={loc} className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full truncate max-w-[160px]">{loc}</span>
+                            ))}
                           </div>
-                          {trip.locations.length > 1 && (
-                            <p className="text-white/70 text-xs ml-[22px] truncate">{trip.locations.slice(1, 3).join(" · ")}</p>
+                        )}
+
+                        <div className="flex items-center gap-3 mt-3 text-xs font-semibold text-slate-500">
+                          <span className="flex items-center gap-1"><Images size={13} className="text-slate-400" /> {n} {photoWord}</span>
+                          {withPeople > 0 && (
+                            <span className="flex items-center gap-1"><Users size={13} className="text-slate-400" /> {withPeople} with people</span>
                           )}
                         </div>
-                        <p className="text-white/70 text-xs flex-shrink-0 text-right leading-snug">{trip.dateRange}</p>
+
+                        <div className="flex flex-wrap gap-2 mt-auto pt-4">
+                          <button onClick={() => handleGenerateDiary(trip)}
+                            className="tv-btn-primary text-xs px-3.5 py-2">
+                            <Sparkles size={13} /> AI Diary
+                          </button>
+                          <button onClick={() => setExpandedTripId(isExpanded ? null : trip.id)}
+                            className="tv-btn-soft text-xs px-3.5 py-2">
+                            <Images size={13} /> {isExpanded ? "Hide photos" : `View ${n} ${photoWord}`}
+                          </button>
+                          <button onClick={() => handleShareTrip(trip)} disabled={sharing}
+                            className="inline-flex items-center justify-center gap-1.5 text-xs font-bold px-3.5 py-2 rounded-xl text-slate-600 bg-white border border-slate-200 hover:border-sky-300 hover:text-sky-700 transition-colors disabled:opacity-60">
+                            {sharing ? <Loader2 size={13} className="animate-spin" /> : <Share2 size={13} />} Share
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* ── View all / AI diary ── */}
-                  <div className="flex divide-x divide-slate-100 border-t border-slate-100">
-                    <button
-                      onClick={() => setExpandedTripId(isExpanded ? null : trip.id)}
-                      className="flex-1 flex items-center justify-center gap-1.5 text-sm font-bold text-blue-500 hover:text-blue-700 hover:bg-blue-50 py-3 transition-colors">
-                      {isExpanded
-                        ? <><span className="text-xs">▲</span> Hide</>
-                        : <><span className="text-xs">▼</span> <span className="hidden sm:inline">View all</span> {n} {photoWord}</>
-                      }
-                    </button>
-                    <button
-                      onClick={() => handleGenerateDiary(trip)}
-                      className="flex-1 flex items-center justify-center gap-1.5 text-sm font-bold text-slate-500 hover:text-blue-600 hover:bg-blue-50 py-3 transition-colors">
-                      <Sparkles size={14} /> AI Diary
-                    </button>
-                    <button
-                      onClick={() => handleShareTrip(trip)}
-                      disabled={sharingTripKey === tripKeyOf(trip)}
-                      className="flex-1 flex items-center justify-center gap-1.5 text-sm font-bold text-slate-500 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-60 py-3 transition-colors">
-                      {sharingTripKey === tripKeyOf(trip) ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />} Share
-                    </button>
+                    {/* ── Expanded grid ── */}
+                    {isExpanded && (
+                      <div className="px-3 pb-3 pt-3 grid grid-cols-3 sm:grid-cols-4 gap-2 border-t border-slate-100">
+                        {trip.photos.map((photo) => (
+                          <button key={photo.id} onClick={() => setSelectedPhoto(photo)}
+                            className="group rounded-xl overflow-hidden aspect-square bg-slate-100">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={photo.imageUrl} alt={photo.fileName} loading="lazy"
+                              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-
-                  {/* ── Expanded grid ── */}
-                  {isExpanded && (
-                    <div className="px-3 pb-3 grid grid-cols-3 gap-2 border-t border-slate-100 pt-3">
-                      {trip.photos.map((photo) => (
-                        <div key={photo.id} onClick={() => setSelectedPhoto(photo)}
-                          className="cursor-pointer rounded-xl overflow-hidden group">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={photo.imageUrl} alt={photo.fileName}
-                            className="w-full h-28 object-cover group-hover:brightness-90 transition-all" />
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
                 );
               })}
+              </div>
             </div>
           )
         ) : (
