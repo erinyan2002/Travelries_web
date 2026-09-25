@@ -110,7 +110,8 @@ def generate_travel_diary(entries: list[dict], language: str = "ko") -> str:
         lines.append("- " + " / ".join(parts) if parts else f"- {e.get('fileName', 'photo')}")
     photo_summary = "\n".join(lines) if lines else "(no metadata available)"
 
-    lang_instruction = "Write in Korean." if language == "ko" else f"Write in {language}."
+    lang_name = {"ko": "Korean", "en": "English"}.get(language, language)
+    lang_instruction = f"Write in {lang_name}."
 
     start = time.monotonic()
     try:

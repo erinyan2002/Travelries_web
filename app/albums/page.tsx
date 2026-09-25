@@ -160,10 +160,25 @@ function ShareLinkModal({ url, onClose }: { url: string; onClose: () => void }) 
   );
 }
 
+type DiaryLang = "en" | "ko";
+const DIARY_LANGS: { value: DiaryLang; label: string }[] = [
+  { value: "en", label: "English" },
+  { value: "ko", label: "한국어" },
+];
+const DIARY_LANG_STORAGE = "diary-lang";
+
+// trip_diaries is unique per (user_id, trip_key), so each language gets its own
+// key. Korean keeps the bare key — every diary cached before English existed
+// was Korean, and stays a cache hit.
+function diaryCacheKey(tripKey: string, lang: DiaryLang): string {
+  return lang === "ko" ? tripKey : `${tripKey}|${lang}`;
+}
+
 function DiaryModal({
-  tripName, loading, diary, error, cached, onClose, onRegenerate,
+  tripName, loading, diary, error, cached, lang, onLangChange, onClose, onRegenerate,
 }: {
   tripName: string; loading: boolean; diary: string | null; error: string | null; cached: boolean;
+  lang: DiaryLang; onLangChange: (lang: DiaryLang) => void;
   onClose: () => void; onRegenerate: () => void;
 }) {
   return (
@@ -176,9 +191,19 @@ function DiaryModal({
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1"><X size={18} /></button>
         </div>
+        {/* Language: each is generated once, then cached separately. */}
+        <div className="inline-flex p-1 mb-4 rounded-xl bg-slate-100">
+          {DIARY_LANGS.map(({ value, label }) => (
+            <button key={value} onClick={() => value !== lang && onLangChange(value)} disabled={loading}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all disabled:cursor-wait ${
+                value === lang ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+              {label}
+            </button>
+          ))}
+        </div>
         {loading && (
           <div className="flex items-center gap-2 text-slate-400 text-sm py-6 justify-center">
-            <Loader2 size={16} className="animate-spin" /> Writing your diary...
+            <Loader2 size={16} className="animate-spin" /> {lang === "ko" ? "일기를 쓰는 중..." : "Writing your diary..."}
           </div>
         )}
         {!loading && error && (
@@ -187,10 +212,10 @@ function DiaryModal({
         {!loading && diary && (
           <>
             <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{diary}</p>
-            {cached && <p className="text-[11px] text-slate-400 mt-2">Saved earlier — no new API call.</p>}
+            {cached && <p className="text-[11px] text-slate-400 mt-2">{lang === "ko" ? "저장된 일기예요 — AI를 다시 부르지 않았어요." : "Saved earlier — no new API call."}</p>}
             <button onClick={onRegenerate}
               className="mt-3 flex items-center gap-1.5 text-xs font-bold text-blue-500 hover:text-blue-700 transition-colors">
-              <Sparkles size={12} /> Re-generate
+              <Sparkles size={12} /> {lang === "ko" ? "다시 쓰기" : "Re-generate"}
             </button>
           </>
         )}
@@ -448,15 +473,28 @@ export default function AlbumsPage() {
   const [diaryText,         setDiaryText]         = useState<string | null>(null);
   const [diaryError,        setDiaryError]        = useState<string | null>(null);
   const [diaryCached,       setDiaryCached]       = useState(false);
+  // Remembered per browser (a viewer preference); English by default to match the UI.
+  const [diaryLang,         setDiaryLang]         = useState<DiaryLang>(() => {
+    try {
+      const v = typeof window !== "undefined" ? localStorage.getItem(DIARY_LANG_STORAGE) : null;
+      return v === "ko" || v === "en" ? v : "en";
+    } catch { return "en"; }
+  });
   const [uid,               setUid]               = useState<string | null>(null);
 
-  async function handleGenerateDiary(trip: Trip, forceRegenerate = false) {
+  function changeDiaryLang(lang: DiaryLang) {
+    setDiaryLang(lang);
+    try { localStorage.setItem(DIARY_LANG_STORAGE, lang); } catch { /* storage unavailable — fine */ }
+    if (diaryTrip) handleGenerateDiary(diaryTrip, false, lang);
+  }
+
+  async function handleGenerateDiary(trip: Trip, forceRegenerate = false, lang: DiaryLang = diaryLang) {
     setDiaryTrip(trip);
     setDiaryLoading(true);
     setDiaryText(null);
     setDiaryError(null);
     setDiaryCached(false);
-    const key = tripKeyOf(trip);
+    const key = diaryCacheKey(tripKeyOf(trip), lang);
     try {
       if (!forceRegenerate && uid) {
         const cached = await fetchTripDiary(uid, key);
@@ -470,7 +508,7 @@ export default function AlbumsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          language: "ko",
+          language: lang,
           entries: trip.photos.map((p) => ({
             fileName: p.fileName,
             location: p.location,
@@ -485,7 +523,7 @@ export default function AlbumsPage() {
         setDiaryText(data.diary);
         // Caching is best-effort: a failed save must not turn a successfully
         // generated diary into a "backend offline" error.
-        if (uid) saveTripDiary(uid, key, data.diary, "ko").catch((err) => console.warn("Caching diary failed:", err));
+        if (uid) saveTripDiary(uid, key, data.diary, lang).catch((err) => console.warn("Caching diary failed:", err));
       } else {
         setDiaryError(data.error ?? "Couldn't generate the diary. Please try again in a moment.");
       }
@@ -591,7 +629,11 @@ export default function AlbumsPage() {
     const key = tripKeyOf(trip);
     setSharingTripKey(key);
     try {
-      const diary = uid ? await fetchTripDiary(uid, key) : null;
+      // The diary in the language the viewer picked, falling back to the other one.
+      const other: DiaryLang = diaryLang === "ko" ? "en" : "ko";
+      const diary = uid
+        ? (await fetchTripDiary(uid, diaryCacheKey(key, diaryLang))) ?? (await fetchTripDiary(uid, diaryCacheKey(key, other)))
+        : null;
       setShareResultUrl(await shareTrip(trip, diary));
     } catch (err) {
       alert(`Failed to create trip link:\n${err instanceof Error ? err.message : String(err)}\n\nIf this keeps happening, run supabase/migrations/0013_trip_shares.sql.`);
@@ -1026,6 +1068,8 @@ export default function AlbumsPage() {
           diary={diaryText}
           error={diaryError}
           cached={diaryCached}
+          lang={diaryLang}
+          onLangChange={changeDiaryLang}
           onClose={() => setDiaryTrip(null)}
           onRegenerate={() => handleGenerateDiary(diaryTrip, true)}
         />
