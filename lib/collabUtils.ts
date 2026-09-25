@@ -210,7 +210,12 @@ export async function joinAlbumByCode(inviteCode: string): Promise<string> {
     if (/invalid invite code/i.test(error.message)) throw new Error("That invite code doesn't match any album. Check it and try again.");
     throw new Error(error.message);
   }
-  return data as string;
+  // Resolve the album by invite code now that we're a member, rather than
+  // trusting the RPC's return value (whose shape isn't defined in this repo).
+  const joined = await memberAlbumIdForCode(user.id, code);
+  if (joined) return joined;
+  if (typeof data === "string" && data) return data;
+  throw new Error("You joined, but the album isn't visible yet. Run supabase/migrations/0014_collab_member_read_access.sql, then try again.");
 }
 
 export async function leaveAlbum(albumId: string): Promise<void> {
