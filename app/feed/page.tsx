@@ -388,7 +388,7 @@ export default function FeedPage() {
           }
           action={
             <button onClick={openNewPost}
-              className="flex items-center gap-1.5 bg-gradient-to-br from-sky-500 to-blue-500 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-md shadow-blue-200">
+              className="flex items-center gap-1.5 bg-gradient-to-br from-sky-500 to-blue-500 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-md shadow-blue-200 hover:from-sky-600 hover:to-blue-600 hover:shadow-lg hover:-translate-y-0.5 transition-all">
               <Plus size={16} /> Post
             </button>
           }

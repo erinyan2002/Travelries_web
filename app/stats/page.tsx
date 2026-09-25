@@ -368,7 +368,7 @@ export default function StatsPage() {
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
               onClick={() => setShowYearCard(true)}
-              className="flex items-center gap-1.5 bg-gradient-to-br from-sky-500 to-blue-500 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-md shadow-blue-200"
+              className="flex items-center gap-1.5 bg-gradient-to-br from-sky-500 to-blue-500 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-md shadow-blue-200 hover:from-sky-600 hover:to-blue-600 hover:shadow-lg hover:-translate-y-0.5 transition-all"
             >
               <LayoutTemplate size={16} /> Year in Review
             </motion.button>
