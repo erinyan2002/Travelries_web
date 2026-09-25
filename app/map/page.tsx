@@ -32,7 +32,7 @@ function makeClusterIcon(photo: MapPhoto, count: number): L.DivIcon {
     ? `<span style="position:absolute;top:-5px;right:-5px;background:#ef4444;color:white;border-radius:50%;width:20px;height:20px;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;line-height:20px;">${count}</span>`
     : "";
   return L.divIcon({
-    html: `<div style="position:relative;width:52px;height:52px;border-radius:50%;border:3px solid #2563eb;box-shadow:0 2px 10px rgba(0,0,0,0.3);overflow:visible;background:white;">
+    html: `<div style="position:relative;width:52px;height:52px;border-radius:50%;border:3px solid #0369a1;box-shadow:0 2px 10px rgba(0,0,0,0.3);overflow:visible;background:white;">
       <img src="${photo.imageUrl}" style="width:52px;height:52px;object-fit:cover;border-radius:50%;display:block;" />
       ${badge}
     </div>`,
@@ -53,7 +53,7 @@ function bearingDeg(a: [number, number], b: [number, number]): number {
 function makeArrowIcon(bearing: number): L.DivIcon {
   return L.divIcon({
     html: `<div style="width:24px;height:24px;transform:rotate(${bearing}deg);filter:drop-shadow(0 1px 2px rgba(0,0,0,0.35));">
-      <svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 3 L19 20 L12 15.5 L5 20 Z" fill="#2563eb" stroke="white" stroke-width="1.6" stroke-linejoin="round" /></svg>
+      <svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 3 L19 20 L12 15.5 L5 20 Z" fill="#0369a1" stroke="white" stroke-width="1.6" stroke-linejoin="round" /></svg>
     </div>`,
     className: "", iconSize: [24, 24], iconAnchor: [12, 12],
   });
@@ -78,7 +78,7 @@ function RouteLayer({ positions }: { positions: [number, number][] }) {
     <>
       {/* White casing underneath so the route reads clearly against any tile color */}
       <Polyline positions={positions} pathOptions={{ color: "#ffffff", weight: 8, opacity: 0.9, lineCap: "round", lineJoin: "round" }} interactive={false} />
-      <Polyline positions={positions} pathOptions={{ color: "#2563eb", weight: 4, opacity: 1, lineCap: "round", lineJoin: "round", dashArray: "14 12", className: "route-flow-line" }} interactive={false} />
+      <Polyline positions={positions} pathOptions={{ color: "#0369a1", weight: 4, opacity: 1, lineCap: "round", lineJoin: "round", dashArray: "14 12", className: "route-flow-line" }} interactive={false} />
       {segments.map((seg) => (
         <Marker key={seg.key} position={seg.mid} icon={makeArrowIcon(seg.bearing)} interactive={false} />
       ))}

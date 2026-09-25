@@ -1,7 +1,49 @@
 @import "tailwindcss";
 
+@theme {
+  /* Travelries "sky" brand (2026-09-25): the app's classes say blue/sky/indigo,
+     remapped here in one place. A clear sky blue with an aqua accent — lighter and
+     softer than the Facebook-like royal blue the stock blue-600 gave, and without
+     the green cast of the teal tried before. blue-* = primary (stock sky scale),
+     sky-* = light aqua accent (stock cyan), indigo-* = deeper sky (sky, one step
+     darker at 400+). */
+  --color-blue-50: oklch(97.7% 0.013 236.62);
+  --color-blue-100: oklch(95.1% 0.026 236.824);
+  --color-blue-200: oklch(90.1% 0.058 230.902);
+  --color-blue-300: oklch(82.8% 0.111 230.318);
+  --color-blue-400: oklch(74.6% 0.16 232.661);
+  --color-blue-500: oklch(68.5% 0.169 237.323);
+  --color-blue-600: oklch(58.8% 0.158 241.966);
+  --color-blue-700: oklch(50% 0.134 242.749);
+  --color-blue-800: oklch(44.3% 0.11 240.79);
+  --color-blue-900: oklch(39.1% 0.09 240.876);
+  --color-blue-950: oklch(29.3% 0.066 243.157);
+  --color-sky-50: oklch(98.4% 0.019 200.873);
+  --color-sky-100: oklch(95.6% 0.045 203.388);
+  --color-sky-200: oklch(91.7% 0.08 205.041);
+  --color-sky-300: oklch(86.5% 0.127 207.078);
+  --color-sky-400: oklch(78.9% 0.154 211.53);
+  --color-sky-500: oklch(71.5% 0.143 215.221);
+  --color-sky-600: oklch(60.9% 0.126 221.723);
+  --color-sky-700: oklch(52% 0.105 223.128);
+  --color-sky-800: oklch(45% 0.085 224.283);
+  --color-sky-900: oklch(39.8% 0.07 227.392);
+  --color-sky-950: oklch(30.2% 0.056 229.695);
+  --color-indigo-50: oklch(97.7% 0.013 236.62);
+  --color-indigo-100: oklch(95.1% 0.026 236.824);
+  --color-indigo-200: oklch(90.1% 0.058 230.902);
+  --color-indigo-300: oklch(82.8% 0.111 230.318);
+  --color-indigo-400: oklch(68.5% 0.169 237.323);
+  --color-indigo-500: oklch(58.8% 0.158 241.966);
+  --color-indigo-600: oklch(50% 0.134 242.749);
+  --color-indigo-700: oklch(44.3% 0.11 240.79);
+  --color-indigo-800: oklch(39.1% 0.09 240.876);
+  --color-indigo-900: oklch(29.3% 0.066 243.157);
+  --color-indigo-950: oklch(29.3% 0.066 243.157);
+}
+
 :root {
-  --background: #f5f8fc;
+  --background: #f3f9fe;
   --foreground: #0f172a;
 }
 
@@ -10,9 +52,9 @@
 body {
   background-color: var(--background);
   background-image:
-    radial-gradient(60rem 40rem at -10% -10%, rgba(186, 230, 253, 0.55), transparent 60%),
-    radial-gradient(50rem 36rem at 110% 0%, rgba(199, 210, 254, 0.45), transparent 60%),
-    radial-gradient(48rem 40rem at 50% 115%, rgba(251, 207, 232, 0.28), transparent 60%);
+    radial-gradient(60rem 40rem at -10% -10%, rgba(186, 230, 253, 0.65), transparent 60%),
+    radial-gradient(50rem 36rem at 110% 0%, rgba(255, 249, 230, 0.70), transparent 60%),
+    radial-gradient(48rem 40rem at 50% 115%, rgba(165, 243, 252, 0.35), transparent 60%);
   background-attachment: fixed;
   color: var(--foreground);
   font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", Roboto, sans-serif;
@@ -58,10 +100,10 @@ body {
 @layer components {
   /* Frosted white card on the pastel background */
   .tv-card {
-    @apply bg-white/85 backdrop-blur-sm rounded-2xl border border-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_-12px_rgba(30,64,175,0.18)];
+    @apply bg-white/85 backdrop-blur-sm rounded-2xl border border-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_-12px_rgba(3,105,161,0.18)];
   }
   .tv-card-hover {
-    @apply transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_2px_4px_rgba(15,23,42,0.05),0_16px_32px_-12px_rgba(30,64,175,0.28)];
+    @apply transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_2px_4px_rgba(15,23,42,0.05),0_16px_32px_-12px_rgba(3,105,161,0.28)];
   }
   /* Dimmed + blurred page behind a modal */
   .tv-overlay {

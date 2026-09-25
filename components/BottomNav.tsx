@@ -38,7 +38,7 @@ function isActive(pathname: string, href: string) {
 
 const barClass =
   "bg-white/80 backdrop-blur-xl border border-white/90 rounded-[28px] px-2 py-1.5 " +
-  "shadow-[0_2px_6px_rgba(15,23,42,0.06),0_18px_40px_-16px_rgba(30,64,175,0.35)] flex items-center";
+  "shadow-[0_2px_6px_rgba(15,23,42,0.06),0_18px_40px_-16px_rgba(3,105,161,0.35)] flex items-center";
 
 function TabIcon({ icon: Icon, active, label, bubbleId }: { icon: React.ElementType; active: boolean; label: string; bubbleId: string }) {
   return (

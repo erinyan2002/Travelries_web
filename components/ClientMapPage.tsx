@@ -37,7 +37,7 @@ function makeClusterIcon(photo: MapPhoto, count: number): L.DivIcon {
       ? `<span style="position:absolute;top:-5px;right:-5px;background:#ef4444;color:white;border-radius:50%;width:20px;height:20px;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;line-height:20px;">${count}</span>`
       : "";
   return L.divIcon({
-    html: `<div style="position:relative;width:52px;height:52px;border-radius:50%;border:3px solid #2563eb;box-shadow:0 2px 10px rgba(0,0,0,0.3);overflow:visible;background:white;">
+    html: `<div style="position:relative;width:52px;height:52px;border-radius:50%;border:3px solid #0369a1;box-shadow:0 2px 10px rgba(0,0,0,0.3);overflow:visible;background:white;">
       <img src="${photo.imageUrl}" style="width:52px;height:52px;object-fit:cover;border-radius:50%;display:block;" />
       ${badge}
     </div>`,
@@ -146,7 +146,7 @@ function PhotoModal({
                   onClick={() => setIdx(i)}
                   style={{
                     width: "36px", height: "36px", borderRadius: "6px",
-                    border: `2.5px solid ${i === idx ? "#2563eb" : "#e2e8f0"}`,
+                    border: `2.5px solid ${i === idx ? "#0369a1" : "#e2e8f0"}`,
                     overflow: "hidden", cursor: "pointer", flexShrink: 0,
                   }}
                 >

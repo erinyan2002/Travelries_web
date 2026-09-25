@@ -25,10 +25,10 @@ export default function TripRouteMap({ points }: { points: { lat: number; lng: n
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
-      {latlngs.length > 1 && <Polyline positions={latlngs} pathOptions={{ color: "#3b82f6", weight: 4, opacity: 0.8 }} />}
+      {latlngs.length > 1 && <Polyline positions={latlngs} pathOptions={{ color: "#0284c7", weight: 4, opacity: 0.8 }} />}
       {latlngs.map((ll, i) => (
         <CircleMarker key={i} center={ll} radius={i === 0 || i === latlngs.length - 1 ? 8 : 5}
-          pathOptions={{ color: "#fff", weight: 2, fillColor: i === 0 ? "#10b981" : "#3b82f6", fillOpacity: 1 }} />
+          pathOptions={{ color: "#fff", weight: 2, fillColor: i === 0 ? "#38bdf8" : "#0284c7", fillOpacity: 1 }} />
       ))}
     </MapContainer>
   );

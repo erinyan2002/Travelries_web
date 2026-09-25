@@ -94,8 +94,8 @@ export default function KoreaRegionMap({
               )}
               <path
                 d={r.path}
-                fill={isSelected ? "rgba(37,99,235,0.25)" : "transparent"}
-                stroke={isSelected ? "#2563eb" : "#ffffff"}
+                fill={isSelected ? "rgba(2,132,199,0.25)" : "transparent"}
+                stroke={isSelected ? "#0369a1" : "#ffffff"}
                 strokeWidth={isSelected ? 3 : 1.5}
                 className="cursor-pointer transition-colors hover:fill-blue-500/10"
                 onClick={() => onSelectRegion(isSelected ? null : r.code)}

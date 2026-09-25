@@ -10,7 +10,7 @@ export function renderPwaIcon(s: number) {
         style={{
           width: s,
           height: s,
-          background: "linear-gradient(135deg, #3b82f6 0%, #6366f1 100%)",
+          background: "linear-gradient(135deg, #0284c7 0%, #38bdf8 100%)",
           borderRadius: r,
           display: "flex",
           alignItems: "center",
