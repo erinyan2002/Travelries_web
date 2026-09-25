@@ -6,6 +6,7 @@ import PageHero from "@/components/PageHero";
 import { toggleSaved, getSavedIds, deletePhotoEverywhere } from "@/lib/savedUtils";
 import { supabase } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
+import { burstConfetti } from "@/lib/confetti";
 import { fetchMapPhotos, fetchPhotosByIds, saveLandmarkResult, fetchTripDiary, saveTripDiary } from "@/lib/photosApi";
 import {
   Images, Users, Image as ImageIcon, Star, Download, Trash2,
@@ -566,6 +567,7 @@ export default function AlbumsPage() {
       const data = await res.json();
       if (data.diary) {
         setDiaryText(data.diary);
+        burstConfetti({ y: 0.35 });
         // Caching is best-effort: a failed save must not turn a successfully
         // generated diary into a "backend offline" error.
         if (uid) saveTripDiary(uid, key, data.diary, lang).catch((err) => console.warn("Caching diary failed:", err));

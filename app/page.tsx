@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { loadMediaPipeDetector } from "@/lib/mediapipeDetector";
 import BottomNav from "@/components/BottomNav";
 import AnimatedNumber from "@/components/AnimatedNumber";
+import { burstConfetti } from "@/lib/confetti";
 import { fadeUp, staggerContainer } from "@/lib/motion";
 import { supabase } from "@/lib/supabase";
 import { MapPhoto, FacePhoto } from "@/lib/types";
@@ -645,6 +646,7 @@ export default function HomePage() {
       setBatchItems([...items]);
     }
     refreshStats();
+    if (items.some((it) => it.status === "done")) burstConfetti();
   }
 
   function resetBatch() {
@@ -739,6 +741,7 @@ export default function HomePage() {
       setIsMapSaved(true);
       setSavedMessage("Saved to map and albums!");
       refreshStats();
+      burstConfetti();
     } catch (err) {
       console.error("Save to map failed:", err);
       setSavedMessage(`Save failed: ${err instanceof Error ? err.message : "Please try again."}`);

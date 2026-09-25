@@ -12,7 +12,7 @@ export default function AnimatedNumber({ value, className }: { value: number; cl
   const spanRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
-    const controls = animate(motionValue, value, { duration: 0.6, ease: [0.16, 1, 0.3, 1] });
+    const controls = animate(motionValue, value, { duration: value > 0 ? 1.4 : 0.3, ease: [0.16, 1, 0.3, 1] });
     return controls.stop;
   }, [value, motionValue]);
 
