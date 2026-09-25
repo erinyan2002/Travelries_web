@@ -9,7 +9,7 @@ import { MapPhoto } from "@/lib/types";
 import { fetchMapPhotos, fetchPhotosByIds, saveLandmarkResult, fetchTripDiary, saveTripDiary } from "@/lib/photosApi";
 import {
   Images, Users, Image as ImageIcon, Star, Download, Trash2,
-  X, CalendarDays, SlidersHorizontal, Search, Calendar, Share2, Loader2, MapPin, Sparkles, LayoutTemplate, Wand2, Check,
+  X, CalendarDays, SlidersHorizontal, Search, Calendar, Share2, Loader2, MapPin, Sparkles, LayoutTemplate, Wand2, Check, Clock,
 } from "lucide-react";
 import Link from "next/link";
 import { sharePhoto } from "@/lib/shareUtils";
@@ -17,7 +17,7 @@ import { shareTrip } from "@/lib/tripShareUtils";
 import ShareCardModal from "@/components/ShareCardModal";
 import { loadImage, drawImageCover } from "@/lib/canvasCard";
 import { BACKEND_URL } from "@/lib/backend";
-import { Trip, tripKeyOf, detectTrips } from "@/lib/trips";
+import { Trip, tripKeyOf, detectTrips, getPhotoDate } from "@/lib/trips";
 
 // Draws a 1080x1920 Instagram-story-style card for a single photo: the photo
 // itself (cropped to a rounded frame), its location/date beneath it, and a
@@ -442,20 +442,6 @@ const TRIP_ACCENTS = [
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
-function formatPhotoDate(raw: string | null | undefined): string {
-  if (!raw || raw === "Not available" || raw === "날짜 없음") return "No date";
-  let date = new Date(raw);
-  if (isNaN(date.getTime())) {
-    const m = raw.match(/(\d{4})[.\-\s]+(\d{1,2})[.\-\s]+(\d{1,2})/);
-    if (m) date = new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
-  }
-  if (!date || isNaN(date.getTime())) return raw;
-  const y = date.getFullYear();
-  const mo = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}.${mo}.${d}`;
-}
-
 function AlbumsSkeleton() {
   return (
     <div className="space-y-5 animate-pulse">
@@ -732,26 +718,35 @@ export default function AlbumsPage() {
 
   const trips = useMemo(() => detectTrips(filtered), [filtered]);
 
+  // Month → day → photo, all newest-first. Dates come from getPhotoDate
+  // (captureTimestamp first; the locale captureDate string only as a fallback),
+  // so photos within a month are in real chronological order.
   const grouped = useMemo(() => {
-    const map = new Map<string, { photos: MapPhoto[]; sortDate: number }>();
+    const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const months = new Map<string, { sort: number; days: Map<string, { date: Date | null; photos: { p: MapPhoto; t: number }[] }> }>();
     for (const photo of filtered) {
-      const raw = (photo.captureDate && photo.captureDate !== "Not available" && photo.captureDate !== "날짜 없음")
-        ? photo.captureDate
-        : photo.uploadedAt;
-      let date = raw ? new Date(raw) : null;
-      if (date && isNaN(date.getTime())) {
-        const m = raw!.match(/(\d{4})[.\-\s]+(\d{1,2})[.\-\s]+(\d{1,2})/);
-        if (m) date = new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
-      }
-      const valid = date && !isNaN(date.getTime()) && date.getFullYear() > 1970;
-      const key = valid ? `${MONTHS[date!.getMonth()]} ${date!.getFullYear()}` : "Unknown date";
-      const sortDate = valid ? new Date(date!.getFullYear(), date!.getMonth(), 1).getTime() : 0;
-      if (!map.has(key)) map.set(key, { photos: [], sortDate });
-      map.get(key)!.photos.push(photo);
+      const d = getPhotoDate(photo);
+      const valid = d.getTime() > 0 && d.getFullYear() > 1970;
+      const monthKey = valid ? `${MONTHS[d.getMonth()]} ${d.getFullYear()}` : "Unknown date";
+      const dayKey = valid ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` : "unknown";
+      if (!months.has(monthKey)) months.set(monthKey, { sort: valid ? new Date(d.getFullYear(), d.getMonth(), 1).getTime() : 0, days: new Map() });
+      const days = months.get(monthKey)!.days;
+      if (!days.has(dayKey)) days.set(dayKey, { date: valid ? new Date(d.getFullYear(), d.getMonth(), d.getDate()) : null, photos: [] });
+      days.get(dayKey)!.photos.push({ p: photo, t: d.getTime() });
     }
-    return Array.from(map.entries())
-      .sort((a, b) => b[1].sortDate - a[1].sortDate)
-      .map(([key, { photos }]) => [key, photos] as [string, MapPhoto[]]);
+    return [...months.entries()]
+      .sort((x, y) => y[1].sort - x[1].sort)
+      .map(([monthKey, { days }]) => {
+        const dayList = [...days.values()]
+          .sort((x, y) => (y.date?.getTime() ?? 0) - (x.date?.getTime() ?? 0))
+          .map(({ date, photos }) => ({
+            key: date ? date.toISOString() : "unknown",
+            day: date ? date.getDate() : null,
+            weekday: date ? WEEKDAYS[date.getDay()] : "No date",
+            photos: photos.sort((x, y) => y.t - x.t).map((x) => x.p),
+          }));
+        return [monthKey, dayList] as [string, typeof dayList];
+      });
   }, [filtered]);
 
   const isFiltering = searchQuery.trim() !== "" || filter !== "All" || dateRange !== "all";
@@ -1038,64 +1033,87 @@ export default function AlbumsPage() {
               </div>
             )}
           <div className="space-y-5">
-            {grouped.map(([groupName, items]) => (
-              <section key={groupName} id={`group-${groupName}`} className="tv-card overflow-hidden">
-                <div className="flex items-center gap-2 px-5 py-3.5 border-b border-slate-100 bg-slate-50">
-                  <CalendarDays size={16} className="text-blue-500 flex-shrink-0" />
-                  <h2 className="font-bold text-slate-800 text-base flex-1">{groupName}</h2>
-                  <span className="text-xs text-slate-400 bg-slate-200 px-2 py-0.5 rounded-full">{items.length} photos</span>
+            {grouped.map(([groupName, days]) => {
+              const total = days.reduce((n, d) => n + d.photos.length, 0);
+              return (
+              <section key={groupName} id={`group-${groupName}`} className="tv-card overflow-hidden scroll-mt-20">
+                <div className="flex items-center gap-2.5 px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-sky-50/80 to-transparent">
+                  <span className="w-8 h-8 rounded-xl bg-gradient-to-br from-sky-400 to-blue-500 text-white flex items-center justify-center shadow-sm shadow-sky-200">
+                    <CalendarDays size={15} />
+                  </span>
+                  <h2 className="font-extrabold text-slate-800 text-base flex-1">{groupName}</h2>
+                  <span className="text-xs font-semibold text-slate-500 bg-white border border-slate-200 px-2.5 py-0.5 rounded-full">{total} photo{total === 1 ? "" : "s"}</span>
                 </div>
-                <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                  {items.map((photo) => {
-                    const isPortrait = (photo.faceCount ?? 0) > 0;
-                    return (
-                      <div key={photo.id} onClick={() => setSelectedPhoto(photo)}
-                        className="photo-card group rounded-2xl overflow-hidden bg-white border border-slate-100 shadow-sm cursor-pointer">
-                        {/* Cover-fit so portrait and landscape shots fill the tile (object-contain
-                            left big grey bars beside every portrait photo). */}
-                        <div className="relative aspect-[4/5] overflow-hidden bg-slate-100">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={photo.imageUrl} alt={photo.fileName} loading="lazy"
-                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
-                          <span className={`absolute top-2 left-2 inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full backdrop-blur-sm shadow-sm ${
-                            isPortrait ? "bg-white/85 text-blue-700" : "bg-white/85 text-slate-600"
-                          }`}>
-                            {isPortrait ? <Users size={9} /> : <ImageIcon size={9} />}
-                            {isPortrait ? "Person" : "Scene"}
-                          </span>
-                        </div>
-                        <div className="p-2.5">
-                          <p className="font-bold text-slate-800 text-xs truncate">{photo.fileName}</p>
-                          <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
-                            <CalendarDays size={9} />{formatPhotoDate(photo.captureDate)}
-                          </p>
-                          <div className="flex gap-1.5 mt-2">
-                            <button onClick={(e) => handleToggleSaved(e, photo)}
-                              className={`flex-1 flex items-center justify-center py-1.5 rounded-lg text-[10px] font-bold transition-colors ${
-                                savedIds.has(photo.id) ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                              }`}>
-                              <Star size={11} className={savedIds.has(photo.id) ? "fill-amber-500" : ""} />
-                            </button>
-                            <button onClick={(e) => { e.stopPropagation(); handleShare(photo); }} disabled={sharingId === photo.id}
-                              className="flex-1 flex items-center justify-center py-1.5 rounded-lg text-[10px] font-bold bg-blue-50 text-blue-500 hover:bg-blue-100 transition-colors disabled:opacity-50">
-                              {sharingId === photo.id ? <Loader2 size={11} className="animate-spin" /> : <Share2 size={11} />}
-                            </button>
-                            <button onClick={(e) => { e.stopPropagation(); handleDownload(photo); }}
-                              className="flex-1 flex items-center justify-center py-1.5 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">
-                              <Download size={11} />
-                            </button>
-                            <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(photo.id); }}
-                              className="flex-1 flex items-center justify-center py-1.5 rounded-lg text-[10px] font-bold bg-red-50 text-red-500 hover:bg-red-100 transition-colors">
-                              <Trash2 size={11} />
-                            </button>
-                          </div>
-                        </div>
+                <div className="p-4 sm:p-5 space-y-6">
+                  {days.map((day) => (
+                    <div key={day.key}>
+                      {/* Day header */}
+                      <div className="flex items-baseline gap-2 mb-3">
+                        <span className="text-2xl font-black text-slate-800 leading-none">{day.day ?? "–"}</span>
+                        <span className="text-sm font-bold text-slate-400">{day.weekday}</span>
+                        <span className="flex-1 h-px bg-slate-100 self-center ml-1" />
+                        <span className="text-[11px] font-semibold text-slate-400">{day.photos.length}</span>
                       </div>
-                    );
-                  })}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                        {day.photos.map((photo) => {
+                          const isPortrait = (photo.faceCount ?? 0) > 0;
+                          const saved = savedIds.has(photo.id);
+                          const actionBtn = "w-8 h-8 rounded-full bg-white/90 backdrop-blur-sm shadow-sm flex items-center justify-center transition-colors";
+                          return (
+                            <div key={photo.id} onClick={() => setSelectedPhoto(photo)}
+                              className="photo-card group rounded-2xl overflow-hidden bg-white border border-slate-100 shadow-sm cursor-pointer">
+                              <div className="relative aspect-[4/5] overflow-hidden bg-slate-100">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={photo.imageUrl} alt={photo.fileName} loading="lazy"
+                                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                                <span className="absolute top-2 left-2 inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/85 backdrop-blur-sm shadow-sm text-slate-600">
+                                  {isPortrait ? <Users size={9} className="text-blue-600" /> : <ImageIcon size={9} />}
+                                  {isPortrait ? `${photo.faceCount}` : "Scene"}
+                                </span>
+                                {/* Actions float on the photo: always on touch screens,
+                                    on hover with a mouse — instead of a 4-button row under every tile. */}
+                                <div className="absolute inset-x-0 bottom-0 p-2 flex justify-between items-end bg-gradient-to-t from-black/45 to-transparent pt-8 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                                  <button onClick={(e) => handleToggleSaved(e, photo)} title={saved ? "Unsave" : "Save"}
+                                    className={`${actionBtn} ${saved ? "text-amber-500" : "text-slate-600 hover:text-amber-500"}`}>
+                                    <Star size={14} className={saved ? "fill-amber-400" : ""} />
+                                  </button>
+                                  <div className="flex gap-1.5">
+                                    <button onClick={(e) => { e.stopPropagation(); handleShare(photo); }} disabled={sharingId === photo.id} title="Share"
+                                      className={`${actionBtn} text-slate-600 hover:text-blue-600 disabled:opacity-60`}>
+                                      {sharingId === photo.id ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
+                                    </button>
+                                    <button onClick={(e) => { e.stopPropagation(); handleDownload(photo); }} title="Download"
+                                      className={`${actionBtn} text-slate-600 hover:text-slate-900`}>
+                                      <Download size={14} />
+                                    </button>
+                                    <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(photo.id); }} title="Delete"
+                                      className={`${actionBtn} text-slate-600 hover:text-red-500`}>
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                </div>
+                                {saved && (
+                                  <Star size={14} className="absolute top-2.5 right-2.5 text-amber-400 fill-amber-400 drop-shadow sm:group-hover:opacity-0 transition-opacity" />
+                                )}
+                              </div>
+                              <div className="px-3 py-2.5">
+                                <p className="font-bold text-slate-800 text-sm truncate">{photo.fileName}</p>
+                                <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1 truncate">
+                                  {photo.captureTime && photo.captureTime !== "Not available" && <><Clock size={10} className="flex-shrink-0" />{photo.captureTime}<span className="mx-0.5">·</span></>}
+                                  <MapPin size={10} className="flex-shrink-0" />
+                                  <span className="truncate">{photo.location?.split(",")[0] || "No location"}</span>
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </section>
-            ))}
+              );
+            })}
           </div>
           </>
         )}

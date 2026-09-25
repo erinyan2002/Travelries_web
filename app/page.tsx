@@ -837,8 +837,6 @@ export default function HomePage() {
                   {/* Sparkles inside box, around the icon */}
                   <span className="absolute left-[28%] top-[35%] text-sky-400 opacity-70 text-sm select-none pointer-events-none">✦</span>
                   <span className="absolute right-[26%] top-[38%] text-sky-300 opacity-60 text-xs select-none pointer-events-none">✦</span>
-                  <span className="absolute left-[32%] bottom-[28%] text-sky-300 opacity-50 text-[10px] select-none pointer-events-none">✦</span>
-                  <span className="absolute right-[30%] bottom-[30%] text-sky-400 opacity-40 text-[10px] select-none pointer-events-none">✦</span>
 
                   {/* Cloud upload icon */}
                   <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mb-4 shadow-md shadow-sky-100 group-hover:shadow-sky-200 border border-sky-100 group-hover:border-sky-200 transition-all duration-200">
@@ -1195,11 +1193,33 @@ export default function HomePage() {
                   )}
                 </div>
               ) : (
-                <div className="h-80 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-xl text-center">
-                  <div className="w-16 h-16 bg-sky-50 rounded-2xl flex items-center justify-center mb-4 border border-sky-100">
-                    <Camera size={28} className="text-sky-300" />
-                  </div>
-                  <p className="text-slate-400 text-sm">Select a photo to see the analysis results here</p>
+                // Empty state doubles as a "how it works" — useful for first-time
+                // visitors (e.g. at the exhibition) instead of a blank dashed box.
+                <div className="rounded-2xl bg-gradient-to-br from-slate-50 to-sky-50/60 border border-slate-100 p-5">
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">How it works</p>
+                  <ol className="space-y-3">
+                    {[
+                      { icon: Upload,   title: "Upload",       text: "Pick one photo, or select many for a batch.",       g: "from-sky-400 to-blue-500" },
+                      { icon: MapPin,   title: "Read EXIF",    text: "Date, time and GPS become a place on your map.",    g: "from-emerald-400 to-teal-500" },
+                      { icon: Users,    title: "Detect faces", text: "AI finds faces and groups the same person.",        g: "from-violet-400 to-purple-500" },
+                      { icon: Sparkles, title: "Relive it",    text: "Trips, AI travel diaries and shareable links.",     g: "from-amber-400 to-orange-500" },
+                    ].map(({ icon: Icon, title, text, g }, i) => (
+                      <motion.li key={title}
+                        initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.08 * i }}
+                        className="flex items-center gap-3 bg-white/80 rounded-xl border border-white shadow-sm px-3.5 py-3">
+                        <span className={`w-9 h-9 rounded-xl bg-gradient-to-br ${g} text-white flex items-center justify-center flex-shrink-0 shadow-sm`}>
+                          <Icon size={17} />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-slate-800"><span className="text-slate-300 mr-1.5">{i + 1}</span>{title}</p>
+                          <p className="text-xs text-slate-500">{text}</p>
+                        </div>
+                      </motion.li>
+                    ))}
+                  </ol>
+                  <p className="text-[11px] text-slate-400 mt-4 flex items-center gap-1.5">
+                    <Camera size={12} /> Results for your photo will appear here.
+                  </p>
                 </div>
               )}
             </div>
