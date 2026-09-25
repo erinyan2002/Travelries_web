@@ -85,7 +85,7 @@ export default function SavedPage() {
   }
 
   return (
-    <main className="min-h-screen px-6 py-8 pb-28">
+    <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-28">
       <div className="max-w-5xl mx-auto">
 
         <PageHero icon={Star} title="Saved" subtitle="Photos you star in Albums appear here." />

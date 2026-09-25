@@ -27,7 +27,7 @@ export default function PageHero({
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] }}
-      className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-sky-100/90 via-white/80 to-indigo-100/80 backdrop-blur-sm border border-white px-6 py-6 mb-6 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_32px_-16px_rgba(30,64,175,0.3)]"
+      className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-sky-100/90 via-white/80 to-indigo-100/80 backdrop-blur-sm border border-white px-5 py-5 sm:px-6 sm:py-6 mb-6 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_32px_-16px_rgba(30,64,175,0.3)]"
     >
       <div className="absolute -top-12 -right-10 w-44 h-44 bg-sky-200/60 rounded-full blur-3xl" />
       <div className="absolute -bottom-16 -left-10 w-44 h-44 bg-indigo-200/40 rounded-full blur-3xl" />
@@ -42,12 +42,12 @@ export default function PageHero({
         <motion.div
           whileHover={{ rotate: -8, scale: 1.05 }}
           transition={{ type: "spring", stiffness: 300, damping: 15 }}
-          className={`w-12 h-12 bg-gradient-to-br ${iconGradient} rounded-2xl flex items-center justify-center flex-shrink-0 shadow-lg shadow-sky-200 ring-4 ring-white/70`}
+          className={`w-11 h-11 sm:w-12 sm:h-12 bg-gradient-to-br ${iconGradient} rounded-2xl flex items-center justify-center flex-shrink-0 shadow-lg shadow-sky-200 ring-4 ring-white/70`}
         >
           <Icon size={22} className="text-white" />
         </motion.div>
         <div className="flex-1 min-w-0">
-          <h1 className="text-[28px] leading-tight font-extrabold text-slate-800 tracking-tight">{title}</h1>
+          <h1 className="text-2xl sm:text-[28px] leading-tight font-extrabold text-slate-800 tracking-tight">{title}</h1>
           {subtitle && <p className="text-slate-500 text-sm mt-0.5 line-clamp-2">{subtitle}</p>}
         </div>
         {action && <div className="flex-shrink-0">{action}</div>}

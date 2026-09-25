@@ -458,7 +458,7 @@ export default function CollabAlbumPage() {
   }
 
   return (
-    <main className="min-h-screen px-6 py-8 pb-28">
+    <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-28">
       <div className="max-w-4xl mx-auto">
 
         {/* Header */}

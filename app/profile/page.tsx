@@ -174,7 +174,7 @@ export default function ProfilePage() {
   const displayName = profile.name || email;
 
   return (
-    <main className="min-h-screen px-6 py-8 pb-28">
+    <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-28">
       <div className="max-w-lg mx-auto space-y-5">
 
         <PageHero icon={UserCircle} title="My Profile" subtitle="Your account, photo and password." />

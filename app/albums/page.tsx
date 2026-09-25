@@ -648,7 +648,7 @@ export default function AlbumsPage() {
   const isFiltering = searchQuery.trim() !== "" || filter !== "All" || dateRange !== "all";
 
   return (
-    <main className="min-h-screen px-6 py-8 pb-28">
+    <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-28">
       <div className="max-w-5xl mx-auto">
 
         <PageHero icon={Images} title="Albums" subtitle="Browse your saved travel photos by date."
@@ -870,7 +870,7 @@ export default function AlbumsPage() {
                       className="flex-1 flex items-center justify-center gap-1.5 text-sm font-bold text-blue-500 hover:text-blue-700 hover:bg-blue-50 py-3 transition-colors">
                       {isExpanded
                         ? <><span className="text-xs">▲</span> Hide</>
-                        : <><span className="text-xs">▼</span> View all {n} {photoWord}</>
+                        : <><span className="text-xs">▼</span> <span className="hidden sm:inline">View all</span> {n} {photoWord}</>
                       }
                     </button>
                     <button

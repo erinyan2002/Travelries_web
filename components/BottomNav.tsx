@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
@@ -23,6 +24,14 @@ const navItems = [
 export default function BottomNav() {
   const pathname = usePathname();
   const router   = useRouter();
+  const barRef   = useRef<HTMLDivElement>(null);
+
+  // On a phone the bar scrolls sideways (9 tabs don't fit), so a tab like
+  // Stats or Profile can be active yet off-screen — bring it into view.
+  useEffect(() => {
+    const active = barRef.current?.querySelector<HTMLElement>('[aria-current="page"]');
+    active?.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
+  }, [pathname]);
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -38,13 +47,14 @@ export default function BottomNav() {
     >
       {/* More items than fit on a phone-width screen — scroll horizontally rather than
           squeezing every item down to illegibility (fixed-width items + flex-shrink-0). */}
-      <div className="no-scrollbar bg-white/80 backdrop-blur-xl border border-white/90 rounded-[28px] px-2 py-1.5 shadow-[0_2px_6px_rgba(15,23,42,0.06),0_18px_40px_-16px_rgba(30,64,175,0.35)] flex items-center overflow-x-auto">
+      <div ref={barRef} className="no-scrollbar bg-white/80 backdrop-blur-xl border border-white/90 rounded-[28px] px-2 py-1.5 shadow-[0_2px_6px_rgba(15,23,42,0.06),0_18px_40px_-16px_rgba(30,64,175,0.35)] flex items-center overflow-x-auto">
         {navItems.map(({ href, icon: Icon, label }) => {
           const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
           return (
             <Link
               key={href}
               href={href}
+              aria-current={active ? "page" : undefined}
               className="group relative flex-shrink-0 w-[68px] flex flex-col items-center gap-0.5 py-1"
             >
               <motion.span whileTap={{ scale: 0.88 }} className="relative w-10 h-10 flex items-center justify-center">

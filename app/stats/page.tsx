@@ -343,7 +343,7 @@ export default function StatsPage() {
 
   if (!stats) {
     return (
-      <main className="min-h-screen px-6 py-8 pb-28 flex flex-col items-center justify-center gap-3">
+      <main className="min-h-screen px-4 sm:px-6 py-8 pb-28 flex flex-col items-center justify-center gap-3">
         <motion.div
           animate={{ rotate: 360 }}
           transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
@@ -356,7 +356,7 @@ export default function StatsPage() {
   }
 
   return (
-    <main className="min-h-screen px-6 py-8 pb-28">
+    <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-28">
       <div className="max-w-5xl mx-auto">
 
         <PageHero

@@ -369,7 +369,7 @@ export default function FeedPage() {
   if (loading) return null;
 
   return (
-    <main className="min-h-screen px-6 py-8 pb-28">
+    <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-28">
       <div className="max-w-2xl mx-auto space-y-5">
 
         <PageHero

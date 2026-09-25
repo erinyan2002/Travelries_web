@@ -7,6 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 # Frontend (Next.js)
 npm run dev        # start dev server at localhost:3000 (runs `next dev --webpack`, not Turbopack)
+                   # NOTE: in this checkout's path ("4-2 캡디(2) travelries_final") the dev
+                   # server does NOT hot-reload — edits only show after restarting it
+                   # (kill, rm -rf .next, npm run dev). An ASCII path without parentheses works.
 npm run build      # production build
 npm start          # serve production build
 npm run lint       # ESLint check

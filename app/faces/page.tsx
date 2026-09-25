@@ -572,7 +572,7 @@ export default function FacesPage() {
   });
 
   return (
-    <main className="min-h-screen px-4 pt-6 pb-28">
+    <main className="min-h-screen px-4 pt-16 xl:pt-6 pb-28">
       <div className="max-w-2xl mx-auto">
 
         {/* ── Hero header ── */}
