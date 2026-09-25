@@ -514,7 +514,7 @@ export default function StatsPage() {
                   className="rounded-xl overflow-hidden border border-slate-200 bg-slate-50 shadow-sm"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={photo.imageUrl} alt={photo.fileName} className="w-full h-20 object-contain bg-slate-100" />
+                  <img src={photo.imageUrl} alt={photo.fileName} className="w-full aspect-square object-cover bg-slate-100" />
                   <div className="p-1.5">
                     <p className="text-[9px] font-bold text-slate-700 truncate">{photo.fileName}</p>
                     <p className="text-[9px] text-slate-400 flex items-center gap-0.5 mt-0.5">

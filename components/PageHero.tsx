@@ -39,13 +39,23 @@ export default function PageHero({
                  maskImage: "linear-gradient(to left, black, transparent 70%)", WebkitMaskImage: "linear-gradient(to left, black, transparent 70%)" }}
       />
       <div className="relative flex flex-wrap sm:flex-nowrap items-center gap-x-3.5 gap-y-3">
-        {/* Compact badge: a ring/offset around it read as oversized and bled into
-            the title, and a hover tilt made it look crooked. */}
-        <div
-          className={`w-10 h-10 sm:w-11 sm:h-11 bg-gradient-to-br ${iconGradient} rounded-[14px] flex items-center justify-center flex-shrink-0 shadow-md shadow-sky-300/50`}
+        {/* Compact badge (no ring/offset — that read as oversized and bled into the
+            title). Pops in on load; on hover it lifts and a light sheen sweeps
+            across — responsive without the crooked-looking tilt. */}
+        <motion.div
+          initial={{ scale: 0.6, opacity: 0, rotate: -12 }}
+          animate={{ scale: 1, opacity: 1, rotate: 0 }}
+          whileHover={{ y: -3, scale: 1.07 }}
+          whileTap={{ scale: 0.94 }}
+          transition={{ type: "spring", stiffness: 380, damping: 18 }}
+          className={`group relative overflow-hidden w-10 h-10 sm:w-11 sm:h-11 bg-gradient-to-br ${iconGradient} rounded-[14px] flex items-center justify-center flex-shrink-0 shadow-md shadow-sky-300/50 hover:shadow-lg hover:shadow-sky-300/70 transition-shadow cursor-default`}
         >
-          <Icon size={20} strokeWidth={2.2} className="text-white" />
-        </div>
+          {/* gloss */}
+          <span className="absolute inset-x-1 top-0.5 h-1/2 rounded-t-[12px] bg-gradient-to-b from-white/35 to-transparent pointer-events-none" />
+          {/* sheen sweep on hover */}
+          <span className="absolute inset-y-0 -left-full w-full bg-gradient-to-r from-transparent via-white/50 to-transparent skew-x-[-20deg] transition-transform duration-700 ease-out group-hover:translate-x-[200%] pointer-events-none" />
+          <Icon size={20} strokeWidth={2.2} className="relative text-white drop-shadow-sm transition-transform duration-300 group-hover:scale-110" />
+        </motion.div>
         <div className="flex-1 min-w-0">
           <h1 className="text-[22px] sm:text-[26px] leading-tight font-extrabold text-slate-800 tracking-tight">{title}</h1>
           {subtitle && <p className="text-slate-500 text-sm mt-0.5 line-clamp-2">{subtitle}</p>}

@@ -1236,7 +1236,7 @@ export default function HomePage() {
                   </p>
                   <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-50 shadow-sm">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={highlights.recent.imageUrl} alt={highlights.recent.fileName} className="w-full h-28 object-contain bg-slate-100" />
+                    <img src={highlights.recent.imageUrl} alt={highlights.recent.fileName} className="w-full h-36 object-cover bg-slate-100" />
                     <div className="p-2.5">
                       <p className="text-xs font-bold text-slate-800 truncate">{highlights.recent.fileName}</p>
                       <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
@@ -1259,7 +1259,7 @@ export default function HomePage() {
                   </p>
                   <div className="rounded-xl overflow-hidden border border-sky-200 bg-slate-50 shadow-sm">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={highlights.mostFaces.imageUrl} alt={highlights.mostFaces.fileName} className="w-full h-28 object-contain bg-slate-100" />
+                    <img src={highlights.mostFaces.imageUrl} alt={highlights.mostFaces.fileName} className="w-full h-36 object-cover bg-slate-100" />
                     <div className="p-2.5">
                       <p className="text-xs font-bold text-slate-800 truncate">{highlights.mostFaces.fileName}</p>
                       <span className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-600 bg-sky-50 px-2 py-0.5 rounded-full mt-1">

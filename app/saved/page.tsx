@@ -104,9 +104,15 @@ export default function SavedPage() {
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
               {saved.map((photo) => (
                 <div key={photo.id} onClick={() => setSelectedPhoto(photo)}
-                  className="photo-card bg-white rounded-xl overflow-hidden border border-amber-200 cursor-pointer shadow-sm">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={photo.imageUrl} alt={photo.fileName} className="w-full h-32 object-contain bg-slate-100" />
+                  className="photo-card group bg-white rounded-2xl overflow-hidden border border-amber-100 cursor-pointer shadow-sm">
+                  <div className="relative aspect-[4/5] overflow-hidden bg-slate-100">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={photo.imageUrl} alt={photo.fileName} loading="lazy"
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                    <span className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/85 backdrop-blur-sm shadow-sm flex items-center justify-center">
+                      <Star size={12} className="text-amber-500 fill-amber-400" />
+                    </span>
+                  </div>
                   <div className="p-2.5">
                     <p className="font-bold text-slate-800 text-xs truncate">{photo.fileName}</p>
                     <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1 truncate">

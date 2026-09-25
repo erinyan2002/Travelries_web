@@ -398,9 +398,12 @@ export default function MapPage() {
             <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
               {displayedPhotos.map((photo) => (
                 <div key={photo.id} onClick={() => { const c = clusters.find((cl) => cl.photos.some((p) => p.id === photo.id)); if (c) setActiveCluster(c); }}
-                  className="photo-card bg-slate-50 rounded-xl overflow-hidden cursor-pointer border border-slate-200">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={photo.imageUrl} alt={photo.fileName} className="w-full h-24 object-contain bg-slate-100" />
+                  className="photo-card group bg-white rounded-2xl overflow-hidden cursor-pointer border border-slate-100 shadow-sm">
+                  <div className="aspect-square overflow-hidden bg-slate-100">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={photo.imageUrl} alt={photo.fileName} loading="lazy"
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                  </div>
                   <div className="p-2">
                     <p className="font-bold text-slate-800 text-[11px] truncate">{photo.fileName}</p>
                     <p className="text-[9px] text-slate-400 mt-0.5 flex items-center gap-0.5">

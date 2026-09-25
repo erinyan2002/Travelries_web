@@ -931,16 +931,21 @@ export default function AlbumsPage() {
                     const isPortrait = (photo.faceCount ?? 0) > 0;
                     return (
                       <div key={photo.id} onClick={() => setSelectedPhoto(photo)}
-                        className="photo-card rounded-xl overflow-hidden border border-slate-200 bg-slate-50 cursor-pointer">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={photo.imageUrl} alt={photo.fileName} className="w-full h-36 object-contain bg-slate-100" />
-                        <div className="p-2.5">
-                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full mb-1.5 ${
-                            isPortrait ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"
+                        className="photo-card group rounded-2xl overflow-hidden bg-white border border-slate-100 shadow-sm cursor-pointer">
+                        {/* Cover-fit so portrait and landscape shots fill the tile (object-contain
+                            left big grey bars beside every portrait photo). */}
+                        <div className="relative aspect-[4/5] overflow-hidden bg-slate-100">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={photo.imageUrl} alt={photo.fileName} loading="lazy"
+                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                          <span className={`absolute top-2 left-2 inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full backdrop-blur-sm shadow-sm ${
+                            isPortrait ? "bg-white/85 text-blue-700" : "bg-white/85 text-slate-600"
                           }`}>
                             {isPortrait ? <Users size={9} /> : <ImageIcon size={9} />}
                             {isPortrait ? "Person" : "Scene"}
                           </span>
+                        </div>
+                        <div className="p-2.5">
                           <p className="font-bold text-slate-800 text-xs truncate">{photo.fileName}</p>
                           <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
                             <CalendarDays size={9} />{formatPhotoDate(photo.captureDate)}

@@ -549,10 +549,10 @@ export default function CollabAlbumPage() {
               {photos.map((photo) => (
                 <div key={photo.id}
                   onClick={() => setSelectedCollabPhoto(photo)}
-                  className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer">
+                  className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={photo.image_url} alt={photo.file_name}
-                    className="w-full h-36 object-contain bg-slate-100" />
+                    className="w-full aspect-[4/5] object-cover bg-slate-100" />
                   <div className="p-2.5">
                     <p className="font-bold text-slate-800 text-xs truncate">{photo.file_name}</p>
                     {photo.capture_date && (
