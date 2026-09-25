@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useState, useEffect, useRef } from "react";
+import { ChangeEvent, Fragment, useState, useEffect, useRef } from "react";
 import * as exifr from "exifr";
 import * as faceapi from "face-api.js";
 import { motion } from "framer-motion";
@@ -1193,33 +1193,33 @@ export default function HomePage() {
                   )}
                 </div>
               ) : (
-                // Empty state doubles as a "how it works" — useful for first-time
-                // visitors (e.g. at the exhibition) instead of a blank dashed box.
-                <div className="rounded-2xl bg-gradient-to-br from-slate-50 to-sky-50/60 border border-slate-100 p-5">
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">How it works</p>
-                  <ol className="space-y-3">
+                // Quiet empty state: one line + a light 4-step strip (the earlier
+                // card-per-step version read as cluttered).
+                <div className="h-80 flex flex-col items-center justify-center text-center px-4">
+                  <div className="w-14 h-14 bg-sky-50 rounded-2xl flex items-center justify-center mb-3">
+                    <Camera size={24} className="text-sky-400" />
+                  </div>
+                  <p className="text-sm font-semibold text-slate-600">Your photo&apos;s analysis will appear here</p>
+                  <p className="text-xs text-slate-400 mt-1">Upload a photo to get started</p>
+
+                  <div className="flex items-start mt-8 w-full max-w-sm">
                     {[
-                      { icon: Upload,   title: "Upload",       text: "Pick one photo, or select many for a batch.",       g: "from-sky-400 to-blue-500" },
-                      { icon: MapPin,   title: "Read EXIF",    text: "Date, time and GPS become a place on your map.",    g: "from-emerald-400 to-teal-500" },
-                      { icon: Users,    title: "Detect faces", text: "AI finds faces and groups the same person.",        g: "from-violet-400 to-purple-500" },
-                      { icon: Sparkles, title: "Relive it",    text: "Trips, AI travel diaries and shareable links.",     g: "from-amber-400 to-orange-500" },
-                    ].map(({ icon: Icon, title, text, g }, i) => (
-                      <motion.li key={title}
-                        initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.08 * i }}
-                        className="flex items-center gap-3 bg-white/80 rounded-xl border border-white shadow-sm px-3.5 py-3">
-                        <span className={`w-9 h-9 rounded-xl bg-gradient-to-br ${g} text-white flex items-center justify-center flex-shrink-0 shadow-sm`}>
-                          <Icon size={17} />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-sm font-bold text-slate-800"><span className="text-slate-300 mr-1.5">{i + 1}</span>{title}</p>
-                          <p className="text-xs text-slate-500">{text}</p>
+                      { icon: Upload,   label: "Upload" },
+                      { icon: MapPin,   label: "Place" },
+                      { icon: Users,    label: "Faces" },
+                      { icon: Sparkles, label: "Trips" },
+                    ].map(({ icon: Icon, label }, i) => (
+                      <Fragment key={label}>
+                        {i > 0 && <span className="flex-1 mt-[18px] mx-1 border-t border-dashed border-sky-200" />}
+                        <div className="w-14 flex flex-col items-center gap-1.5">
+                          <span className="w-9 h-9 rounded-full bg-white border border-sky-100 text-sky-500 flex items-center justify-center shadow-sm">
+                            <Icon size={15} />
+                          </span>
+                          <span className="text-[11px] font-semibold text-slate-400">{label}</span>
                         </div>
-                      </motion.li>
+                      </Fragment>
                     ))}
-                  </ol>
-                  <p className="text-[11px] text-slate-400 mt-4 flex items-center gap-1.5">
-                    <Camera size={12} /> Results for your photo will appear here.
-                  </p>
+                  </div>
                 </div>
               )}
             </div>
