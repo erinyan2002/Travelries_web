@@ -7,6 +7,7 @@ import {
   KeyRound, Eye, EyeOff, AlertCircle, CheckCircle2, LogOut, Camera, Loader2, UserCircle } from "lucide-react";
 import PageHero from "@/components/PageHero";
 import SectionTabs from "@/components/SectionTabs";
+import FaceAnalysisSettings from "@/components/FaceAnalysisSettings";
 import { supabase, getSessionUser } from "@/lib/supabase";
 
 type Profile = { id: string; name: string; created_at: string; avatar_url?: string | null };
@@ -179,7 +180,7 @@ export default function ProfilePage() {
 
         <SectionTabs section="profile" active="profile" />
 
-        <PageHero icon={UserCircle} title="My Profile" subtitle="Your account, photo and password." />
+        <PageHero icon={UserCircle} title="My Profile" subtitle="Your account, photo, password and privacy." />
 
         {/* Avatar card */}
         <div className="relative overflow-hidden bg-gradient-to-br from-sky-50 to-blue-50 rounded-2xl border border-sky-100 shadow-sm p-6 flex items-center gap-5">
@@ -340,6 +341,8 @@ export default function ProfilePage() {
             <CheckCircle2 size={16} /> {pwMsg.text}
           </div>
         )}
+
+        <FaceAnalysisSettings uid={profile.id} />
 
         {/* Logout */}
         <button

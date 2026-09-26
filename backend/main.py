@@ -4,9 +4,8 @@ import os
 import uuid
 import shutil
 
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 try:
@@ -39,6 +38,8 @@ except Exception:
 
 
 BASE_DIR = Path(__file__).resolve().parent
+# Scratch space for /analyze: each photo is deleted as soon as it's analyzed.
+# (It used to be kept forever and served publicly at /uploads.)
 UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
@@ -60,8 +61,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 
 
@@ -91,13 +90,13 @@ def nearby_places(lat: float, lng: float, radius: int = 500):
 
 
 @app.post("/analyze")
-async def analyze_photo(file: UploadFile = File(...)):
+async def analyze_photo(file: UploadFile = File(...), faces: bool = Form(True)):
     """
     Combined endpoint used by the frontend:
       1. Save uploaded photo
       2. Extract EXIF  (date, time, GPS → reverse-geocoded location)
-      3. Detect faces  (SSD MobileNetV1 + size filter + dlib 128-dim descriptors)
-      4. Return everything in one JSON response
+      3. Detect faces  (skipped when faces=false — the user turned face analysis off)
+      4. Delete the photo and return everything in one JSON response
     """
     photo_id = str(uuid.uuid4())
     ext = Path(file.filename or "upload").suffix or ".jpg"
@@ -107,6 +106,7 @@ async def analyze_photo(file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, buf)
 
     if not _UTILS_OK:
+        saved_path.unlink(missing_ok=True)
         return {
             "photoId": photo_id,
             "error": "utils not ready — run: pip install -r requirements.txt",
@@ -115,8 +115,11 @@ async def analyze_photo(file: UploadFile = File(...)):
             "faceCount": 0,     "faceBoxes": [],   "descriptors": [],
         }
 
-    exif  = extract_exif_info(str(saved_path))
-    faces = ssd_detect_faces(str(saved_path))
+    try:
+        exif = extract_exif_info(str(saved_path))
+        detected = ssd_detect_faces(str(saved_path)) if faces else {"facesDetected": 0, "faceBoxes": [], "descriptors": []}
+    finally:
+        saved_path.unlink(missing_ok=True)
 
     lat = exif.get("latitude")
     lng = exif.get("longitude")
@@ -128,12 +131,12 @@ async def analyze_photo(file: UploadFile = File(...)):
         "latitude":    lat,
         "longitude":   lng,
         "location":    exif.get("location"),
-        "faceCount":   faces["facesDetected"],
-        "faceBoxes":   faces["faceBoxes"],
-        "descriptors": faces["descriptors"],
-        "ages":        faces.get("ages", []),
-        "genders":     faces.get("genders", []),
-        "confidences": faces.get("confidences", []),
+        "faceCount":   detected["facesDetected"],
+        "faceBoxes":   detected["faceBoxes"],
+        "descriptors": detected["descriptors"],
+        "ages":        detected.get("ages", []),
+        "genders":     detected.get("genders", []),
+        "confidences": detected.get("confidences", []),
     }
 
 

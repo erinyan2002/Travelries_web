@@ -16,13 +16,15 @@ import {
   Camera, Upload, MapPin, Users, CalendarDays, Clock,
   FileImage, Ruler, CheckCircle2, Loader2,
   Search, Navigation, X, Check,
-  Coffee, Utensils, Wine, Sparkles, Trash2, Map,
+  Coffee, Utensils, Wine, Sparkles, Trash2, Map, ScanFace,
 } from "lucide-react";
+import Link from "next/link";
 import AppLogo from "@/components/AppLogo";
 import BatchUploadPanel, { BatchFile } from "@/components/BatchUploadPanel";
 import { BACKEND_URL } from "@/lib/backend";
 import { newId } from "@/lib/id";
 import { runFaceDetection, DetectionResult } from "@/lib/faceDetection";
+import { isFaceAnalysisEnabled } from "@/lib/faceSettings";
 import {
   NearbyPlace, formatBytes, createThumbnailDataUrl, cropFaceThumbnails,
   reverseGeocode, forwardGeocode, fetchNearbyPlaces, analyzeWithBackend,
@@ -102,6 +104,8 @@ export default function HomePage() {
   const [isEditingName,  setIsEditingName]  = useState(false);
   const [isModelLoaded,  setIsModelLoaded]  = useState(false);
   const [hasExtraModels, setHasExtraModels] = useState(false);
+  // Profile → Face analysis. Off: no face detection runs and no face data is saved.
+  const [faceAnalysisOn, setFaceAnalysisOn] = useState(true);
   const [modelType,      setModelType]      = useState<"mediapipe" | "ssd" | "tiny">("tiny");
   const [backendStatus,  setBackendStatus]  = useState<"checking" | "online" | "offline">("checking");
   const [locationQuery,  setLocationQuery]  = useState("");
@@ -147,6 +151,7 @@ export default function HomePage() {
 
   useEffect(() => {
     refreshStats();
+    isFaceAnalysisEnabled().then(setFaceAnalysisOn);
     (async () => {
       const { data: { user } } = await getSessionUser();
       const uid = user?.id ?? "guest";
@@ -405,7 +410,7 @@ export default function HomePage() {
       let faceExpressions: string[] = [];
 
       if (backendStatus === "online") {
-        const data = await analyzeWithBackend(file);
+        const data = await analyzeWithBackend(file, faceAnalysisOn);
         lat           = data.latitude   ?? null;
         lng           = data.longitude  ?? null;
         captureDate   = data.captureDate ?? "Not available";
@@ -445,7 +450,7 @@ export default function HomePage() {
           const addr = await reverseGeocode(lat, lng);
           location = addr || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
         }
-        if (isModelLoaded) {
+        if (isModelLoaded && faceAnalysisOn) {
           const imgEl = await faceapi.fetchImage(URL.createObjectURL(file));
           const r = await runFaceDetection(imgEl, modelType, hasExtraModels);
           detectedFaceCount = r.count;
@@ -547,7 +552,7 @@ export default function HomePage() {
         // — batch upload used to always run browser-mode face detection even with the
         // backend online, silently giving batch uploads worse accuracy than single ones.
         if (backendStatus === "online") {
-          const data = await analyzeWithBackend(file);
+          const data = await analyzeWithBackend(file, faceAnalysisOn);
           lat = data.latitude ?? undefined;
           lng = data.longitude ?? undefined;
           captureDate = data.captureDate ?? undefined;
@@ -583,7 +588,7 @@ export default function HomePage() {
             const addr = await reverseGeocode(lat, lng);
             location = addr || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
           }
-          if (isModelLoaded) {
+          if (isModelLoaded && faceAnalysisOn) {
             const imgEl = await faceapi.fetchImage(URL.createObjectURL(file));
             const r = await runFaceDetection(imgEl, modelType, hasExtraModels);
             faceCount       = r.count;
@@ -825,6 +830,15 @@ export default function HomePage() {
             </div>
 
             <div className="p-5 space-y-4">
+
+              {!faceAnalysisOn && (
+                <Link href="/profile#face-analysis"
+                  className="flex items-center gap-2 text-xs font-semibold text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 hover:bg-slate-100 transition-colors">
+                  <ScanFace size={14} className="text-slate-400 flex-shrink-0" />
+                  Face analysis is off — photos are saved without detecting faces.
+                  <span className="ml-auto text-blue-600 font-bold whitespace-nowrap">Settings</span>
+                </Link>
+              )}
 
               {/* Polaroid-style drop zone wrapper */}
               <div className="relative bg-gradient-to-br from-sky-50 to-blue-50 rounded-2xl pt-7 px-3 pb-3">

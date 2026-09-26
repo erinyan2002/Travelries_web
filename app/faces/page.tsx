@@ -16,8 +16,9 @@ import { nestedDuplicateIndices } from "@/lib/faceMatching";
 import { useRouter } from "next/navigation";
 import {
   Users, ImageIcon, Images, MapPin, CalendarDays, Trash2, X,
-  Terminal, AlertTriangle, Eye, Scan, Pencil, Check, Plane, Combine, UserPlus, UserCheck, Loader2,
+  Terminal, AlertTriangle, Eye, Scan, Pencil, Check, Plane, Combine, UserPlus, UserCheck, Loader2, ShieldCheck,
 } from "lucide-react";
+import Link from "next/link";
 
 
 const EXPRESSION_EMOJI: Record<string, string> = {
@@ -580,6 +581,13 @@ export default function FacesPage() {
             ))}
           </div>
         </PageHero>
+
+        <Link href="/profile#face-analysis"
+          className="flex items-center gap-2 -mt-3 mb-5 text-xs text-slate-500 bg-white/70 border border-white rounded-xl px-3 py-2 hover:bg-white transition-colors">
+          <ShieldCheck size={14} className="text-emerald-500 flex-shrink-0" />
+          <span>Face data is private to you and used only to organize your photos.</span>
+          <span className="ml-auto font-bold text-blue-600 whitespace-nowrap">Privacy</span>
+        </Link>
 
         {loading ? <FacesSkeleton /> : storedPhotos.length === 0 ? (
 

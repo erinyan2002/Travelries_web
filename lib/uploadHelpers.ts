@@ -109,9 +109,11 @@ export async function fetchNearbyPlaces(lat: number, lng: number): Promise<Nearb
   } catch { return []; }
 }
 
-export async function analyzeWithBackend(file: File) {
+// faces=false (face analysis turned off in Profile): the backend only reads EXIF.
+export async function analyzeWithBackend(file: File, faces = true) {
   const form = new FormData();
   form.append("file", file);
+  form.append("faces", String(faces));
   const res = await fetch(`${BACKEND_URL}/analyze`, { method: "POST", body: form });
   if (!res.ok) throw new Error(`Backend returned ${res.status}`);
   return res.json() as Promise<{

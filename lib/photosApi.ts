@@ -285,6 +285,33 @@ export async function deletePhotoEverywhere(uid: string, photoId: string): Promi
   }
 }
 
+// "Delete all face data" (Profile → Face analysis). Photos that were saved only
+// to Faces are deleted outright, since they exist only for their faces. Map photos
+// keep the photo and lose every face column. Named people go too.
+export async function deleteAllFaceData(uid: string): Promise<{ photosCleared: number; faceOnlyDeleted: number }> {
+  const { data: faceOnly, error: listError } = await supabase
+    .from("photos").select("id")
+    .eq("user_id", uid).eq("is_face_photo", true).not("is_map_photo", "is", true);
+  if (listError) throw new Error(listError.message);
+  for (const row of faceOnly ?? []) await deletePhotoEverywhere(uid, row.id as string);
+
+  const { data: cleared, error } = await supabase
+    .from("photos")
+    .update({
+      boxes: null, descriptors: null, confidences: null, ages: null, genders: null,
+      expressions: null, person_ids: null, face_count: 0, is_face_photo: false,
+    })
+    .eq("user_id", uid)
+    .or("is_face_photo.eq.true,face_count.gt.0")
+    .select("id");
+  if (error) throw new Error(error.message);
+
+  const { error: peopleError } = await supabase.from("people").delete().eq("user_id", uid);
+  if (peopleError) throw new Error(peopleError.message);
+
+  return { photosCleared: cleared?.length ?? 0, faceOnlyDeleted: faceOnly?.length ?? 0 };
+}
+
 // Uploads a photo's image to Storage and returns its public URL. Never falls back
 // to storing the base64 data URL in the DB row (that bloated `photos` rows to
 // ~150-300 KB each and slowed every list query) — a failed upload throws instead.
