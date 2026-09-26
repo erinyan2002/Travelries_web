@@ -7,10 +7,12 @@ import { toggleSaved, getSavedIds, deletePhotoEverywhere } from "@/lib/savedUtil
 import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
 import { burstConfetti } from "@/lib/confetti";
-import { fetchMapPhotos, fetchPhotosByIds, saveLandmarkResult, fetchTripDiary, saveTripDiary } from "@/lib/photosApi";
+import { tripAnchorId, summarizeTrip } from "@/lib/tripMemory";
+import { DiaryLang, DIARY_LANGS, diaryCacheKey, loadDiaryLang, storeDiaryLang, requestDiary } from "@/lib/diary";
+import { fetchMapPhotos, fetchPhotosByIds, saveLandmarkResult, fetchTripDiary } from "@/lib/photosApi";
 import {
   Images, Users, Image as ImageIcon, Star, Download, Trash2,
-  X, CalendarDays, SlidersHorizontal, Search, Calendar, Share2, Loader2, MapPin, Sparkles, LayoutTemplate, Wand2, Check, Clock,
+  X, CalendarDays, SlidersHorizontal, Search, Calendar, Share2, Loader2, MapPin, Sparkles, LayoutTemplate, Wand2, Check, Clock, BookOpen,
 } from "lucide-react";
 import Link from "next/link";
 import { sharePhoto } from "@/lib/shareUtils";
@@ -159,21 +161,6 @@ function ShareLinkModal({ url, onClose }: { url: string; onClose: () => void }) 
       </div>
     </div>
   );
-}
-
-type DiaryLang = "en" | "ko";
-const DIARY_LANGS: { value: DiaryLang; label: string }[] = [
-  { value: "en", label: "English" },
-  { value: "ko", label: "한국어" },
-];
-const DIARY_LANG_STORAGE = "diary-lang";
-
-// trip_diaries is unique per (user_id, trip_key), so the cache key carries the
-// photo set, a version and the language. "v2" = diaries written by a model that
-// SEES the photos (v1 only got text metadata and tended to describe just one of
-// several same-place photos) — bumping it makes old v1 diaries regenerate once.
-function diaryCacheKey(photoSetKey: string, lang: DiaryLang): string {
-  return `${photoSetKey}|v2|${lang}`;
 }
 
 function DiaryModal({
@@ -490,7 +477,6 @@ export default function AlbumsPage() {
   const [personExtraIds,    setPersonExtraIds]    = useState<Set<string>>(new Set());
   const [personFilterLabel, setPersonFilterLabel] = useState<string | null>(null);
   const [viewMode,          setViewMode]          = useState<"monthly" | "trips">("monthly");
-  const [expandedTripId,    setExpandedTripId]    = useState<string | null>(null);
   const [diaryTrip,         setDiaryTrip]         = useState<Trip | null>(null);
   const [diaryLoading,      setDiaryLoading]      = useState(false);
   const [diaryText,         setDiaryText]         = useState<string | null>(null);
@@ -501,17 +487,12 @@ export default function AlbumsPage() {
   // The photo-id set the diary on screen was written from — the picker offers
   // "Write with N photos" once the selection differs from it.
   const [diaryWrittenFor,   setDiaryWrittenFor]   = useState<string>("");
-  const [diaryLang,         setDiaryLang]         = useState<DiaryLang>(() => {
-    try {
-      const v = typeof window !== "undefined" ? localStorage.getItem(DIARY_LANG_STORAGE) : null;
-      return v === "ko" || v === "en" ? v : "en";
-    } catch { return "en"; }
-  });
+  const [diaryLang,         setDiaryLang]         = useState<DiaryLang>(loadDiaryLang);
   const [uid,               setUid]               = useState<string | null>(null);
 
   function changeDiaryLang(lang: DiaryLang) {
     setDiaryLang(lang);
-    try { localStorage.setItem(DIARY_LANG_STORAGE, lang); } catch { /* storage unavailable — fine */ }
+    storeDiaryLang(lang);
     if (diaryTrip) handleGenerateDiary(diaryTrip, false, lang, diarySelected);
   }
 
@@ -539,43 +520,13 @@ export default function AlbumsPage() {
     setDiaryText(null);
     setDiaryError(null);
     setDiaryCached(false);
-    const key = diaryCacheKey(setKey, lang);
     try {
-      if (!forceRegenerate && uid) {
-        const cached = await fetchTripDiary(uid, key);
-        if (cached) {
-          setDiaryText(cached);
-          setDiaryCached(true);
-          return; // cache hit — no Claude call
-        }
-      }
-      const res = await fetch(`${BACKEND_URL}/generate-diary`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          language: lang,
-          entries: photos.map((p) => ({
-            fileName: p.fileName,
-            imageUrl: p.imageUrl.startsWith("data:") ? undefined : p.imageUrl,
-            location: p.location,
-            captureDate: p.captureDate,
-            captureTime: p.captureTime,
-            faceCount: p.faceCount ?? 0,
-          })),
-        }),
-      });
-      const data = await res.json();
-      if (data.diary) {
-        setDiaryText(data.diary);
-        burstConfetti({ y: 0.35 });
-        // Caching is best-effort: a failed save must not turn a successfully
-        // generated diary into a "backend offline" error.
-        if (uid) saveTripDiary(uid, key, data.diary, lang).catch((err) => console.warn("Caching diary failed:", err));
-      } else {
-        setDiaryError(data.error ?? "Couldn't generate the diary. Please try again in a moment.");
-      }
-    } catch {
-      setDiaryError("Couldn't connect to the backend server (uvicorn may be offline).");
+      const r = await requestDiary(uid, photos, lang, forceRegenerate);
+      setDiaryText(r.text);
+      setDiaryCached(r.cached);
+      if (!r.cached) burstConfetti({ y: 0.35 });
+    } catch (err) {
+      setDiaryError(err instanceof Error ? err.message : String(err));
     } finally {
       setDiaryLoading(false);
     }
@@ -907,7 +858,6 @@ export default function AlbumsPage() {
               <div className="absolute left-[27px] sm:left-[35px] top-3 bottom-3 w-px bg-gradient-to-b from-sky-200 via-indigo-200 to-transparent" />
               <div className="space-y-6">
               {trips.map((trip, ti) => {
-                const isExpanded = expandedTripId === trip.id;
                 const n = trip.photos.length;
                 const photoWord = n === 1 ? "photo" : "photos";
                 const withPeople = trip.photos.filter((p) => (p.faceCount ?? 0) > 0).length;
@@ -932,7 +882,7 @@ export default function AlbumsPage() {
                   <div className="flex-1 min-w-0 tv-card tv-card-hover overflow-hidden">
                     <div className="flex flex-col sm:flex-row">
                       {/* Cover: stacked polaroids when there's more than one photo */}
-                      <button type="button" onClick={() => setSelectedPhoto(trip.photos[0])}
+                      <Link href={`/albums/trip/${tripAnchorId(trip)}`}
                         className={`group relative flex-shrink-0 sm:w-56 h-48 sm:h-auto sm:min-h-[200px] overflow-hidden bg-gradient-to-br ${accent.bg}`}>
                         {n >= 3 && (
                           // eslint-disable-next-line @next/next/no-img-element
@@ -952,13 +902,15 @@ export default function AlbumsPage() {
                         <span className="absolute top-2.5 left-2.5 bg-white/85 backdrop-blur-sm text-slate-700 text-[11px] font-bold px-2.5 py-1 rounded-full shadow-sm">
                           {n} {photoWord}
                         </span>
-                      </button>
+                      </Link>
 
                       {/* Info */}
                       <div className="flex-1 min-w-0 p-4 sm:p-5 flex flex-col">
                         <div className="flex items-start gap-2">
                           <MapPin size={17} className={`${accent.text} flex-shrink-0 mt-0.5`} />
-                          <h2 className="font-extrabold text-slate-800 text-lg leading-snug line-clamp-2">{trip.name}</h2>
+                          <Link href={`/albums/trip/${tripAnchorId(trip)}`} className="hover:text-blue-700 transition-colors">
+                            <h2 className="font-extrabold text-slate-800 text-lg leading-snug line-clamp-2">{summarizeTrip(trip).title}</h2>
+                          </Link>
                         </div>
                         <p className="text-xs font-semibold text-slate-400 mt-1 ml-[25px] flex items-center gap-1">
                           <CalendarDays size={11} /> {trip.dateRange}
@@ -980,13 +932,13 @@ export default function AlbumsPage() {
                         </div>
 
                         <div className="flex flex-wrap gap-2 mt-auto pt-4">
-                          <button onClick={() => handleGenerateDiary(trip)}
+                          <Link href={`/albums/trip/${tripAnchorId(trip)}`}
                             className="tv-btn-primary text-xs px-3.5 py-2">
-                            <Sparkles size={13} /> AI Diary
-                          </button>
-                          <button onClick={() => setExpandedTripId(isExpanded ? null : trip.id)}
+                            <BookOpen size={13} /> Open trip
+                          </Link>
+                          <button onClick={() => handleGenerateDiary(trip)}
                             className="tv-btn-soft text-xs px-3.5 py-2">
-                            <Images size={13} /> {isExpanded ? "Hide photos" : `View ${n} ${photoWord}`}
+                            <Sparkles size={13} /> AI Diary
                           </button>
                           <button onClick={() => handleShareTrip(trip)} disabled={sharing}
                             className="inline-flex items-center justify-center gap-1.5 text-xs font-bold px-3.5 py-2 rounded-xl text-slate-600 bg-white border border-slate-200 hover:border-sky-300 hover:text-sky-700 transition-colors disabled:opacity-60">
@@ -996,19 +948,6 @@ export default function AlbumsPage() {
                       </div>
                     </div>
 
-                    {/* ── Expanded grid ── */}
-                    {isExpanded && (
-                      <div className="px-3 pb-3 pt-3 grid grid-cols-3 sm:grid-cols-4 gap-2 border-t border-slate-100">
-                        {trip.photos.map((photo) => (
-                          <button key={photo.id} onClick={() => setSelectedPhoto(photo)}
-                            className="group rounded-xl overflow-hidden aspect-square bg-slate-100">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={photo.imageUrl} alt={photo.fileName} loading="lazy"
-                              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
-                          </button>
-                        ))}
-                      </div>
-                    )}
                   </div>
                 </div>
                 );
