@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import SectionTabs from "@/components/SectionTabs";
 import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
+import { saveImage, prefetchImage } from "@/lib/saveImage";
 import { getSavedIds, toggleSaved } from "@/lib/savedUtils";
 import { fetchMapPhotos } from "@/lib/photosApi";
 import { Star, Download, X, MapPin, BookmarkX } from "lucide-react";
@@ -21,6 +22,8 @@ function PhotoModal({ photo, onClose, onRemove, onDownload }: {
   photo: MapPhoto; onClose: () => void;
   onRemove: (id: string) => void; onDownload: (photo: MapPhoto) => void;
 }) {
+  // Ready for Download: the phone share sheet must open right after the tap.
+  useEffect(() => { prefetchImage(photo.imageUrl).catch(() => {}); }, [photo.imageUrl]);
   return (
     <div className="fixed inset-0 bg-black/85 z-[3000] flex items-center justify-center p-5" onClick={onClose}>
       <div className="max-w-[520px] w-full bg-white rounded-2xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -84,10 +87,7 @@ export default function SavedPage() {
   }
 
   function handleDownload(photo: MapPhoto) {
-    const a = document.createElement("a");
-    a.href = photo.imageUrl;
-    a.download = photo.fileName;
-    a.click();
+    saveImage(photo.imageUrl, photo.fileName);
   }
 
   return (

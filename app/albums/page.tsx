@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import SectionTabs from "@/components/SectionTabs";
 import { toggleSaved, getSavedIds, deletePhotoEverywhere } from "@/lib/savedUtils";
-import { getSessionUser } from "@/lib/supabase";
+import { getSessionUser, supabase } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
+import { saveImage, prefetchImage } from "@/lib/saveImage";
 import { burstConfetti } from "@/lib/confetti";
 import { tripAnchorId, summarizeTrip, cityOf } from "@/lib/tripMemory";
 import { matchesQuery, describeQuery, personNamesByPhoto } from "@/lib/photoSearch";
@@ -20,7 +21,6 @@ import { sharePhoto } from "@/lib/shareUtils";
 import { shareTrip } from "@/lib/tripShareUtils";
 import ShareCardModal from "@/components/ShareCardModal";
 import { loadImage, drawImageCover } from "@/lib/canvasCard";
-import { BACKEND_URL } from "@/lib/backend";
 import { Trip, tripKeyOf, detectTrips, getPhotoDate } from "@/lib/trips";
 
 // Draws a 1080x1920 Instagram-story-style card for a single photo: the photo
@@ -81,7 +81,16 @@ async function drawPhotoStoryCard(ctx: CanvasRenderingContext2D, w: number, h: n
 type Filter    = "All" | "With People" | "Scenery";
 
 
-// Downscale before sending to Claude — cuts image tokens (and cost) with no
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+// Downscale before sending to Gemini — cuts image tokens (and cost) with no
 // meaningful loss for landmark recognition. Server also enforces this as a backstop.
 async function resizeImageForApi(blob: Blob, maxSize = 1024, quality = 0.85): Promise<Blob> {
   const bitmap = await createImageBitmap(blob);
@@ -248,6 +257,8 @@ function PhotoModal({
       : null);
     setLandmarkError(null);
     setIsReanalyzing(false);
+    // Ready for Download: the phone share sheet must open right after the tap.
+    if (!photo.imageUrl.startsWith("data:")) prefetchImage(photo.imageUrl).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [photo.id]);
 
@@ -255,13 +266,21 @@ function PhotoModal({
     setLandmarkLoading(true);
     setLandmarkError(null);
     try {
-      const imgRes = await fetch(photo.imageUrl);
-      const rawBlob = await imgRes.blob();
+      const rawBlob = await prefetchImage(photo.imageUrl);
       const resizedBlob = await resizeImageForApi(rawBlob);
-      const form = new FormData();
-      form.append("file", resizedBlob, photo.fileName || "photo.jpg");
-      const qs = photo.lat != null && photo.lng != null ? `?lat=${photo.lat}&lng=${photo.lng}` : "";
-      const res = await fetch(`${BACKEND_URL}/recognize-landmark${qs}`, { method: "POST", body: form });
+      // Next.js server route (app/api/recognize-landmark), not the Python backend,
+      // so this works on the deployed site and on phones too.
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/recognize-landmark", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
+        body: JSON.stringify({
+          image: await blobToBase64(resizedBlob),
+          mimeType: resizedBlob.type || "image/jpeg",
+          lat: photo.lat ?? null,
+          lng: photo.lng ?? null,
+        }),
+      });
       const data = await res.json();
       if (data.error) {
         setLandmarkError(data.error);
@@ -279,7 +298,7 @@ function PhotoModal({
         onLandmarkSaved(photo.id, saved);
       }
     } catch {
-      setLandmarkError("Couldn't connect to the backend server.");
+      setLandmarkError("Couldn't reach the server. Check your internet connection and try again.");
     } finally {
       setLandmarkLoading(false);
       setIsReanalyzing(false);
@@ -583,10 +602,7 @@ export default function AlbumsPage() {
   }
 
   function handleDownload(photo: MapPhoto) {
-    const a = document.createElement("a");
-    a.href = photo.imageUrl;
-    a.download = photo.fileName;
-    a.click();
+    saveImage(photo.imageUrl, photo.fileName);
   }
 
   async function handleShare(photo: MapPhoto) {

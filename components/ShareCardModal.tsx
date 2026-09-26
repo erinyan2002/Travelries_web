@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { X, Download, Share2, Loader2 } from "lucide-react";
+import { saveImage } from "@/lib/saveImage";
 
 // Instagram Story aspect ratio (9:16). Rendered at a fixed pixel size so the
 // exported PNG looks sharp regardless of the viewer's screen density.
@@ -24,6 +25,9 @@ export default function ShareCardModal({ title, fileName, onClose, draw }: Share
   const [ready, setReady] = useState(false);
   const [drawError, setDrawError] = useState(false);
   const [busy, setBusy] = useState(false);
+  // The PNG is made as soon as the card is drawn, so Save/Share can open the phone's
+  // share sheet right after the tap (iOS refuses it once the tap is too old).
+  const blobRef = useRef<Blob | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -32,31 +36,22 @@ export default function ShareCardModal({ title, fileName, onClose, draw }: Share
     canvas.width = CARD_WIDTH;
     canvas.height = CARD_HEIGHT;
     Promise.resolve(draw(ctx, CARD_WIDTH, CARD_HEIGHT))
+      .then(() => new Promise<void>((resolve) => canvas.toBlob((b) => { blobRef.current = b; resolve(); }, "image/png")))
       .then(() => setReady(true))
       .catch((err) => { console.error("Share card draw failed:", err); setDrawError(true); });
     // `draw` is supplied once by the caller when the modal opens — this should run exactly once per mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function getBlob(): Promise<Blob | null> {
-    return new Promise((resolve) => canvasRef.current?.toBlob((b) => resolve(b), "image/png"));
-  }
-
+  // Phones: the share sheet, whose "Save Image" puts the card in Photos. Computers: a download.
   async function handleDownload() {
-    const blob = await getBlob();
-    if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = fileName;
-    a.click();
-    URL.revokeObjectURL(url);
+    if (blobRef.current) await saveImage(blobRef.current, fileName);
   }
 
   async function handleShare() {
     setBusy(true);
     try {
-      const blob = await getBlob();
+      const blob = blobRef.current;
       if (!blob) return;
       const file = new File([blob], fileName, { type: "image/png" });
       if (navigator.canShare?.({ files: [file] })) {
