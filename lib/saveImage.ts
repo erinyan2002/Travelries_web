@@ -42,18 +42,46 @@ function download(blob: Blob, fileName: string) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  // Safari can still be reading the blob a while after the click; revoking early breaks the download.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+// A small status pill at the top of the screen. A computer download lands in
+// the Downloads folder silently (Safari only twitches its toolbar icon), so
+// without this, Save looked like it did nothing.
+let toastEl: HTMLDivElement | null = null;
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
+function toast(text: string, ms = 2600) {
+  if (typeof document === "undefined") return;
+  if (!toastEl) {
+    toastEl = document.createElement("div");
+    toastEl.setAttribute("role", "status");
+    toastEl.style.cssText =
+      "position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 16px);transform:translateX(-50%);" +
+      "z-index:6000;background:rgba(15,23,42,.92);color:#fff;font:600 14px/1.3 Pretendard,system-ui,sans-serif;" +
+      "padding:10px 16px;border-radius:999px;box-shadow:0 8px 24px rgba(0,0,0,.25);pointer-events:none;" +
+      "max-width:calc(100vw - 32px);text-align:center;transition:opacity .2s";
+    document.body.appendChild(toastEl);
+  }
+  toastEl.textContent = text;
+  toastEl.style.opacity = "1";
+  clearTimeout(toastTimer);
+  if (ms > 0) toastTimer = setTimeout(() => { if (toastEl) toastEl.style.opacity = "0"; }, ms);
 }
 
 /** Saves an image: the share sheet on phones (→ "Save Image"), a download elsewhere. */
 export async function saveImage(source: Blob | string, fileName: string): Promise<void> {
   let blob: Blob;
+  const slow = setTimeout(() => toast("Preparing image…", 0), 300);
   try {
     blob = typeof source === "string" ? await prefetchImage(source) : source;
   } catch {
-    if (typeof source === "string") window.open(source, "_blank"); // CORS/network failure: at least show it
+    toast("Couldn't download the image. Check your connection and try again.");
     return;
+  } finally {
+    clearTimeout(slow);
   }
+  if (toastEl) toastEl.style.opacity = "0"; // hide "Preparing image…"
   const name = withExtension(fileName, blob.type);
   if (isPhone()) {
     const file = new File([blob], name, { type: blob.type || "image/jpeg" });
@@ -68,4 +96,5 @@ export async function saveImage(source: Blob | string, fileName: string): Promis
     }
   }
   download(blob, name);
+  toast(`Saved “${name}” to your Downloads folder`);
 }
