@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import PageHero from "@/components/PageHero";
+import SectionTabs from "@/components/SectionTabs";
 import { createAlbum, getMyAlbums, CollabAlbum } from "@/lib/collabUtils";
 import { FolderOpen, Plus, X, LogIn } from "lucide-react";
 
@@ -46,6 +47,8 @@ export default function CollabPage() {
   return (
     <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-28">
       <div className="max-w-3xl mx-auto">
+
+        <SectionTabs section="social" active="collab" />
 
         <PageHero
           icon={FolderOpen}

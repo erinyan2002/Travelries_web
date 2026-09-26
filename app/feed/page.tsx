@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence } from "framer-motion";
 import PageHero from "@/components/PageHero";
+import SectionTabs from "@/components/SectionTabs";
 import Avatar from "@/components/Avatar";
 import { getSessionUser } from "@/lib/supabase";
 import { fetchMapPhotos, fetchPhotoPersonIds } from "@/lib/photosApi";
@@ -370,6 +371,8 @@ export default function FeedPage() {
   return (
     <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-28">
       <div className="max-w-2xl mx-auto space-y-5">
+
+        <SectionTabs section="social" active="feed" />
 
         <PageHero
           icon={Sparkles}

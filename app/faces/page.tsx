@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo } from "react";
 import PageHero from "@/components/PageHero";
+import SectionTabs from "@/components/SectionTabs";
 import ActionMenu from "@/components/ActionMenu";
 import Avatar from "@/components/Avatar";
 import { getSessionUser } from "@/lib/supabase";
@@ -589,10 +590,12 @@ export default function FacesPage() {
     <main className="min-h-screen px-4 pt-16 xl:pt-6 pb-28">
       <div className="max-w-2xl mx-auto">
 
+        <SectionTabs section="albums" active="people" />
+
         {/* ── Hero header ── */}
         <PageHero
           icon={Scan}
-          title="Faces"
+          title="People"
           subtitle="AI-powered face detection & clustering"
           action={storedPhotos.length > 0 && (
             <button

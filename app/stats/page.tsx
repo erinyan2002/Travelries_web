@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import PageHero from "@/components/PageHero";
+import SectionTabs from "@/components/SectionTabs";
 import AnimatedNumber from "@/components/AnimatedNumber";
 import { fadeUp, staggerContainer } from "@/lib/motion";
 import { getSessionUser } from "@/lib/supabase";
@@ -345,6 +346,7 @@ export default function StatsPage() {
     return (
       <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-28">
         <div className="max-w-5xl mx-auto">
+          <SectionTabs section="profile" active="stats" />
           <PageHero icon={BarChart2} title="Statistics" subtitle="Summary of your photo activity" />
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-2">
             {[0, 1, 2, 3].map((i) => (
@@ -360,6 +362,8 @@ export default function StatsPage() {
   return (
     <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-28">
       <div className="max-w-5xl mx-auto">
+
+        <SectionTabs section="profile" active="stats" />
 
         <PageHero
           icon={BarChart2}

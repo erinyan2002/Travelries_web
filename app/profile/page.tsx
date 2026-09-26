@@ -6,6 +6,7 @@ import {
   User, Mail, CalendarDays, Pencil, Check, X,
   KeyRound, Eye, EyeOff, AlertCircle, CheckCircle2, LogOut, Camera, Loader2, UserCircle } from "lucide-react";
 import PageHero from "@/components/PageHero";
+import SectionTabs from "@/components/SectionTabs";
 import { supabase, getSessionUser } from "@/lib/supabase";
 
 type Profile = { id: string; name: string; created_at: string; avatar_url?: string | null };
@@ -175,6 +176,8 @@ export default function ProfilePage() {
   return (
     <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-28">
       <div className="max-w-lg mx-auto space-y-5">
+
+        <SectionTabs section="profile" active="profile" />
 
         <PageHero icon={UserCircle} title="My Profile" subtitle="Your account, photo and password." />
 

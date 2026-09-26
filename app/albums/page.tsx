@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import PageHero from "@/components/PageHero";
+import SectionTabs from "@/components/SectionTabs";
 import { toggleSaved, getSavedIds, deletePhotoEverywhere } from "@/lib/savedUtils";
 import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
@@ -752,9 +753,22 @@ export default function AlbumsPage() {
 
   const isFiltering = searchQuery.trim() !== "" || filter !== "All" || dateRange !== "all";
 
+  // Photos/Trips switch in place; the URL follows (keeping any person filter) so a
+  // reload or the back button lands on the same view.
+  function switchView(mode: "monthly" | "trips") {
+    setViewMode(mode);
+    const url = new URL(window.location.href);
+    if (mode === "trips") url.searchParams.set("view", "trips");
+    else url.searchParams.delete("view");
+    window.history.replaceState({}, "", url.pathname + url.search);
+  }
+
   return (
     <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-28">
       <div className="max-w-5xl mx-auto">
+
+        <SectionTabs section="albums" active={viewMode === "trips" ? "trips" : "photos"}
+          onSelect={{ photos: () => switchView("monthly"), trips: () => switchView("trips") }} />
 
         <PageHero icon={Images} title="Albums" subtitle="Browse your saved travel photos by date."
           action={
@@ -841,23 +855,6 @@ export default function AlbumsPage() {
               </button>
             );
           })}
-        </div>
-
-        {/* View mode toggle */}
-        <div className="flex gap-1.5 mb-4 bg-white rounded-2xl p-1.5 border border-slate-100 shadow-sm">
-          {([
-            { key: "monthly" as const, label: "By Month", icon: CalendarDays },
-            { key: "trips"   as const, label: "Trips",    icon: MapPin       },
-          ]).map(({ key, label, icon: Icon }) => (
-            <button key={key} onClick={() => setViewMode(key)}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                viewMode === key
-                  ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md shadow-blue-200"
-                  : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
-              }`}>
-              <Icon size={14} /> {label}
-            </button>
-          ))}
         </div>
 
         {/* Result count + clear */}
