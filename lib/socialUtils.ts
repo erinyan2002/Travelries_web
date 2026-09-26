@@ -23,6 +23,22 @@ export type Post = {
   // survives the original being deleted or its author renaming) author name.
   repostOf: { id: string; authorName: string } | null;
   taggedUsers: TaggedUser[];
+  /** Set when the post shares a whole trip rather than one photo. */
+  trip: TripPostInfo | null;
+};
+
+// Snapshot shown on a trip post's feed card (migration 0015). `shareId` is the
+// public trip_shares row the card links to (/trip/[shareId]).
+export type TripPostInfo = {
+  shareId: string;
+  title: string;
+  dates: string;
+  days: number;
+  places: number;
+  photos: number;
+  people: number;
+  covers: string[];
+  journey: string[];
 };
 
 export type TaggedUser = { id: string; name: string; avatarUrl: string | null };
@@ -143,6 +159,25 @@ export async function createPost(
   return data.id as string;
 }
 
+export async function createTripPost(uid: string, trip: TripPostInfo, caption?: string): Promise<string> {
+  const { data, error } = await supabase.from("posts").insert({
+    user_id: uid,
+    photo_id: null,
+    image_url: trip.covers[0],
+    caption: caption?.trim() || null,
+    location: trip.title,
+    capture_date: trip.dates,
+    trip,
+  }).select("id").single();
+  if (error) {
+    if (/trip/.test(error.message) && /column/.test(error.message)) {
+      throw new Error("Trip posts need a database update: run supabase/migrations/0015_trip_posts.sql in the Supabase SQL editor.");
+    }
+    throw new Error(error.message);
+  }
+  return data.id as string;
+}
+
 export async function deletePost(uid: string, postId: string): Promise<void> {
   const { error } = await supabase.from("posts").delete().eq("id", postId).eq("user_id", uid);
   if (error) throw new Error(error.message);
@@ -163,6 +198,8 @@ export async function createRepost(uid: string, original: Post): Promise<void> {
     capture_date: original.captureDate,
     repost_of: original.repostOf?.id ?? original.id,
     original_author_name: original.repostOf?.authorName ?? original.authorName,
+    // Only sent for trip posts, so reposting a photo still works before 0015 is run.
+    ...(original.trip && { trip: original.trip }),
   });
   if (error) throw new Error(error.message);
 }
@@ -280,6 +317,7 @@ async function enrichPosts(uid: string, rows: Record<string, unknown>[]): Promis
     likedByMe: likedByMe.has(r.id as string),
     commentCount: commentCounts.get(r.id as string) ?? 0,
     repostOf: r.repost_of ? { id: r.repost_of as string, authorName: (r.original_author_name as string) || "Traveler" } : null,
+    trip: (r.trip as TripPostInfo | null) ?? null,
     taggedUsers: (tagsByPost.get(r.id as string) ?? []).map((tid) => ({
       id: tid,
       name: profilesByTagged.get(tid)?.name || "Traveler",

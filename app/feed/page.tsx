@@ -6,6 +6,7 @@ import { AnimatePresence } from "framer-motion";
 import PageHero from "@/components/PageHero";
 import SectionTabs from "@/components/SectionTabs";
 import Avatar from "@/components/Avatar";
+import TripPostCard from "@/components/TripPostCard";
 import { getSessionUser } from "@/lib/supabase";
 import { fetchMapPhotos, fetchPhotoPersonIds } from "@/lib/photosApi";
 import { fetchPeople } from "@/lib/peopleApi";
@@ -439,7 +440,7 @@ export default function FeedPage() {
           <div className="bg-white/60 backdrop-blur-sm rounded-3xl border-2 border-dashed border-sky-200 p-14 text-center">
             <Users size={28} className="text-slate-300 mx-auto mb-3" />
             <p className="font-bold text-slate-700 mb-1">Your feed is empty</p>
-            <p className="text-slate-400 text-sm">Follow other travelers, or post one of your own photos.</p>
+            <p className="text-slate-400 text-sm">Follow other travelers, or share a trip from Albums → Trips.</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -462,10 +463,14 @@ export default function FeedPage() {
                     </button>
                   )}
                 </div>
-                <Link href={`/post/${post.id}`}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={post.imageUrl} alt="" className="w-full max-h-96 object-cover" />
-                </Link>
+                {post.trip ? (
+                  <TripPostCard trip={post.trip} authorName={post.authorName} />
+                ) : (
+                  <Link href={`/post/${post.id}`}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={post.imageUrl} alt="" className="w-full max-h-96 object-cover" />
+                  </Link>
+                )}
                 <div className="px-4 py-3 space-y-1.5">
                   <div className="flex items-center gap-3">
                     <button onClick={() => handleLike(post)} className="flex items-center gap-1.5 text-sm font-bold text-slate-600 hover:text-red-500 transition-colors">

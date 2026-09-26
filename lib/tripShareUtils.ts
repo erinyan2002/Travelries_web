@@ -2,6 +2,7 @@
 // supabase/migrations/0013_trip_shares.sql for the snapshot model.
 import { supabase, getSessionUser } from "./supabase";
 import { Trip, getPhotoDate } from "./trips";
+import { summarizeTrip, formatTripDates } from "./tripMemory";
 
 export type TripSharePhoto = {
   imageUrl: string;
@@ -24,6 +25,11 @@ export type TripShare = {
 };
 
 export async function shareTrip(trip: Trip, diary: string | null): Promise<string> {
+  return `${window.location.origin}/trip/${await createTripShare(trip, diary)}`;
+}
+
+/** Inserts the public snapshot and returns its id (used by trip posts too). */
+export async function createTripShare(trip: Trip, diary: string | null): Promise<string> {
   const { data: { user } } = await getSessionUser();
   if (!user) throw new Error("Not signed in");
 
@@ -45,13 +51,14 @@ export async function shareTrip(trip: Trip, diary: string | null): Promise<strin
       };
     });
   if (photos.length === 0) throw new Error("This trip has no shareable photos yet.");
+  const memory = summarizeTrip(trip);
 
   const { data, error } = await supabase
     .from("trip_shares")
     .insert({
       user_id: user.id,
-      title: trip.name,
-      date_range: trip.dateRange,
+      title: memory.title,
+      date_range: formatTripDates(memory.start, memory.end),
       locations: trip.locations,
       diary,
       photos,
@@ -59,7 +66,7 @@ export async function shareTrip(trip: Trip, diary: string | null): Promise<strin
     .select("id")
     .single();
   if (error) throw new Error(error.message);
-  return `${window.location.origin}/trip/${data.id}`;
+  return data.id as string;
 }
 
 export async function getTripShare(id: string): Promise<TripShare | null> {

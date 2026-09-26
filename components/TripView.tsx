@@ -9,7 +9,7 @@ import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeft, CalendarDays, Camera, MapPin, Users, Route, Sparkles, Share2, Link2, Loader2, X,
-  LayoutDashboard, Map as MapIcon, Images, ScanFace, BookOpen, Trophy, Check,
+  LayoutDashboard, Map as MapIcon, Images, ScanFace, BookOpen, Trophy, Check, Send,
 } from "lucide-react";
 import FaceChip from "@/components/FaceChip";
 import ShareCardModal from "@/components/ShareCardModal";
@@ -18,7 +18,8 @@ import { buildPersonGroups, MATCH_THRESHOLD, PersonCluster } from "@/lib/faceClu
 import { getPhotoDate, Trip } from "@/lib/trips";
 import { summarizeTrip, sortChronologically, formatTripDates, formatDistance, placeLabel } from "@/lib/tripMemory";
 import { drawTripMemoryCard } from "@/lib/tripCard";
-import { shareTrip } from "@/lib/tripShareUtils";
+import { shareTrip, createTripShare } from "@/lib/tripShareUtils";
+import { createTripPost } from "@/lib/socialUtils";
 import { DiaryLang, DIARY_LANGS, loadDiaryLang, storeDiaryLang, requestDiary, diaryCacheKey, photoSetKey } from "@/lib/diary";
 import { fetchTripDiary } from "@/lib/photosApi";
 import { burstConfetti } from "@/lib/confetti";
@@ -52,6 +53,11 @@ export default function TripView({ trip, facePhotos, people, uid }: {
   const [sharing, setSharing] = useState(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [postOpen, setPostOpen] = useState(false);
+  const [postCaption, setPostCaption] = useState("");
+  const [posting, setPosting] = useState(false);
+  const [posted, setPosted] = useState(false);
+  const [postError, setPostError] = useState<string | null>(null);
 
   const [lang, setLang] = useState<DiaryLang>(loadDiaryLang);
   const [diary, setDiary] = useState<string | null>(null);
@@ -107,6 +113,36 @@ export default function TripView({ trip, facePhotos, people, uid }: {
     const cached = uid ? await fetchTripDiary(uid, diaryCacheKey(photoSetKey(trip.photos), next)) : null;
     setDiary(cached);
     setDiaryCached(!!cached);
+  }
+
+  // Posts the whole trip to the feed: a public trip_shares snapshot (what the card
+  // links to) plus a post carrying the card's summary.
+  async function handlePostToFeed() {
+    if (!uid) return;
+    setPosting(true);
+    setPostError(null);
+    try {
+      const shareId = await createTripShare(trip, diary);
+      const covers = [cover, ...ordered.filter((p) => p.id !== cover.id)]
+        .filter((p) => !p.imageUrl.startsWith("data:")).slice(0, 3).map((p) => p.imageUrl);
+      await createTripPost(uid, {
+        shareId,
+        title: memory.title,
+        dates: formatTripDates(memory.start, memory.end),
+        days: memory.dayCount,
+        places: memory.places.length,
+        photos: memory.photoCount,
+        people: tripPeople.length,
+        covers,
+        journey: memory.journey.slice(0, 8),
+      }, postCaption);
+      setPosted(true);
+      burstConfetti({ y: 0.4 });
+    } catch (err) {
+      setPostError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPosting(false);
+    }
   }
 
   async function handleShareLink() {
@@ -285,6 +321,9 @@ export default function TripView({ trip, facePhotos, people, uid }: {
                     <button onClick={() => writeStory(false)} className="tv-btn-primary text-sm px-4 py-2.5">
                       <Sparkles size={15} /> Generate My Travel Story
                     </button>
+                    <button onClick={() => { setPostOpen(true); setPosted(false); setPostError(null); }} className="tv-btn-soft text-sm px-4 py-2.5">
+                      <Send size={15} /> Share to Feed
+                    </button>
                     <button onClick={() => setShowCard(true)} className="tv-btn-soft text-sm px-4 py-2.5">
                       <Share2 size={15} /> Memory card
                     </button>
@@ -443,6 +482,41 @@ export default function TripView({ trip, facePhotos, people, uid }: {
                 {copied ? <><Check size={13} /> Copied</> : <><Share2 size={13} /> Share</>}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Share to Feed */}
+      {postOpen && (
+        <div className="fixed inset-0 z-[3000] tv-overlay flex items-center justify-center p-4" onClick={() => !posting && setPostOpen(false)}>
+          <div className="tv-modal p-5 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
+            {posted ? (
+              <div className="text-center py-2">
+                <p className="font-extrabold text-slate-800">Your trip is on the feed ✈️</p>
+                <p className="text-xs text-slate-400 mt-1 mb-4">Your followers can see it, like it and comment.</p>
+                <div className="flex justify-center gap-2">
+                  <Link href="/feed" className="tv-btn-primary text-sm px-4 py-2">Open Feed</Link>
+                  <button onClick={() => setPostOpen(false)} className="tv-btn-soft text-sm px-4 py-2">Close</button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="font-extrabold text-slate-800">Share {memory.title} to your feed</p>
+                <p className="text-xs text-slate-400 mt-0.5 mb-3">
+                  {memory.dayCount} days · {memory.places.length} places · {memory.photoCount} photos — followers can open the map, photos and story.
+                </p>
+                <textarea value={postCaption} onChange={(e) => setPostCaption(e.target.value)} rows={3} maxLength={500}
+                  placeholder="Say something about this trip…"
+                  className="w-full text-base sm:text-sm rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 resize-none" />
+                {postError && <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mt-2">{postError}</p>}
+                <div className="flex justify-end gap-2 mt-3">
+                  <button onClick={() => setPostOpen(false)} disabled={posting} className="text-sm font-bold text-slate-500 px-3 py-2">Cancel</button>
+                  <button onClick={handlePostToFeed} disabled={posting || !uid} className="tv-btn-primary text-sm px-4 py-2">
+                    {posting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Post
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

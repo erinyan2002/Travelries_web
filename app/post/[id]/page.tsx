@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Avatar from "@/components/Avatar";
+import TripPostCard from "@/components/TripPostCard";
 import CommentThread from "@/components/CommentThread";
 import { getSessionUser } from "@/lib/supabase";
 import { fetchPostById, toggleLike, deletePost, Post } from "@/lib/socialUtils";
@@ -112,8 +113,14 @@ export default function PostDetailPage() {
               </button>
             )}
           </div>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={post.imageUrl} alt="" className="w-full max-h-[480px] object-cover" />
+          {post.trip ? (
+            <TripPostCard trip={post.trip} authorName={post.authorName} />
+          ) : (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={post.imageUrl} alt="" className="w-full max-h-[480px] object-cover" />
+            </>
+          )}
           <div className="px-4 py-3 space-y-1.5">
             <div className="flex items-center gap-3">
               <button onClick={handleLike} className="flex items-center gap-1.5 text-sm font-bold text-slate-600 hover:text-red-500 transition-colors">
