@@ -7,7 +7,8 @@ import Avatar from "@/components/Avatar";
 import FaceChip from "@/components/FaceChip";
 import { getSessionUser } from "@/lib/supabase";
 import { FacePhoto } from "@/lib/types";
-import { fetchFacePhotos, updateFacePersonIds, removeFaceFromPhoto } from "@/lib/photosApi";
+import { fetchFacePhotos, fetchMapPhotos, updateFacePersonIds, removeFaceFromPhoto } from "@/lib/photosApi";
+import { detectTrips, Trip } from "@/lib/trips";
 import { deletePhotoEverywhere } from "@/lib/savedUtils";
 import { fetchPeople, createPerson, renamePerson, linkPersonToUser, Person } from "@/lib/peopleApi";
 import { fetchFollowingProfiles, fetchFollowerProfiles, Profile } from "@/lib/socialUtils";
@@ -313,6 +314,8 @@ export default function FacesPage() {
   const [people,          setPeople]          = useState<Person[]>([]);
   const [merging,         setMerging]         = useState<string | null>(null);
   const [friends,         setFriends]         = useState<Profile[]>([]);
+  // All trips, to show "N trips" per person (a trip counts if the person is in any of its photos).
+  const [trips,           setTrips]           = useState<Trip[]>([]);
   const router = useRouter();
 
   useEffect(() => {
@@ -372,6 +375,7 @@ export default function FacesPage() {
       }
 
       setStoredPhotos(faces);
+      if (u !== "guest") fetchMapPhotos(u).then((m) => setTrips(detectTrips(m))).catch(() => {});
       setPeople(peopleList);
       setLoading(false);
     }
@@ -550,14 +554,14 @@ export default function FacesPage() {
   });
 
   return (
-    <main className="min-h-screen px-4 pt-16 xl:pt-6 pb-28">
+    <main className="min-h-screen px-4 pt-16 xl:pt-6 pb-24 lg:pb-10">
       <div className="max-w-2xl mx-auto">
 
         {/* ── Hero header ── */}
         <PageHero
           icon={Scan}
-          title="Faces"
-          subtitle="AI-powered face detection & clustering"
+          title="People"
+          subtitle="People in your memories, grouped by face recognition"
           action={storedPhotos.length > 0 && (
             <button
               onClick={() => setConfirmClearAll(true)}
@@ -698,7 +702,11 @@ export default function FacesPage() {
                                 </div>
                               )}
                               <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full mt-1.5 ${color.bg} ${color.text}`}>
-                                {cluster.faces.length} appearance{cluster.faces.length !== 1 ? "s" : ""}
+                                {(() => {
+                                  const ids = new Set(cluster.faces.map((f) => f.photo.id));
+                                  const tripCount = trips.filter((t) => t.photos.some((p) => ids.has(p.id))).length;
+                                  return <>{ids.size} photo{ids.size !== 1 ? "s" : ""}{tripCount > 0 && <> · {tripCount} trip{tripCount !== 1 ? "s" : ""}</>}</>;
+                                })()}
                               </span>
                               {(() => {
                                 // By photo id, not filename — names like IMG_1234.jpg repeat.

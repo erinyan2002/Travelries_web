@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import PageHero from "@/components/PageHero";
 import SectionTabs from "@/components/SectionTabs";
 import { toggleSaved, getSavedIds, deletePhotoEverywhere } from "@/lib/savedUtils";
 import { getSessionUser } from "@/lib/supabase";
@@ -14,7 +13,7 @@ import { DiaryLang, DIARY_LANGS, diaryCacheKey, loadDiaryLang, storeDiaryLang, r
 import { fetchMapPhotos, fetchPhotosByIds, saveLandmarkResult, fetchTripDiary, fetchFacePhotos } from "@/lib/photosApi";
 import {
   Images, Users, Image as ImageIcon, Star, Download, Trash2,
-  X, CalendarDays, SlidersHorizontal, Search, Calendar, Share2, Loader2, MapPin, Sparkles, LayoutTemplate, Check, Clock, BookOpen,
+  X, CalendarDays, Search, Share2, Loader2, MapPin, Sparkles, LayoutTemplate, Check, Clock, BookOpen,
 } from "lucide-react";
 import Link from "next/link";
 import { sharePhoto } from "@/lib/shareUtils";
@@ -99,15 +98,12 @@ async function resizeImageForApi(blob: Blob, maxSize = 1024, quality = 0.85): Pr
 }
 
 const FILTERS: Filter[] = ["All", "With People", "Scenery"];
-const filterIcons: Record<Filter, React.ElementType> = {
-  "All": SlidersHorizontal, "With People": Users, "Scenery": ImageIcon,
-};
 
 const DATE_RANGES: { value: DateRange; label: string }[] = [
-  { value: "all",   label: "All Time"   },
-  { value: "week",  label: "This Week"  },
-  { value: "month", label: "This Month" },
-  { value: "year",  label: "This Year"  },
+  { value: "all",   label: "All time" },
+  { value: "week",  label: "Week"     },
+  { value: "month", label: "Month"    },
+  { value: "year",  label: "Year"     },
 ];
 
 function isInDateRange(photo: MapPhoto, range: DateRange): boolean {
@@ -492,6 +488,7 @@ export default function AlbumsPage() {
   const [diaryLang,         setDiaryLang]         = useState<DiaryLang>(loadDiaryLang);
   const [uid,               setUid]               = useState<string | null>(null);
   // photo id → named people in it, for searches like "Sokcho with Minji".
+  const [searchFocused,     setSearchFocused]     = useState(false);
   const [photoPeople,       setPhotoPeople]       = useState<Map<string, string[]>>(new Map());
 
   function changeDiaryLang(lang: DiaryLang) {
@@ -735,13 +732,11 @@ export default function AlbumsPage() {
   }
 
   return (
-    <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-28">
+    <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-24 lg:pb-10">
       <div className="max-w-5xl mx-auto">
 
         <SectionTabs section="albums" active={viewMode === "trips" ? "trips" : "photos"}
           onSelect={{ photos: () => switchView("monthly"), trips: () => switchView("trips") }} />
-
-        <PageHero icon={Images} title="Albums" subtitle="Browse your saved travel photos by date." />
 
         {/* Person filter banner */}
         {(personFilterIds || personFilterNames) && (
@@ -771,14 +766,17 @@ export default function AlbumsPage() {
         )}
 
         {/* Search bar */}
-        <div className="relative mb-4">
+        <div className="relative mb-3">
           <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            onFocus={() => setSearchFocused(true)}
+            // Delay so a tap on a suggestion lands before the row disappears.
+            onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
             placeholder="Search places, people, dates…"
-            className="w-full pl-10 pr-10 py-3 rounded-2xl border border-slate-200 bg-white text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all shadow-sm"
+            className="w-full pl-10 pr-10 py-2.5 rounded-2xl border border-slate-200 bg-white text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all shadow-sm"
           />
           {searchQuery && (
             <button onClick={() => setSearchQuery("")}
@@ -788,8 +786,9 @@ export default function AlbumsPage() {
           )}
         </div>
 
-        {/* How the query is read, or example searches when it's empty */}
-        <div className="flex flex-wrap items-center gap-1.5 -mt-2 mb-4 min-h-[26px]">
+        {/* How the query is read, or example searches while the empty box is focused */}
+        {(searchQuery.trim() || (searchFocused && searchIdeas.length > 0)) && (
+        <div className="flex flex-wrap items-center gap-1.5 -mt-1 mb-3">
           {searchQuery.trim() ? (
             queryChips.map((t, i) => {
               const style = {
@@ -817,58 +816,39 @@ export default function AlbumsPage() {
             </>
           )}
         </div>
+        )}
 
-        {/* Category filter chips */}
-        <div className="flex gap-2 flex-wrap mb-3">
+        {/* Type + date filters: one compact row */}
+        <div className="flex items-center gap-1.5 mb-4 overflow-x-auto no-scrollbar">
           {FILTERS.map((f) => {
             const active = filter === f;
-            const Icon = filterIcons[f];
             return (
               <button key={f} onClick={() => setFilter(f)}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold transition-all ${
-                  active ? "bg-blue-600 text-white shadow-lg shadow-blue-200" : "bg-white text-slate-600 border border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                }`}>
-                <Icon size={14} />
-                {f}
-                <span className={`ml-0.5 text-xs ${active ? "text-blue-100" : "text-slate-400"}`}>{counts[f]}</span>
+                className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-bold transition-colors ${
+                  active ? "bg-blue-600 text-white" : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"}`}>
+                {f === "With People" ? "People" : f}
+                <span className={`ml-1 ${active ? "text-blue-100" : "text-slate-400"}`}>{counts[f]}</span>
               </button>
             );
           })}
-        </div>
-
-        {/* Date range chips */}
-        <div className="flex gap-2 flex-wrap mb-5">
+          <span className="flex-shrink-0 w-px h-4 bg-slate-200 mx-1" />
           {DATE_RANGES.map(({ value, label }) => {
             const active = dateRange === value;
             return (
               <button key={value} onClick={() => setDateRange(value)}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                  active ? "bg-blue-600 text-white shadow-lg shadow-blue-200" : "bg-white text-slate-500 border border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                }`}>
-                <Calendar size={12} />
+                className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-bold transition-colors ${
+                  active ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-white"}`}>
                 {label}
               </button>
             );
           })}
+          {isFiltering && (
+            <button onClick={clearAllFilters}
+              className="flex-shrink-0 flex items-center gap-1 px-2 py-1 text-xs font-bold text-blue-600 hover:text-blue-800">
+              <X size={12} /> Clear
+            </button>
+          )}
         </div>
-
-        {/* Result count + clear */}
-        {photos.length > 0 && (
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-sm text-slate-400">
-              {isFiltering
-                ? <><strong className="text-slate-700">{filtered.length}</strong> found (total {photos.length})</>
-                : <><strong className="text-slate-700">{photos.length}</strong> photos</>
-              }
-            </p>
-            {isFiltering && (
-              <button onClick={clearAllFilters}
-                className="flex items-center gap-1.5 text-xs font-semibold text-violet-600 hover:text-violet-800 transition-colors">
-                <X size={12} /> Clear filters
-              </button>
-            )}
-          </div>
-        )}
 
         {/* Grid, skeleton, or empty state */}
         {loading ? <AlbumsSkeleton /> : filtered.length === 0 ? (
@@ -1001,18 +981,6 @@ export default function AlbumsPage() {
           )
         ) : (
           <>
-            {grouped.length > 1 && (
-              <div className="flex gap-2 overflow-x-auto pb-1 mb-4" style={{ scrollbarWidth: "none" }}>
-                {grouped.map(([groupName]) => (
-                  <button key={groupName}
-                    onClick={() => document.getElementById(`group-${groupName}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                    className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-white border border-slate-200 text-slate-600 hover:border-blue-400 hover:text-blue-600 transition-all whitespace-nowrap shadow-sm">
-                    <CalendarDays size={11} />
-                    {groupName}
-                  </button>
-                ))}
-              </div>
-            )}
           <div className="space-y-5">
             {grouped.map(([groupName, days]) => {
               const total = days.reduce((n, d) => n + d.photos.length, 0);

@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import PageHero from "@/components/PageHero";
 import SectionTabs from "@/components/SectionTabs";
 import { createAlbum, getMyAlbums, CollabAlbum } from "@/lib/collabUtils";
 import { FolderOpen, Plus, X, LogIn } from "lucide-react";
@@ -45,24 +44,17 @@ export default function CollabPage() {
   }
 
   return (
-    <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-28">
+    <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-24 lg:pb-10">
       <div className="max-w-3xl mx-auto">
 
-        <SectionTabs section="social" active="collab" />
-
-        <PageHero
-          icon={FolderOpen}
-          title="Collab Albums"
-          subtitle="Create shared albums and collect photos together."
+        <SectionTabs section="social" active="collab"
           action={
-            <div className="flex gap-2">
-              <Link href="/collab/join"
-                className="flex items-center gap-1.5 px-4 py-2.5 bg-white text-slate-700 border border-slate-200 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors">
-                <LogIn size={15} /> Join
+            <div className="flex gap-1.5">
+              <Link href="/collab/join" className="tv-btn-soft text-xs px-3 py-2">
+                <LogIn size={14} /> Join
               </Link>
-              <button onClick={() => setShowCreate(true)}
-                className="flex items-center gap-1.5 px-4 py-2.5 bg-gradient-to-br from-sky-500 to-blue-500 text-white rounded-xl text-sm font-bold shadow-md shadow-blue-200 hover:from-sky-600 hover:to-blue-600 hover:shadow-lg hover:-translate-y-0.5 transition-all">
-                <Plus size={15} /> New Album
+              <button onClick={() => setShowCreate(true)} className="tv-btn-primary text-xs px-3 py-2">
+                <Plus size={14} /> New
               </button>
             </div>
           }

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import PageHero from "@/components/PageHero";
 import SectionTabs from "@/components/SectionTabs";
 import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
@@ -92,12 +91,10 @@ export default function SavedPage() {
   }
 
   return (
-    <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-28">
+    <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-24 lg:pb-10">
       <div className="max-w-5xl mx-auto">
 
         <SectionTabs section="albums" active="saved" />
-
-        <PageHero icon={Star} title="Saved" subtitle="Photos you star in Albums appear here." />
 
         {loading ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">

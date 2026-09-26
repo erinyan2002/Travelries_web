@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import PageHero from "@/components/PageHero";
 import SectionTabs from "@/components/SectionTabs";
 import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
@@ -13,7 +12,7 @@ import {
   AnalyzedPhoto, ANALYSIS_SIZE, DHASH_W, DHASH_H,
   toGrayscale, dHash, laplacianVariance, groupSimilar, findBlurry,
 } from "@/lib/photoCleanup";
-import { Wand2, Copy, Droplets, Trash2, Loader2, Check, CheckCircle2 } from "lucide-react";
+import { Copy, Droplets, Trash2, Loader2, Check, CheckCircle2 } from "lucide-react";
 
 function grayOf(img: HTMLImageElement, w: number, h: number): Float32Array {
   const canvas = document.createElement("canvas");
@@ -143,8 +142,7 @@ export default function CleanupPage() {
     <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-40">
       <div className="max-w-5xl mx-auto">
         <SectionTabs section="albums" active="cleanup" />
-
-        <PageHero icon={Wand2} title="Clean Up" subtitle="Find near-duplicate and blurry photos to tidy up." />
+        <p className="text-sm text-slate-500 -mt-1 mb-4">Find near-duplicate and blurry photos to tidy up.</p>
 
         {progress === null ? (
           <p className="text-sm text-slate-400 text-center py-12 animate-pulse">Loading photos…</p>

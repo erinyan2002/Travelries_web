@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import PageHero from "@/components/PageHero";
 import SectionTabs from "@/components/SectionTabs";
 import AnimatedNumber from "@/components/AnimatedNumber";
 import { fadeUp, staggerContainer } from "@/lib/motion";
@@ -11,7 +10,7 @@ import { MapPhoto, FacePhoto } from "@/lib/types";
 import { fetchAllPhotos } from "@/lib/photosApi";
 import { getSavedIds } from "@/lib/savedUtils";
 import {
-  BarChart2, Camera, Users, MapPin, Star,
+  Camera, Users, MapPin, Star,
   TrendingUp, Image as ImageIcon, CalendarDays, Clock, LayoutTemplate,
 } from "lucide-react";
 import ShareCardModal from "@/components/ShareCardModal";
@@ -344,10 +343,9 @@ export default function StatsPage() {
   // Same page shell while loading, so the hero doesn't jump in after a spinner.
   if (!stats) {
     return (
-      <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-28">
+      <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-24 lg:pb-10">
         <div className="max-w-5xl mx-auto">
           <SectionTabs section="profile" active="stats" />
-          <PageHero icon={BarChart2} title="Statistics" subtitle="Summary of your photo activity" />
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-2">
             {[0, 1, 2, 3].map((i) => (
               <div key={i} className="tv-card h-24 animate-pulse" />
@@ -360,24 +358,14 @@ export default function StatsPage() {
   }
 
   return (
-    <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-28">
+    <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-24 lg:pb-10">
       <div className="max-w-5xl mx-auto">
 
-        <SectionTabs section="profile" active="stats" />
-
-        <PageHero
-          icon={BarChart2}
-          title="Statistics"
-          subtitle="Summary of your photo activity"
+        <SectionTabs section="profile" active="stats"
           action={
-            <motion.button
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => setShowYearCard(true)}
-              className="flex items-center gap-1.5 bg-gradient-to-br from-sky-500 to-blue-500 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-md shadow-blue-200 hover:from-sky-600 hover:to-blue-600 hover:shadow-lg hover:-translate-y-0.5 transition-all"
-            >
-              <LayoutTemplate size={16} /> Year in Review
-            </motion.button>
+            <button onClick={() => setShowYearCard(true)} className="tv-btn-primary text-xs px-3 py-2">
+              <LayoutTemplate size={14} /> Year in Review
+            </button>
           }
         />
 

@@ -4,8 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   User, Mail, CalendarDays, Pencil, Check, X,
-  KeyRound, Eye, EyeOff, AlertCircle, CheckCircle2, LogOut, Camera, Loader2, UserCircle } from "lucide-react";
-import PageHero from "@/components/PageHero";
+  KeyRound, Eye, EyeOff, AlertCircle, CheckCircle2, LogOut, Camera, Loader2 } from "lucide-react";
 import SectionTabs from "@/components/SectionTabs";
 import FaceAnalysisSettings from "@/components/FaceAnalysisSettings";
 import { supabase, getSessionUser } from "@/lib/supabase";
@@ -175,12 +174,10 @@ export default function ProfilePage() {
   const displayName = profile.name || email;
 
   return (
-    <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-28">
+    <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-24 lg:pb-10">
       <div className="max-w-lg mx-auto space-y-5">
 
         <SectionTabs section="profile" active="profile" />
-
-        <PageHero icon={UserCircle} title="My Profile" subtitle="Your account, photo, password and privacy." />
 
         {/* Avatar card */}
         <div className="relative overflow-hidden bg-gradient-to-br from-sky-50 to-blue-50 rounded-2xl border border-sky-100 shadow-sm p-6 flex items-center gap-5">

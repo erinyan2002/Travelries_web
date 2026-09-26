@@ -47,10 +47,12 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   // The nav lives here, not in each page: rendered per page it unmounted on every
   // tab switch and replayed its slide-up entrance, which made navigation feel janky.
+  if (isPublicPath(pathname)) return <>{children}</>;
   return (
     <>
-      {children}
-      {!isPublicPath(pathname) && <BottomNav />}
+      {/* Room for the desktop side rail (BottomNav, lg+). */}
+      <div className="lg:pl-[100px]">{children}</div>
+      <BottomNav />
     </>
   );
 }
