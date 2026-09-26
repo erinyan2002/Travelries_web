@@ -6,7 +6,7 @@ import { AnimatePresence } from "framer-motion";
 import BottomNav from "@/components/BottomNav";
 import PageHero from "@/components/PageHero";
 import Avatar from "@/components/Avatar";
-import { supabase } from "@/lib/supabase";
+import { getSessionUser } from "@/lib/supabase";
 import { fetchMapPhotos, fetchPhotoPersonIds } from "@/lib/photosApi";
 import { fetchPeople } from "@/lib/peopleApi";
 import { MapPhoto } from "@/lib/types";
@@ -285,7 +285,7 @@ export default function FeedPage() {
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await getSessionUser();
       if (!user) { setLoading(false); return; }
       await ensureProfile(user.id, (user.user_metadata?.name as string) || user.email || "Traveler");
       setUid(user.id);

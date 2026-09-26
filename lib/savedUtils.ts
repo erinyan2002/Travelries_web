@@ -1,8 +1,8 @@
-import { supabase } from "./supabase";
+import { getSessionUser } from "./supabase";
 import * as photosApi from "./photosApi";
 
 async function currentUserId(): Promise<string | null> {
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser();
   return user?.id ?? null;
 }
 

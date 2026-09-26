@@ -19,3 +19,13 @@ export const supabase = createClient(
     },
   }
 );
+
+// The signed-in user from the locally stored session. `auth.getUser()` makes a
+// network round trip to Supabase Auth on every call, and pages chained several
+// of them before loading any data, which made each tab switch lag on phones.
+// The session is already verified server-side by RLS on every query, so the
+// local copy is enough for picking the current user's id.
+export async function getSessionUser() {
+  const { data: { session } } = await supabase.auth.getSession();
+  return { data: { user: session?.user ?? null } };
+}

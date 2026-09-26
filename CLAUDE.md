@@ -58,7 +58,7 @@ The backend URL comes from `lib/backend.ts` (`NEXT_PUBLIC_BACKEND_URL`; without 
 
 ### Data storage split
 
-- **Auth**: Supabase Auth (`lib/supabase.ts`) — login, signup, session management, password reset.
+- **Auth**: Supabase Auth (`lib/supabase.ts`) — login, signup, session management, password reset. Code reads the current user with `getSessionUser()` (also in `lib/supabase.ts`), which reads the locally stored session. `supabase.auth.getUser()` makes a network call to Supabase Auth every time, and chaining several of them made each tab switch lag on phones, so don't reintroduce it.
 - **Photo data (personal)**: Supabase `photos` table via `lib/photosApi.ts` (see Key shared types below) — replaced the old `map-<uid>`/`faces-<uid>`/`saved-<uid>` localStorage arrays. Faces-page person names now live in the `people` table too; the old `face-labels-<uid>` localStorage map is only read once, to migrate it (see Manual person grouping).
 - **Images (personal)**: uploaded to the `user-photos` Storage bucket (`uploadToUserPhotos` in `lib/photosApi.ts`, path `<uid>/<photoId>.<ext>`); the row's `image_url` stores the resulting public URL directly. There is **no** base64 fallback: a failed upload retries once and then throws, because inline images bloated every `photos` row. The face save and Save to Map both upload to the same deterministic path, so an "already exists" error just returns that URL. `migrateInlineImages` (run on Home page load) moves any old inline-base64 rows into Storage.
 - **Supabase DB tables** (for social features):

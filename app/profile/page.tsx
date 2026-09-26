@@ -7,7 +7,7 @@ import {
   KeyRound, Eye, EyeOff, AlertCircle, CheckCircle2, LogOut, Camera, Loader2, UserCircle } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
 import PageHero from "@/components/PageHero";
-import { supabase } from "@/lib/supabase";
+import { supabase, getSessionUser } from "@/lib/supabase";
 
 type Profile = { id: string; name: string; created_at: string; avatar_url?: string | null };
 
@@ -63,7 +63,7 @@ export default function ProfilePage() {
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await getSessionUser();
       if (!user) { router.replace("/login"); return; }
       setEmail(user.email ?? "");
 
@@ -93,7 +93,7 @@ export default function ProfilePage() {
     const trimmed = draftName.trim();
     if (!trimmed) { setNameMsg({ type: "err", text: "Name cannot be empty." }); return; }
 
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user } } = await getSessionUser();
     if (!user) return;
 
     await supabase.from("profiles").update({ name: trimmed }).eq("id", user.id);

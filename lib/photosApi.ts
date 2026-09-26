@@ -1,12 +1,12 @@
 // Supabase-backed replacement for the old `map-<uid>` / `faces-<uid>` localStorage
 // arrays. Both "views" (map, faces) read from the same public.photos table — a
 // photo row can be a map photo, a face photo, or both, via is_map_photo/is_face_photo.
-import { supabase } from "./supabase";
+import { supabase, getSessionUser } from "./supabase";
 import { MapPhoto, FacePhoto, rowToMapPhoto, rowToFacePhoto } from "./types";
 import { base64ToBlob } from "./imageUtils";
 
 export async function currentUserId(): Promise<string | null> {
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser();
   return user?.id ?? null;
 }
 

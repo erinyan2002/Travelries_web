@@ -1,4 +1,4 @@
-import { supabase } from "./supabase";
+import { supabase, getSessionUser } from "./supabase";
 import { RealtimeChannel } from "@supabase/supabase-js";
 
 export type AppNotification = {
@@ -22,7 +22,7 @@ export async function getNotifications(limit = 30): Promise<AppNotification[]> {
 }
 
 export async function markAllRead(): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser();
   if (!user) return;
   await supabase
     .from("notifications")

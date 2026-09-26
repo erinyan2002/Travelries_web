@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import { Bell, BellRing, CheckCheck, X } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { supabase, getSessionUser } from "@/lib/supabase";
 import {
   AppNotification,
   getNotifications,
@@ -56,7 +56,7 @@ export default function NotificationBell() {
       if (uid) getNotifications().then(setNotes);
       else setNotes([]);
     };
-    supabase.auth.getUser().then(({ data: { user } }) => apply(user?.id ?? null));
+    getSessionUser().then(({ data: { user } }) => apply(user?.id ?? null));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       apply(session?.user.id ?? null);
     });

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import BottomNav from "@/components/BottomNav";
 import PageHero from "@/components/PageHero";
-import { supabase } from "@/lib/supabase";
+import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
 import { fetchEveryPhoto } from "@/lib/photosApi";
 import { deletePhotoEverywhere } from "@/lib/savedUtils";
@@ -54,7 +54,7 @@ export default function CleanupPage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await getSessionUser();
       if (!user) return;
       const all = await fetchEveryPhoto(user.id);
       if (cancelled) return;

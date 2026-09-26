@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import BottomNav from "@/components/BottomNav";
 import PageHero from "@/components/PageHero";
-import { supabase } from "@/lib/supabase";
+import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
 import { getSavedIds, toggleSaved } from "@/lib/savedUtils";
 import { fetchMapPhotos } from "@/lib/photosApi";
@@ -62,7 +62,7 @@ export default function SavedPage() {
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await getSessionUser();
       const uid = user?.id ?? "guest";
       const savedIds = await getSavedIds();
       const allPhotos = uid === "guest" ? [] : await fetchMapPhotos(uid);

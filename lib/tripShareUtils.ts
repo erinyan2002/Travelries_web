@@ -1,6 +1,6 @@
 // Public whole-trip share links (/trip/[id]) — see
 // supabase/migrations/0013_trip_shares.sql for the snapshot model.
-import { supabase } from "./supabase";
+import { supabase, getSessionUser } from "./supabase";
 import { Trip, getPhotoDate } from "./trips";
 
 export type TripSharePhoto = {
@@ -24,7 +24,7 @@ export type TripShare = {
 };
 
 export async function shareTrip(trip: Trip, diary: string | null): Promise<string> {
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser();
   if (!user) throw new Error("Not signed in");
 
   const photos: TripSharePhoto[] = [...trip.photos]

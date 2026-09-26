@@ -1,4 +1,4 @@
-import { supabase } from "./supabase";
+import { supabase, getSessionUser } from "./supabase";
 import { MapPhoto } from "./types";
 import { base64ToBlob } from "./imageUtils";
 
@@ -13,7 +13,7 @@ export type ShareRecord = {
 };
 
 export async function sharePhoto(photo: MapPhoto): Promise<string> {
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser();
   const uid = user?.id ?? "guest";
 
   let imageUrl = photo.imageUrl;

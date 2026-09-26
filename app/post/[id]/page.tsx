@@ -6,7 +6,7 @@ import Link from "next/link";
 import BottomNav from "@/components/BottomNav";
 import Avatar from "@/components/Avatar";
 import CommentThread from "@/components/CommentThread";
-import { supabase } from "@/lib/supabase";
+import { getSessionUser } from "@/lib/supabase";
 import { fetchPostById, toggleLike, deletePost, Post } from "@/lib/socialUtils";
 import {
   ArrowLeft, Heart, MessageCircle, Trash2, MapPin, CalendarDays,
@@ -58,7 +58,7 @@ export default function PostDetailPage() {
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await getSessionUser();
       if (!user) { setLoading(false); return; }
       setUid(user.id);
       const p = await fetchPostById(user.id, postId);

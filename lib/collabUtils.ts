@@ -1,4 +1,4 @@
-import { supabase } from "./supabase";
+import { supabase, getSessionUser } from "./supabase";
 import { MapPhoto } from "./types";
 import { base64ToBlob } from "./imageUtils";
 
@@ -52,7 +52,7 @@ export type CollabComment = {
 };
 
 export async function createAlbum(name: string, description: string): Promise<CollabAlbum> {
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser();
   if (!user) throw new Error("Not authenticated");
 
   const { data: album, error } = await supabase
@@ -74,7 +74,7 @@ export async function createAlbum(name: string, description: string): Promise<Co
 }
 
 export async function getMyAlbums(): Promise<CollabAlbum[]> {
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser();
   if (!user) return [];
 
   const { data: memberships, error: mErr } = await supabase
@@ -99,7 +99,7 @@ export async function getMyAlbums(): Promise<CollabAlbum[]> {
 }
 
 export async function getAlbum(id: string): Promise<CollabAlbum | null> {
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser();
 
   const { data: album, error } = await supabase
     .from("collab_albums")
@@ -141,7 +141,7 @@ export async function getAlbumPhotos(albumId: string): Promise<CollabPhoto[]> {
 }
 
 export async function addPhotoToAlbum(albumId: string, photo: MapPhoto): Promise<CollabPhoto> {
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser();
   if (!user) throw new Error("Not authenticated");
 
   let imageUrl = photo.imageUrl;
@@ -192,7 +192,7 @@ async function memberAlbumIdForCode(uid: string, code: string): Promise<string |
 
 export async function joinAlbumByCode(inviteCode: string): Promise<string> {
   const code = inviteCode.trim().toLowerCase();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser();
   if (!user) throw new Error("Please log in again to join an album.");
 
   // join_collab_album inserts a membership row unconditionally, so joining an
@@ -219,7 +219,7 @@ export async function joinAlbumByCode(inviteCode: string): Promise<string> {
 }
 
 export async function leaveAlbum(albumId: string): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser();
   if (!user) throw new Error("Not authenticated");
   const { error } = await supabase
     .from("collab_members")
@@ -249,7 +249,7 @@ export async function getReactions(photoId: string): Promise<CollabReaction[]> {
 }
 
 export async function toggleReaction(photoId: string, emoji: string): Promise<boolean> {
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser();
   if (!user) throw new Error("Not authenticated");
   const { data: existing } = await supabase
     .from("collab_reactions").select("id")
@@ -270,7 +270,7 @@ export async function getComments(photoId: string): Promise<CollabComment[]> {
 }
 
 export async function addComment(photoId: string, content: string): Promise<CollabComment> {
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser();
   if (!user) throw new Error("Not authenticated");
   const { data, error } = await supabase
     .from("collab_comments")

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import BottomNav from "@/components/BottomNav";
 import PageHero from "@/components/PageHero";
 import { toggleSaved, getSavedIds, deletePhotoEverywhere } from "@/lib/savedUtils";
-import { supabase } from "@/lib/supabase";
+import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
 import { burstConfetti } from "@/lib/confetti";
 import { fetchMapPhotos, fetchPhotosByIds, saveLandmarkResult, fetchTripDiary, saveTripDiary } from "@/lib/photosApi";
@@ -583,7 +583,7 @@ export default function AlbumsPage() {
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await getSessionUser();
       const resolvedUid = user?.id ?? "guest";
       setUid(resolvedUid === "guest" ? null : resolvedUid);
       let stored = resolvedUid === "guest" ? [] : await fetchMapPhotos(resolvedUid);

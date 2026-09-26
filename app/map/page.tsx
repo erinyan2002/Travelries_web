@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import { MapContainer, Marker, Polyline, TileLayer, useMap } from "react-leaflet";
 import BottomNav from "@/components/BottomNav";
 import PageHero from "@/components/PageHero";
-import { supabase } from "@/lib/supabase";
+import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
 import { fetchMapPhotos } from "@/lib/photosApi";
 import { deletePhotoEverywhere } from "@/lib/savedUtils";
@@ -237,7 +237,7 @@ export default function MapPage() {
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await getSessionUser();
       const uid = user?.id ?? "guest";
       const stored = uid === "guest" ? [] : await fetchMapPhotos(uid);
       setPhotos(stored.filter((p) => p.lat != null && p.lng != null));
@@ -283,7 +283,7 @@ export default function MapPage() {
   );
 
   async function handleClear() {
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user } } = await getSessionUser();
     const uid = user?.id ?? "guest";
     const failed: typeof photos = [];
     if (uid !== "guest") {

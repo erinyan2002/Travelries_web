@@ -6,7 +6,7 @@ import BottomNav from "@/components/BottomNav";
 import PageHero from "@/components/PageHero";
 import AnimatedNumber from "@/components/AnimatedNumber";
 import { fadeUp, staggerContainer } from "@/lib/motion";
-import { supabase } from "@/lib/supabase";
+import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto, FacePhoto } from "@/lib/types";
 import { fetchAllPhotos } from "@/lib/photosApi";
 import { getSavedIds } from "@/lib/savedUtils";
@@ -261,7 +261,7 @@ export default function StatsPage() {
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await getSessionUser();
       const uid = user?.id ?? "guest";
 
       const { mapPhotos, facePhotos }: { mapPhotos: MapPhoto[]; facePhotos: FacePhoto[] } =

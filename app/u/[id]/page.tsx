@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import BottomNav from "@/components/BottomNav";
 import Avatar from "@/components/Avatar";
-import { supabase } from "@/lib/supabase";
+import { getSessionUser } from "@/lib/supabase";
 import {
   fetchProfile, getFollowCounts, isFollowing as checkIsFollowing, followUser, unfollowUser, fetchUserPosts,
   Profile, Post,
@@ -26,7 +26,7 @@ export default function UserProfilePage() {
   const [posts, setPosts] = useState<Post[]>([]);
 
   async function load() {
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user } } = await getSessionUser();
     if (!user) { setLoading(false); return; }
     setUid(user.id);
 

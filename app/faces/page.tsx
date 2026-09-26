@@ -5,7 +5,7 @@ import BottomNav from "@/components/BottomNav";
 import PageHero from "@/components/PageHero";
 import ActionMenu from "@/components/ActionMenu";
 import Avatar from "@/components/Avatar";
-import { supabase } from "@/lib/supabase";
+import { getSessionUser } from "@/lib/supabase";
 import { FacePhoto } from "@/lib/types";
 import { fetchFacePhotos, updateFacePersonIds, removeFaceFromPhoto } from "@/lib/photosApi";
 import { deletePhotoEverywhere } from "@/lib/savedUtils";
@@ -354,7 +354,7 @@ export default function FacesPage() {
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await getSessionUser();
       const u = user?.id ?? "guest";
       setUid(u);
 

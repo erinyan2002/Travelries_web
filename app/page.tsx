@@ -9,7 +9,7 @@ import BottomNav from "@/components/BottomNav";
 import AnimatedNumber from "@/components/AnimatedNumber";
 import { burstConfetti } from "@/lib/confetti";
 import { fadeUp, staggerContainer } from "@/lib/motion";
-import { supabase } from "@/lib/supabase";
+import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto, FacePhoto } from "@/lib/types";
 import { fetchAllPhotos, upsertPhoto, renamePhoto, uploadToUserPhotos, migrateInlineImages } from "@/lib/photosApi";
 import { fetchPeople, Person } from "@/lib/peopleApi";
@@ -128,7 +128,7 @@ export default function HomePage() {
   const [faceAssignments,     setFaceAssignments]     = useState<Record<number, string>>({});
 
   async function refreshStats() {
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user } } = await getSessionUser();
     const uid = user?.id ?? "guest";
     // One round trip for both lists (was two full-table fetches).
     const { mapPhotos, facePhotos }: { mapPhotos: MapPhoto[]; facePhotos: FacePhoto[] } =
@@ -149,7 +149,7 @@ export default function HomePage() {
   useEffect(() => {
     refreshStats();
     (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await getSessionUser();
       const uid = user?.id ?? "guest";
       if (uid === "guest") return;
       setPeople(await fetchPeople(uid));
@@ -295,7 +295,7 @@ export default function HomePage() {
 
     setFaceSaveStatus("saving");
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await getSessionUser();
       const uid = user?.id ?? "guest";
       if (uid === "guest") throw new Error("Not signed in");
       const dataUrl = await createThumbnailDataUrl(file, 1024, 0.90);
@@ -522,7 +522,7 @@ export default function HomePage() {
     const items: BatchFile[] = files.map((f) => ({ name: f.name, status: "pending", info: "" }));
     setBatchItems([...items]);
 
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user } } = await getSessionUser();
     const uid = user?.id ?? "guest";
 
     for (let i = 0; i < files.length; i++) {
@@ -656,7 +656,7 @@ export default function HomePage() {
 
   async function handleBatchRename(photoId: string, newName: string) {
     if (!newName.trim() || !photoId) return;
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user } } = await getSessionUser();
     const uid = user?.id ?? "guest";
     if (uid === "guest") return;
     await renamePhoto(uid, photoId, newName.trim());
@@ -692,7 +692,7 @@ export default function HomePage() {
       setCustomFileName(newName);
       customFileNameRef.current = newName;
       if (lastFacePhotoIdRef.current) {
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { user } } = await getSessionUser();
         const uid = user?.id ?? "guest";
         if (uid !== "guest") await renamePhoto(uid, lastFacePhotoIdRef.current, newName);
       }
@@ -709,7 +709,7 @@ export default function HomePage() {
       return;
     }
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await getSessionUser();
       const uid = user?.id ?? "guest";
       if (uid === "guest") throw new Error("Not signed in");
 

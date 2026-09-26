@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import BottomNav from "@/components/BottomNav";
-import { supabase } from "@/lib/supabase";
+import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
 import { fetchMapPhotos } from "@/lib/photosApi";
 import {
@@ -133,7 +133,7 @@ function PhotoPicker({
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await getSessionUser();
       const uid = user?.id ?? "guest";
       // Same source Albums reads from (is_map_photo rows in Supabase) — a stale
       // pre-Supabase localStorage array was used here before, which showed photos
@@ -373,7 +373,7 @@ export default function CollabAlbumPage() {
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await getSessionUser();
       setMyUid(user?.id ?? null);
       const [a, m, p] = await Promise.all([
         getAlbum(id),
