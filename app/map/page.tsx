@@ -10,8 +10,7 @@ import PageHero from "@/components/PageHero";
 import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
 import { fetchMapPhotos } from "@/lib/photosApi";
-import { deletePhotoEverywhere } from "@/lib/savedUtils";
-import { MapPin, ArrowLeft, Trash2, X, CalendarDays, ChevronLeft, ChevronRight, Share2, Loader2, Route, Flame, Map as MapIcon, Layers } from "lucide-react";
+import { MapPin, ArrowLeft, X, CalendarDays, ChevronLeft, ChevronRight, Share2, Loader2, Route, Flame, Map as MapIcon, Layers } from "lucide-react";
 import { sharePhoto } from "@/lib/shareUtils";
 import KoreaRegionMap from "@/components/KoreaRegionMap";
 import { matchRegionCode, REGION_LABELS } from "@/lib/koreaGeo";
@@ -199,36 +198,9 @@ function PhotoModal({ cluster, onClose }: { cluster: Cluster; onClose: () => voi
   );
 }
 
-function DeleteConfirmModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
-  return (
-    <div className="fixed inset-0 tv-overlay z-[4000] flex items-center justify-center p-4" onClick={onCancel}>
-      <div className="tv-modal max-w-sm w-full p-6" onClick={(e) => e.stopPropagation()}>
-        <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-          <Trash2 size={22} className="text-red-500" />
-        </div>
-        <h2 className="text-lg font-black text-slate-900 text-center mb-1">Delete All Photos?</h2>
-        <p className="text-sm text-slate-500 text-center mb-6">
-          Once deleted, recovery is not possible.
-        </p>
-        <div className="flex gap-3">
-          <button onClick={onCancel}
-            className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50 transition-colors">
-            Back
-          </button>
-          <button onClick={onConfirm}
-            className="flex-1 py-2.5 rounded-xl bg-red-500 text-white font-bold text-sm hover:bg-red-600 transition-colors">
-            Delete
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function MapPage() {
   const [photos,        setPhotos]        = useState<MapPhoto[]>([]);
   const [activeCluster, setActiveCluster] = useState<Cluster | null>(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showRoute,   setShowRoute]   = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [viewMode,       setViewMode]       = useState<"pins" | "region">("pins");
@@ -281,27 +253,6 @@ export default function MapPage() {
     [photos, viewMode, selectedRegion]
   );
 
-  async function handleClear() {
-    const { data: { user } } = await getSessionUser();
-    const uid = user?.id ?? "guest";
-    const failed: typeof photos = [];
-    if (uid !== "guest") {
-      for (const p of photos) {
-        try {
-          await deletePhotoEverywhere(p.id);
-        } catch (err) {
-          if (err instanceof Error && err.message === "Photo not found or already deleted") continue;
-          console.error(`Delete failed for ${p.fileName}:`, err);
-          failed.push(p);
-        }
-      }
-    }
-    setPhotos(failed);
-    setActiveCluster(null);
-    setShowDeleteConfirm(false);
-    if (failed.length > 0) alert(`${failed.length} photo(s) couldn't be deleted. Please try again.`);
-  }
-
   return (
     <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-24 lg:pb-10">
       <div className="max-w-5xl mx-auto">
@@ -315,12 +266,6 @@ export default function MapPage() {
               <Link href="/" className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-700 transition-colors">
                 <ArrowLeft size={15} /> Back
               </Link>
-              {photos.length > 0 && (
-                <button onClick={() => setShowDeleteConfirm(true)}
-                  className="flex items-center gap-1.5 px-4 py-2.5 bg-red-500 text-white rounded-xl text-sm font-bold hover:bg-red-600 transition-colors">
-                  <Trash2 size={15} /> Delete All
-                </button>
-              )}
             </div>
           }
         />
@@ -417,9 +362,6 @@ export default function MapPage() {
       </div>
 
       {activeCluster && <PhotoModal cluster={activeCluster} onClose={() => setActiveCluster(null)} />}
-      {showDeleteConfirm && (
-        <DeleteConfirmModal onConfirm={handleClear} onCancel={() => setShowDeleteConfirm(false)} />
-      )}
     </main>
   );
 }

@@ -7,6 +7,7 @@ import {
   KeyRound, Eye, EyeOff, AlertCircle, CheckCircle2, LogOut, Camera, Loader2 } from "lucide-react";
 import SectionTabs from "@/components/SectionTabs";
 import FaceAnalysisSettings from "@/components/FaceAnalysisSettings";
+import PhotoDataSettings from "@/components/PhotoDataSettings";
 import { supabase, getSessionUser } from "@/lib/supabase";
 
 type Profile = { id: string; name: string; created_at: string; avatar_url?: string | null };
@@ -340,6 +341,7 @@ export default function ProfilePage() {
         )}
 
         <FaceAnalysisSettings uid={profile.id} />
+        <PhotoDataSettings uid={profile.id} />
 
         {/* Logout */}
         <button

@@ -286,6 +286,35 @@ export async function deletePhotoEverywhere(uid: string, photoId: string): Promi
   }
 }
 
+// "Delete all photos" (Profile → Your photos): every photo row — map photos AND
+// face-only ones (saved from Home without Save to Map, so the old Map-page
+// "Delete All" left them behind on People) — plus the named people.
+// Storage files are kept, like deletePhotoEverywhere: feed posts and share links
+// still point at them.
+export async function deleteAllPhotos(uid: string): Promise<{ deleted: number; failed: number }> {
+  const { data, error } = await supabase.from("photos").select("id").eq("user_id", uid);
+  if (error) throw new Error(error.message);
+  let deleted = 0, failed = 0;
+  for (const row of data ?? []) {
+    try {
+      await deletePhotoEverywhere(uid, row.id as string);
+      deleted++;
+    } catch (err) {
+      if (err instanceof Error && err.message === "Photo not found or already deleted") continue;
+      console.error("deleteAllPhotos:", err);
+      failed++;
+    }
+  }
+  const { error: peopleError } = await supabase.from("people").delete().eq("user_id", uid);
+  if (peopleError) console.error("deleteAllPhotos: people", peopleError);
+  return { deleted, failed };
+}
+
+export async function countPhotos(uid: string): Promise<number> {
+  const { count } = await supabase.from("photos").select("id", { count: "exact", head: true }).eq("user_id", uid);
+  return count ?? 0;
+}
+
 // "Delete all face data" (Profile → Face analysis). Photos that were saved only
 // to Faces are deleted outright, since they exist only for their faces. Map photos
 // keep the photo and lose every face column. Named people go too.
