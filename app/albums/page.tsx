@@ -297,6 +297,7 @@ function PhotoModal({
         body: JSON.stringify({
           image: await blobToBase64(resizedBlob),
           mimeType: resizedBlob.type || "image/jpeg",
+          place: photo.location ?? null,
           lat: photo.lat ?? null,
           lng: photo.lng ?? null,
         }),
@@ -408,7 +409,7 @@ function PhotoModal({
                 label="Landmark"
                 value={landmarkResult.landmark
                   ? `${landmarkResult.landmark}${landmarkResult.description ? ` — ${landmarkResult.description}` : ""}`
-                  : "No landmark recognized"}
+                  : landmarkResult.description ?? "No landmark recognized"}
               />
               <button
                 onClick={() => { setIsReanalyzing(true); handleRecognizeLandmark(); }}

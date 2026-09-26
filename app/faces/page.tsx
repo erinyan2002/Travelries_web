@@ -800,18 +800,6 @@ export default function FacesPage() {
                               <Trash2 size={12} />
                             </button>
 
-                            {/* Age / gender bottom-left — 0 means "unknown" (a MediaPipe-localized
-                                face face-api couldn't extract age/gender for), not a real age */}
-                            {photo.ages?.[0] != null && photo.ages[0] > 0 && (
-                              <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-                                {photo.genders?.[0] === "male" ? "♂" : "♀"} {photo.ages[0]}yr
-                              </div>
-                            )}
-
-                            {/* Descriptor dot */}
-                            {photo.descriptors?.length && (
-                              <div className="absolute bottom-2 right-2 w-2 h-2 bg-emerald-400 rounded-full shadow" title="Has face recognition data" />
-                            )}
                           </div>
 
                           {/* Info strip */}

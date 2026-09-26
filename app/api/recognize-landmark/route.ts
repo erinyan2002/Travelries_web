@@ -14,23 +14,31 @@ export async function POST(req: Request) {
   if (!(await authedUserId(req))) return json({ landmark: null, error: "Please sign in again." }, 401);
 
   const body = await req.json().catch(() => null) as
-    { image?: string; mimeType?: string; lat?: number | null; lng?: number | null } | null;
+    { image?: string; mimeType?: string; place?: string | null; lat?: number | null; lng?: number | null } | null;
   const image = body?.image;
   if (!image || image.length > MAX_BASE64_CHARS) return json({ landmark: null, error: "The photo couldn't be read." }, 400);
   const mimeType = body?.mimeType?.startsWith("image/") ? body.mimeType : "image/jpeg";
   const { lat, lng } = body ?? {};
-  const hint = typeof lat === "number" && typeof lng === "number" ? ` The photo was taken near (${lat}, ${lng}).` : "";
+  const place = typeof body?.place === "string" ? body.place.slice(0, 200) : "";
+  const hint =
+    (place ? ` The photo was taken at: ${place}.` : "") +
+    (typeof lat === "number" && typeof lng === "number" ? ` GPS: (${lat}, ${lng}).` : "");
 
   const result = await generateWithFallback(key, {
     parts: [
       { inlineData: { data: image, mimeType } },
       {
         text:
-          "Is there a recognizable landmark, monument, or notable building in this photo?" + hint +
-          " If yes, name it and rate your confidence. If no specific landmark is " +
-          "recognizable (e.g. a generic street, beach, or indoor scene), set landmark to null." +
+          // Natural places count too: a travel app should say "Bukhangang River" for a
+          // river view. The first version only asked about buildings and monuments, so
+          // that photo came back null although the old backend call had named it.
+          "What notable place does this photo show? That can be a landmark, monument or " +
+          "building, or a named natural or scenic place such as a river, lake, mountain, " +
+          "beach, island or park." + hint +
+          " Use the location only to name something that is actually visible in the photo; " +
+          "if nothing of it is visible (e.g. an indoor close-up or a plain street), set landmark to null." +
           ' Reply with ONLY this JSON: {"landmark": string or null, ' +
-          '"confidence": "high" | "medium" | "low" | null, "description": one short sentence or null}',
+          '"confidence": "high" | "medium" | "low" | null, "description": one short sentence about the scene or null}',
       },
     ],
     // JSON mode without responseSchema — with a schema, 3.5-flash stalled (see gemini_utils.py).

@@ -51,10 +51,6 @@ type PhotoInfo = {
 };
 
 
-const EXPRESSION_EN: Record<string, string> = {
-  happy: "😊 Happy", sad: "😢 Sad", angry: "😠 Angry",
-  surprised: "😮 Surprised", fearful: "😨 Fearful", disgusted: "🤢 Disgusted", neutral: "😐 Neutral",
-};
 
 // ── InfoRow — all icons sky blue ──────────────────────────
 function InfoRow({ label, value, icon: Icon }: {
@@ -307,9 +303,9 @@ export default function HomePage() {
   }
 
   // Saves only the selected face indices (boxes/descriptors/confidences stay index-aligned
-  // with detection output in both browser and backend paths). Age/gender/expression are only
-  // included when every detected face was selected, since backend results can drop null
-  // entries from those arrays and they'd no longer line up with a partial selection.
+  // with detection output in both browser and backend paths). Age, gender and expression
+  // are not saved: the estimates were often wrong (a 20-something shown as "42yr") and
+  // nothing in the app needs them.
   async function saveFacesToAlbum(
     file: File,
     indices: number[],
@@ -325,7 +321,6 @@ export default function HomePage() {
     // the user tagged with an existing person at upload time keeps that tag —
     // see the "Who is this?" picker in the needsSelection UI below.
     const personIds   = indices.map((i) => faceAssignments[i] ?? null);
-    const allSelected = indices.length === faces.boxes.length;
 
     setFaceSaveStatus("saving");
     try {
@@ -355,17 +350,13 @@ export default function HomePage() {
         ...(descriptors.length > 0 && { descriptors }),
         ...(confidences.length > 0 && { confidences }),
         ...(personIds.some((p) => p !== null) && { personIds }),
-        ...(allSelected && faces.ages.length > 0        && { ages: faces.ages }),
-        ...(allSelected && faces.genders.length > 0     && { genders: faces.genders }),
-        ...(allSelected && faces.expressions.length > 0 && { expressions: faces.expressions }),
         ...(lat !== null               && { lat }),
         ...(lng !== null               && { lng }),
         ...(location !== "No GPS data" && { location }),
       });
       setSavedFaceCount(boxes.length);
       setFaceSaveStatus("saved");
-      const topExpr = allSelected && faces.expressions[0] ? (EXPRESSION_EN[faces.expressions[0]] ?? faces.expressions[0]) : null;
-      setFaceMessage(`${boxes.length} face(s) saved to Faces album.${topExpr ? ` · ${topExpr}` : ""}`);
+      setFaceMessage(`${boxes.length} ${boxes.length === 1 ? "face" : "faces"} saved to People.`);
       refreshStats();
     } catch (saveErr) {
       console.error("Face photo save failed:", saveErr);
@@ -600,9 +591,6 @@ export default function HomePage() {
         let faceBoxes:    Array<{ x: number; y: number; width: number; height: number }> = [];
         let faceDescriptors: number[][] = [];
         let faceConfs:    number[] = [];
-        let faceAgesB:    number[] = [];
-        let faceGendersB: string[] = [];
-        let faceExprsB:   string[] = [];
 
         // Same backend/browser split as the single-photo upload path (handleFileChange)
         // — batch upload used to always run browser-mode face detection even with the
@@ -621,8 +609,6 @@ export default function HomePage() {
           faceBoxes       = (data.faceBoxes ?? []).map((b) => ({ x: b.x_norm, y: b.y_norm, width: b.w_norm, height: b.h_norm }));
           faceDescriptors = data.descriptors ?? [];
           faceConfs       = (data.confidences ?? []).map(Number);
-          faceAgesB       = (data.ages ?? []).filter((a): a is number => a !== null);
-          faceGendersB    = (data.genders ?? []).filter((g): g is string => g !== null);
           if (file !== original && lat === undefined) {
             const ex = await readExifInBrowser(original);
             lat = ex.lat ?? undefined; lng = ex.lng ?? undefined;
@@ -658,9 +644,6 @@ export default function HomePage() {
             faceBoxes       = r.boxes;
             faceDescriptors = r.descriptors;
             faceConfs       = r.confidences;
-            faceAgesB       = r.ages;
-            faceGendersB    = r.genders;
-            faceExprsB      = r.expressions;
           }
         }
         const dataUrl = await createThumbnailDataUrl(file, 1024, 0.90);
@@ -683,9 +666,6 @@ export default function HomePage() {
             ...(faceBoxes.length > 0       && { boxes: faceBoxes }),
             ...(faceDescriptors.length > 0 && { descriptors: faceDescriptors }),
             ...(faceConfs.length > 0       && { confidences: faceConfs }),
-            ...(faceAgesB.length > 0       && { ages: faceAgesB }),
-            ...(faceGendersB.length > 0    && { genders: faceGendersB }),
-            ...(faceExprsB.length > 0      && { expressions: faceExprsB }),
           });
         }
         const infoParts: string[] = [];
