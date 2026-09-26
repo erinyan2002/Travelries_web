@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 
 const ROLE_COLORS: Record<string, string> = {
-  owner:       "bg-violet-100 text-violet-700",
+  owner:       "bg-blue-100 text-blue-700",
   contributor: "bg-blue-100 text-blue-700",
   viewer:      "bg-slate-100 text-slate-500",
 };
@@ -93,11 +93,11 @@ function InviteModal({ inviteCode, onClose }: { inviteCode: string; onClose: () 
           <div>
             <p className="text-xs font-bold text-slate-600 mb-1.5">Or share the code</p>
             <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
-              <code className="flex-1 text-2xl font-mono font-bold text-violet-600 tracking-[0.3em]">
+              <code className="flex-1 text-2xl font-mono font-bold text-blue-600 tracking-[0.3em]">
                 {inviteCode}
               </code>
               <button onClick={copyCode}
-                className="text-slate-400 hover:text-violet-600 transition-colors p-1">
+                className="text-slate-400 hover:text-blue-600 transition-colors p-1">
                 {codeCopied ? <Check size={18} className="text-emerald-500" /> : <Copy size={18} />}
               </button>
             </div>
@@ -109,7 +109,7 @@ function InviteModal({ inviteCode, onClose }: { inviteCode: string; onClose: () 
           {/* Native share button (mobile) */}
           {canNativeShare && (
             <button onClick={nativeShare}
-              className="w-full flex items-center justify-center gap-2 py-3 bg-violet-600 text-white font-bold rounded-xl hover:bg-violet-700 transition-colors">
+              className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-sky-500 to-blue-600 text-white font-bold rounded-xl hover:from-sky-600 hover:to-blue-700 transition-colors">
               <Share2 size={16} /> Share via...
             </button>
           )}
@@ -188,14 +188,14 @@ function PhotoPicker({
                 return (
                   <div key={photo.id} onClick={() => toggle(photo.id)}
                     className={`relative rounded-xl overflow-hidden cursor-pointer border-2 transition-all ${
-                      isSelected ? "border-violet-500 shadow-lg shadow-violet-100" : "border-slate-200 hover:border-slate-300"
+                      isSelected ? "border-blue-500 shadow-lg shadow-blue-100" : "border-slate-200 hover:border-slate-300"
                     }`}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={photo.imageUrl} alt={photo.fileName}
                       className="w-full h-24 object-cover bg-slate-100" />
                     {isSelected && (
-                      <div className="absolute inset-0 bg-violet-500/20 flex items-center justify-center">
-                        <div className="w-6 h-6 bg-violet-600 rounded-full flex items-center justify-center">
+                      <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center">
+                        <div className="w-6 h-6 bg-gradient-to-r from-sky-500 to-blue-600 rounded-full flex items-center justify-center">
                           <Check size={14} className="text-white" />
                         </div>
                       </div>
@@ -212,7 +212,7 @@ function PhotoPicker({
 
         <div className="px-5 py-4 border-t border-slate-100">
           <button onClick={handleAdd} disabled={selected.size === 0 || adding}
-            className="w-full py-3 bg-violet-600 text-white font-bold rounded-xl hover:bg-violet-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+            className="w-full py-3 bg-gradient-to-r from-sky-500 to-blue-600 text-white font-bold rounded-xl hover:from-sky-600 hover:to-blue-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
             {adding
               ? <><Loader2 size={16} className="animate-spin" /> Uploading...</>
               : `Add ${selected.size} Photo${selected.size !== 1 ? "s" : ""}`
@@ -314,8 +314,8 @@ function CollabPhotoModal({
           ) : (
             comments.map(c => (
               <div key={c.id} className="flex gap-2 items-start">
-                <div className="w-6 h-6 rounded-full bg-violet-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <span className="text-[10px] font-bold text-violet-700">
+                <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <span className="text-[10px] font-bold text-blue-700">
                     {((c.user_email ?? c.user_id)[0] ?? "?").toUpperCase()}
                   </span>
                 </div>
@@ -335,10 +335,10 @@ function CollabPhotoModal({
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => e.key === "Enter" && !e.shiftKey && handleSendComment()}
             placeholder="Add a comment..."
-            className="flex-1 text-sm bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-200 transition-all"
+            className="flex-1 text-sm bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 transition-all"
           />
           <button onClick={handleSendComment} disabled={!draft.trim() || sending}
-            className="w-9 h-9 flex items-center justify-center bg-violet-600 text-white rounded-xl hover:bg-violet-700 transition-colors disabled:opacity-40 flex-shrink-0">
+            className="w-9 h-9 flex items-center justify-center bg-gradient-to-r from-sky-500 to-blue-600 text-white rounded-xl hover:from-sky-600 hover:to-blue-700 transition-colors disabled:opacity-40 flex-shrink-0">
             {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
           </button>
         </div>
@@ -450,7 +450,7 @@ export default function CollabAlbumPage() {
             <FolderOpen size={28} className="text-slate-300" />
           </div>
           <p className="font-bold text-slate-700 mb-2">Album not found</p>
-          <Link href="/collab" className="text-sm text-violet-600 font-semibold hover:underline">← Back to albums</Link>
+          <Link href="/collab" className="text-sm text-blue-600 font-semibold hover:underline">← Back to albums</Link>
         </div>
       </div>
     );
@@ -482,7 +482,7 @@ export default function CollabAlbumPage() {
 
           <div className="flex gap-2 flex-wrap items-center">
             <button onClick={() => setShowInvite(true)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 text-white rounded-xl text-sm font-bold hover:bg-violet-700 transition-colors shadow-md shadow-violet-200">
+              className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-sky-500 to-blue-600 text-white rounded-xl text-sm font-bold hover:from-sky-600 hover:to-blue-700 transition-colors shadow-md shadow-blue-200/70">
               <UserPlus size={15} /> Invite Members
             </button>
             {isOwner ? (
@@ -504,24 +504,24 @@ export default function CollabAlbumPage() {
           <button onClick={() => setTab("photos")}
             className={`flex items-center gap-1.5 px-5 py-2.5 rounded-full text-sm font-bold transition-all ${
               tab === "photos"
-                ? "bg-violet-600 text-white shadow-lg shadow-violet-200"
+                ? "bg-gradient-to-r from-sky-500 to-blue-600 text-white shadow-lg shadow-blue-200/70"
                 : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
             }`}>
             <Images size={15} /> Photos
-            <span className={`text-xs ml-0.5 ${tab === "photos" ? "text-violet-200" : "text-slate-400"}`}>{photos.length}</span>
+            <span className={`text-xs ml-0.5 ${tab === "photos" ? "text-blue-200" : "text-slate-400"}`}>{photos.length}</span>
           </button>
           <button onClick={() => setTab("members")}
             className={`flex items-center gap-1.5 px-5 py-2.5 rounded-full text-sm font-bold transition-all ${
               tab === "members"
-                ? "bg-violet-600 text-white shadow-lg shadow-violet-200"
+                ? "bg-gradient-to-r from-sky-500 to-blue-600 text-white shadow-lg shadow-blue-200/70"
                 : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
             }`}>
             <Users size={15} /> Members
-            <span className={`text-xs ml-0.5 ${tab === "members" ? "text-violet-200" : "text-slate-400"}`}>{members.length}</span>
+            <span className={`text-xs ml-0.5 ${tab === "members" ? "text-blue-200" : "text-slate-400"}`}>{members.length}</span>
           </button>
           {canContribute && (
             <button onClick={() => setShowPicker(true)}
-              className="ml-auto flex items-center gap-1.5 px-4 py-2.5 bg-violet-600 text-white rounded-xl text-sm font-bold hover:bg-violet-700 transition-colors">
+              className="ml-auto flex items-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-sky-500 to-blue-600 text-white rounded-xl text-sm font-bold hover:from-sky-600 hover:to-blue-700 transition-colors">
               <Plus size={15} /> Add Photos
             </button>
           )}
@@ -538,7 +538,7 @@ export default function CollabAlbumPage() {
               <p className="text-slate-400 text-sm mb-4">Members can add photos here.</p>
               {canContribute && (
                 <button onClick={() => setShowPicker(true)}
-                  className="px-5 py-2.5 bg-violet-600 text-white text-sm font-bold rounded-xl hover:bg-violet-700 transition-colors">
+                  className="px-5 py-2.5 bg-gradient-to-r from-sky-500 to-blue-600 text-white text-sm font-bold rounded-xl hover:from-sky-600 hover:to-blue-700 transition-colors">
                   Add your first photo
                 </button>
               )}
@@ -584,15 +584,15 @@ export default function CollabAlbumPage() {
               return (
                 <div key={member.id}
                   className="bg-white rounded-xl border border-slate-200 px-5 py-3.5 flex items-center gap-3">
-                  <div className="w-9 h-9 bg-violet-100 rounded-full flex items-center justify-center flex-shrink-0">
-                    <span className="text-violet-700 font-bold text-sm">
+                  <div className="w-9 h-9 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <span className="text-blue-700 font-bold text-sm">
                       {((member.email ?? member.user_id)[0] ?? "?").toUpperCase()}
                     </span>
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-bold text-slate-800 text-sm truncate">
                       {member.email ?? `${member.user_id.slice(0, 8)}...`}
-                      {isMe && <span className="text-violet-400 font-normal ml-1">(me)</span>}
+                      {isMe && <span className="text-blue-400 font-normal ml-1">(me)</span>}
                     </p>
                     <p className="text-[11px] text-slate-400">
                       Joined {new Date(member.joined_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}

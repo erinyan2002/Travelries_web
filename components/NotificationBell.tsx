@@ -116,7 +116,7 @@ export default function NotificationBell() {
         className="relative w-11 h-11 bg-white rounded-full shadow-lg border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition-colors"
       >
         {unread > 0
-          ? <BellRing size={20} className="text-violet-600" />
+          ? <BellRing size={20} className="text-blue-600" />
           : <Bell size={20} className="text-slate-400" />
         }
         <AnimatePresence>
@@ -148,7 +148,7 @@ export default function NotificationBell() {
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
             <div className="flex items-center gap-2">
-              <Bell size={14} className="text-violet-600" />
+              <Bell size={14} className="text-blue-600" />
               <span className="font-bold text-slate-800 text-sm">Notifications</span>
               {unread > 0 && (
                 <span className="text-[10px] font-bold bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">
@@ -159,7 +159,7 @@ export default function NotificationBell() {
             <div className="flex items-center gap-2">
               {unread > 0 && (
                 <button onClick={handleMarkAll}
-                  className="flex items-center gap-1 text-[11px] font-semibold text-violet-600 hover:text-violet-800 transition-colors">
+                  className="flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800 transition-colors">
                   <CheckCheck size={12} /> All read
                 </button>
               )}
@@ -179,7 +179,7 @@ export default function NotificationBell() {
             ) : (
               notes.map((n) => (
                 <div key={n.id}
-                  className={`flex items-start gap-3 px-4 py-3 transition-colors ${n.read ? "bg-white" : "bg-violet-50/60"}`}>
+                  className={`flex items-start gap-3 px-4 py-3 transition-colors ${n.read ? "bg-white" : "bg-blue-50/60"}`}>
                   <span className="text-base flex-shrink-0 mt-0.5">
                     {TYPE_ICON[n.type] ?? "🔔"}
                   </span>
@@ -211,7 +211,7 @@ export default function NotificationBell() {
                     </p>
                   </div>
                   {!n.read && (
-                    <span className="w-2 h-2 bg-violet-500 rounded-full flex-shrink-0 mt-1.5" />
+                    <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 mt-1.5" />
                   )}
                 </div>
               ))

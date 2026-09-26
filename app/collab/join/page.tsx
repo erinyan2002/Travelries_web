@@ -30,7 +30,7 @@ function JoinForm() {
     <main className="min-h-screen flex items-center justify-center px-4 sm:px-6 pb-24 lg:pb-10">
       <div className="max-w-[400px] w-full">
         <div className="flex items-center gap-3 mb-8">
-          <div className="w-10 h-10 bg-violet-600 rounded-xl flex items-center justify-center shadow-md shadow-violet-200">
+          <div className="w-10 h-10 bg-gradient-to-r from-sky-500 to-blue-600 rounded-xl flex items-center justify-center shadow-md shadow-blue-200/70">
             <FolderOpen size={22} className="text-white" />
           </div>
           <div>
@@ -47,11 +47,11 @@ function JoinForm() {
             onKeyDown={(e) => e.key === "Enter" && handleJoin()}
             placeholder="e.g. a1b2c3d4"
             maxLength={8}
-            className={`w-full px-4 py-3 rounded-xl border text-sm font-mono outline-none focus:ring-2 transition-all text-center text-lg tracking-widest ${error ? "border-red-300 focus:border-red-400 focus:ring-red-100 mb-2" : "border-slate-200 focus:border-violet-400 focus:ring-violet-100 mb-4"}`}
+            className={`w-full px-4 py-3 rounded-xl border text-sm font-mono outline-none focus:ring-2 transition-all text-center text-lg tracking-widest ${error ? "border-red-300 focus:border-red-400 focus:ring-red-100 mb-2" : "border-slate-200 focus:border-blue-400 focus:ring-blue-100 mb-4"}`}
           />
           {error && <p className="text-xs font-semibold text-red-500 text-center mb-4">{error}</p>}
           <button onClick={handleJoin} disabled={joining || !code.trim()}
-            className="w-full py-3 bg-violet-600 text-white font-bold rounded-xl hover:bg-violet-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+            className="w-full py-3 bg-gradient-to-r from-sky-500 to-blue-600 text-white font-bold rounded-xl hover:from-sky-600 hover:to-blue-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
             {joining ? "Joining..." : <><LogIn size={16} /> Join Album</>}
           </button>
           <div className="mt-4 text-center">

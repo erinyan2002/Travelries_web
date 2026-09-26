@@ -8,7 +8,7 @@ import { createAlbum, getMyAlbums, CollabAlbum } from "@/lib/collabUtils";
 import { FolderOpen, Plus, X, LogIn } from "lucide-react";
 
 const ROLE_COLORS: Record<string, string> = {
-  owner:       "bg-violet-100 text-violet-700",
+  owner:       "bg-blue-100 text-blue-700",
   contributor: "bg-blue-100 text-blue-700",
   viewer:      "bg-slate-100 text-slate-500",
 };
@@ -75,7 +75,7 @@ export default function CollabPage() {
                 Join with code
               </Link>
               <button onClick={() => setShowCreate(true)}
-                className="px-4 py-2 bg-violet-600 text-white text-sm font-bold rounded-xl hover:bg-violet-700 transition-colors">
+                className="px-4 py-2 bg-gradient-to-r from-sky-500 to-blue-600 text-white text-sm font-bold rounded-xl hover:from-sky-600 hover:to-blue-700 transition-colors">
                 Create album
               </button>
             </div>
