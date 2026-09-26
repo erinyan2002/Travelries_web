@@ -78,7 +78,7 @@ The backend URL comes from `lib/backend.ts` (`NEXT_PUBLIC_BACKEND_URL`; without 
 
 `NotificationBell` is rendered directly in `app/layout.tsx` (not inside `Header`) so it floats over all pages globally.
 
-Page transitions are handled by `app/template.tsx` (framer-motion fade+slide on every route change).
+`BottomNav` is also rendered once, by `AuthGuard` on every non-public path. Pages must not render their own: when each page rendered it, the nav remounted and replayed its slide-up on every tab switch. There is deliberately no route-level transition (`app/template.tsx` was removed). Fading the whole page in felt laggy on phones, especially over `backdrop-filter` cards. Pages get their motion from `PageHero`'s own entrance instead.
 
 ### Home page (`app/page.tsx`)
 

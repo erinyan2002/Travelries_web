@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import BottomNav from "@/components/BottomNav";
 import PageHero from "@/components/PageHero";
 import AnimatedNumber from "@/components/AnimatedNumber";
 import { fadeUp, staggerContainer } from "@/lib/motion";
@@ -341,16 +340,19 @@ export default function StatsPage() {
     load();
   }, []);
 
+  // Same page shell while loading, so the hero doesn't jump in after a spinner.
   if (!stats) {
     return (
-      <main className="min-h-screen px-4 sm:px-6 py-8 pb-28 flex flex-col items-center justify-center gap-3">
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-          className="w-10 h-10 rounded-full border-[3px] border-blue-100 border-t-blue-600"
-        />
-        <p className="text-slate-400 text-sm">Loading your stats…</p>
-        <BottomNav />
+      <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-28">
+        <div className="max-w-5xl mx-auto">
+          <PageHero icon={BarChart2} title="Statistics" subtitle="Summary of your photo activity" />
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-2">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="tv-card h-24 animate-pulse" />
+            ))}
+          </div>
+          <div className="tv-card h-64 mt-4 animate-pulse" />
+        </div>
       </main>
     );
   }
@@ -542,7 +544,6 @@ export default function StatsPage() {
           draw={(ctx, w, h) => drawYearReviewCard(ctx, w, h, stats, new Date().getFullYear())}
         />
       )}
-      <BottomNav />
     </main>
   );
 }

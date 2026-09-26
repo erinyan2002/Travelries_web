@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence } from "framer-motion";
-import BottomNav from "@/components/BottomNav";
 import PageHero from "@/components/PageHero";
 import Avatar from "@/components/Avatar";
 import { getSessionUser } from "@/lib/supabase";
@@ -541,7 +540,6 @@ export default function FeedPage() {
           <ShareToModal post={shareTarget} uid={uid} onClose={() => setShareTarget(null)} />
         )}
       </AnimatePresence>
-      <BottomNav />
     </main>
   );
 }

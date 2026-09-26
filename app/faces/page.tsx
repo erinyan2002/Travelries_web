@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
-import BottomNav from "@/components/BottomNav";
 import PageHero from "@/components/PageHero";
 import ActionMenu from "@/components/ActionMenu";
 import Avatar from "@/components/Avatar";
@@ -903,7 +902,6 @@ export default function FacesPage() {
           />
         )}
       </div>
-      <BottomNav />
 
       {/* ── Clear All confirm modal ── */}
       {confirmClearAll && (

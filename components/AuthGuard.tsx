@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import BottomNav from "@/components/BottomNav";
 
 const PUBLIC_PATHS = ["/login", "/signup", "/forgot-password", "/reset-password"];
 
@@ -44,5 +45,12 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  // The nav lives here, not in each page: rendered per page it unmounted on every
+  // tab switch and replayed its slide-up entrance, which made navigation feel janky.
+  return (
+    <>
+      {children}
+      {!isPublicPath(pathname) && <BottomNav />}
+    </>
+  );
 }

@@ -5,7 +5,6 @@ import L from "leaflet";
 import Link from "next/link";
 import {useEffect, useMemo, useState } from "react";
 import { MapContainer, Marker, TileLayer } from "react-leaflet";
-import BottomNav from "@/components/BottomNav";
 
 // ── 타입 ─────────────────────────────────────────────────────
 type MapPhoto = {
@@ -355,7 +354,6 @@ export default function MapPage() {
         <PhotoModal cluster={activeCluster} onClose={() => setActiveCluster(null)} />
       )}
 
-      <BottomNav />
     </main>
   );
 }

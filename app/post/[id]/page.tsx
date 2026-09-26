@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import BottomNav from "@/components/BottomNav";
 import Avatar from "@/components/Avatar";
 import CommentThread from "@/components/CommentThread";
 import { getSessionUser } from "@/lib/supabase";
@@ -89,7 +88,6 @@ export default function PostDetailPage() {
         <button onClick={() => router.back()} className="flex items-center gap-1.5 text-sm font-semibold text-blue-600 hover:text-blue-700 transition-colors">
           <ArrowLeft size={16} /> Back
         </button>
-        <BottomNav />
       </main>
     );
   }
@@ -162,7 +160,6 @@ export default function PostDetailPage() {
       {confirmDelete && (
         <DeletePostConfirmModal onConfirm={handleDelete} onCancel={() => setConfirmDelete(false)} />
       )}
-      <BottomNav />
     </main>
   );
 }

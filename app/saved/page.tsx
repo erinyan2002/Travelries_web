@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import BottomNav from "@/components/BottomNav";
 import PageHero from "@/components/PageHero";
 import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
@@ -58,15 +57,22 @@ function PhotoModal({ photo, onClose, onRemove, onDownload }: {
 
 export default function SavedPage() {
   const [saved,         setSaved]         = useState<MapPhoto[]>([]);
+  const [loading,       setLoading]       = useState(true);
   const [selectedPhoto, setSelectedPhoto] = useState<MapPhoto | null>(null);
 
   useEffect(() => {
     async function load() {
       const { data: { user } } = await getSessionUser();
       const uid = user?.id ?? "guest";
-      const savedIds = await getSavedIds();
-      const allPhotos = uid === "guest" ? [] : await fetchMapPhotos(uid);
-      setSaved(allPhotos.filter((p) => savedIds.has(p.id)));
+      try {
+        const [savedIds, allPhotos] = await Promise.all([
+          getSavedIds(),
+          uid === "guest" ? Promise.resolve([] as MapPhoto[]) : fetchMapPhotos(uid),
+        ]);
+        setSaved(allPhotos.filter((p) => savedIds.has(p.id)));
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, []);
@@ -90,7 +96,13 @@ export default function SavedPage() {
 
         <PageHero icon={Star} title="Saved" subtitle="Photos you star in Albums appear here." />
 
-        {saved.length === 0 ? (
+        {loading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="tv-card aspect-square animate-pulse" />
+            ))}
+          </div>
+        ) : saved.length === 0 ? (
           <div className="bg-white/60 backdrop-blur-sm rounded-3xl border-2 border-dashed border-sky-200 p-16 text-center">
             <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <Star size={28} className="text-blue-300" />
@@ -139,7 +151,6 @@ export default function SavedPage() {
       {selectedPhoto && (
         <PhotoModal photo={selectedPhoto} onClose={() => setSelectedPhoto(null)} onRemove={handleRemove} onDownload={handleDownload} />
       )}
-      <BottomNav />
     </main>
   );
 }

@@ -6,7 +6,6 @@ import "leaflet.heat";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { MapContainer, Marker, Polyline, TileLayer, useMap } from "react-leaflet";
-import BottomNav from "@/components/BottomNav";
 import PageHero from "@/components/PageHero";
 import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
@@ -421,7 +420,6 @@ export default function MapPage() {
       {showDeleteConfirm && (
         <DeleteConfirmModal onConfirm={handleClear} onCancel={() => setShowDeleteConfirm(false)} />
       )}
-      <BottomNav />
     </main>
   );
 }

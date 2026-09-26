@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import BottomNav from "@/components/BottomNav";
 import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
 import { fetchMapPhotos } from "@/lib/photosApi";
@@ -633,7 +632,6 @@ export default function CollabAlbumPage() {
           }}
         />
       )}
-      <BottomNav />
     </main>
   );
 }

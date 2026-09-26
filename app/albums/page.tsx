@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import BottomNav from "@/components/BottomNav";
 import PageHero from "@/components/PageHero";
 import { toggleSaved, getSavedIds, deletePhotoEverywhere } from "@/lib/savedUtils";
 import { getSessionUser } from "@/lib/supabase";
@@ -1158,7 +1157,6 @@ export default function AlbumsPage() {
           onWriteSelected={() => handleGenerateDiary(diaryTrip, false, diaryLang, diarySelected)}
         />
       )}
-      <BottomNav />
     </main>
   );
 }

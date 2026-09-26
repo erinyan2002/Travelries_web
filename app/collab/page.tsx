@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import BottomNav from "@/components/BottomNav";
 import PageHero from "@/components/PageHero";
 import { createAlbum, getMyAlbums, CollabAlbum } from "@/lib/collabUtils";
 import { FolderOpen, Plus, X, LogIn } from "lucide-react";
@@ -151,7 +150,6 @@ export default function CollabPage() {
         </div>
       )}
 
-      <BottomNav />
     </main>
   );
 }

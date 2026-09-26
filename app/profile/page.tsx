@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import {
   User, Mail, CalendarDays, Pencil, Check, X,
   KeyRound, Eye, EyeOff, AlertCircle, CheckCircle2, LogOut, Camera, Loader2, UserCircle } from "lucide-react";
-import BottomNav from "@/components/BottomNav";
 import PageHero from "@/components/PageHero";
 import { supabase, getSessionUser } from "@/lib/supabase";
 
@@ -348,7 +347,6 @@ export default function ProfilePage() {
         </button>
 
       </div>
-      <BottomNav />
     </main>
   );
 }

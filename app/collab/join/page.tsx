@@ -3,7 +3,6 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import BottomNav from "@/components/BottomNav";
 import { joinAlbumByCode } from "@/lib/collabUtils";
 import { FolderOpen, LogIn } from "lucide-react";
 
@@ -62,7 +61,6 @@ function JoinForm() {
           </div>
         </div>
       </div>
-      <BottomNav />
     </main>
   );
 }

@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import BottomNav from "@/components/BottomNav";
 import Avatar from "@/components/Avatar";
 import { getSessionUser } from "@/lib/supabase";
 import {
@@ -64,7 +63,6 @@ export default function UserProfilePage() {
     return (
       <main className="min-h-screen px-4 sm:px-6 py-8 pb-28 flex items-center justify-center">
         <p className="text-slate-400 text-sm">User not found.</p>
-        <BottomNav />
       </main>
     );
   }
@@ -130,7 +128,6 @@ export default function UserProfilePage() {
           </div>
         )}
       </div>
-      <BottomNav />
     </main>
   );
 }

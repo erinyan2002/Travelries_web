@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import BottomNav from "@/components/BottomNav";
 import PageHero from "@/components/PageHero";
 import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
@@ -217,7 +216,6 @@ export default function CleanupPage() {
         </div>
       )}
 
-      <BottomNav />
     </main>
   );
 }

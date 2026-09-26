@@ -5,7 +5,6 @@ import * as exifr from "exifr";
 import * as faceapi from "face-api.js";
 import { motion } from "framer-motion";
 import { loadMediaPipeDetector } from "@/lib/mediapipeDetector";
-import BottomNav from "@/components/BottomNav";
 import AnimatedNumber from "@/components/AnimatedNumber";
 import { burstConfetti } from "@/lib/confetti";
 import { fadeUp, staggerContainer } from "@/lib/motion";
@@ -1297,7 +1296,6 @@ export default function HomePage() {
         )}
 
       </div>
-      <BottomNav />
     </main>
   );
 }
