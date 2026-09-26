@@ -7,7 +7,7 @@ import { loadMediaPipeDetector } from "@/lib/mediapipeDetector";
 import { burstConfetti } from "@/lib/confetti";
 import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto, FacePhoto } from "@/lib/types";
-import { fetchAllPhotos, upsertPhoto, renamePhoto, uploadToUserPhotos, migrateInlineImages } from "@/lib/photosApi";
+import { fetchAllPhotos, upsertPhoto, renamePhoto, uploadToUserPhotos, migrateInlineImages, pruneOrphanPeople } from "@/lib/photosApi";
 import { fetchPeople, Person } from "@/lib/peopleApi";
 import {
   Camera, Upload, MapPin, Users, CalendarDays, Clock,
@@ -185,6 +185,7 @@ export default function HomePage() {
         const name = profile?.name || (user?.user_metadata?.name as string | undefined) || user?.email?.split("@")[0];
         setUserName(name ? name.split(" ")[0] : null);
       });
+      await pruneOrphanPeople(uid).catch(() => 0); // names whose photos were all deleted
       setPeople(await fetchPeople(uid));
       // Background, non-blocking: move any old inline-base64 images to Storage.
       if ((await migrateInlineImages(uid)) > 0) refreshStats();

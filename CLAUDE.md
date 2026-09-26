@@ -131,6 +131,8 @@ Result stored in `FacePhoto` with normalized bounding boxes (`x_norm`, `y_norm`,
 
 **Photos / Trips buttons** on a Person card open `/albums?photoIds=…&personLabel=…` (plus `&view=trips` for Trips). Albums filters by photo id; the older `?faceNames=` filename filter is still accepted. For a person filter, Albums also pulls in that person's face-only photos (`fetchPhotosByIds`), which aren't map photos, and drops them again when the filter is cleared.
 
+**Orphan people**: `pruneOrphanPeople` (`lib/photosApi.ts`) deletes `people` rows that no photo's `person_ids` references. It runs after `deletePhotoEverywhere` and `removeFaceFromPhoto`, and on Home load before the upload picker's "Who?" list is fetched. Before it existed, names stayed in that list after all their photos were deleted. The People photo view draws thin outlines with a number badge coloured like each face's chip (`BOX_COLORS`, index-aligned with `PALETTE`), and counts faces from the non-removed boxes rather than `face_count`. There are no confidence colours or expression emoji.
+
 **Per-face removal** (`removeFaceFromPhoto` in `lib/photosApi.ts`, `handleRemoveFace` in `app/faces/page.tsx`) drops one face without deleting the photo. It **tombstones in place** — box zeroed, descriptor set to `[]`, `person_ids[i]` set to null — and never splices. Cluster ids and manual person tags are keyed by array index, so shifting indices would silently reassign other people on the same photo. `isFaceRemoved()` treats an empty descriptor as removed only when the photo has *some* real descriptors (legacy/fallback paths saved all-empty descriptor arrays). Any new code that iterates `boxes`/`descriptors` must skip tombstones the same way.
 
 ### Other pages

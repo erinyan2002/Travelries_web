@@ -262,11 +262,30 @@ export async function removeFaceFromPhoto(uid: string, photoId: string, boxIndex
     .eq("id", photoId)
     .eq("user_id", uid);
   if (updateError) throw new Error(updateError.message);
+  await pruneOrphanPeople(uid).catch(() => 0);
 }
 
 // Deletes the photo row (saved_photos cascades via its FK) and any collab_photos
 // row this user shared from it.
-export async function deletePhotoEverywhere(uid: string, photoId: string): Promise<void> {
+// Deletes named people that no photo's person_ids points at any more — after
+// their photos (or faces) were deleted, the names used to linger in the upload
+// picker's "Who?" list with no way to remove them.
+export async function pruneOrphanPeople(uid: string): Promise<number> {
+  const [{ data: people, error: pe }, { data: rows, error: re }] = await Promise.all([
+    supabase.from("people").select("id").eq("user_id", uid),
+    supabase.from("photos").select("person_ids").eq("user_id", uid).not("person_ids", "is", null),
+  ]);
+  if (pe || re || !people?.length) return 0;
+  const used = new Set<string>();
+  for (const r of rows ?? []) for (const id of (r.person_ids as (string | null)[] | null) ?? []) if (id) used.add(id);
+  const orphans = people.map((p) => p.id as string).filter((id) => !used.has(id));
+  if (orphans.length === 0) return 0;
+  const { error } = await supabase.from("people").delete().eq("user_id", uid).in("id", orphans);
+  if (error) { console.error("pruneOrphanPeople:", error); return 0; }
+  return orphans.length;
+}
+
+export async function deletePhotoEverywhere(uid: string, photoId: string, { prune = true } = {}): Promise<void> {
   // .select() forces the delete to report which rows it actually removed — a
   // plain .delete() reports success even when RLS silently matched zero rows, which
   // would otherwise leave the row (and its is_face_photo entry) behind with no error.
@@ -284,6 +303,7 @@ export async function deletePhotoEverywhere(uid: string, photoId: string): Promi
   if (imageUrl && !imageUrl.startsWith("data:")) {
     await supabase.from("collab_photos").delete().eq("added_by", uid).eq("image_url", imageUrl);
   }
+  if (prune) await pruneOrphanPeople(uid).catch(() => 0);
 }
 
 // "Delete all photos" (Profile → Your photos): every photo row — map photos AND
@@ -297,7 +317,7 @@ export async function deleteAllPhotos(uid: string): Promise<{ deleted: number; f
   let deleted = 0, failed = 0;
   for (const row of data ?? []) {
     try {
-      await deletePhotoEverywhere(uid, row.id as string);
+      await deletePhotoEverywhere(uid, row.id as string, { prune: false });
       deleted++;
     } catch (err) {
       if (err instanceof Error && err.message === "Photo not found or already deleted") continue;
@@ -323,7 +343,7 @@ export async function deleteAllFaceData(uid: string): Promise<{ photosCleared: n
     .from("photos").select("id")
     .eq("user_id", uid).eq("is_face_photo", true).not("is_map_photo", "is", true);
   if (listError) throw new Error(listError.message);
-  for (const row of faceOnly ?? []) await deletePhotoEverywhere(uid, row.id as string);
+  for (const row of faceOnly ?? []) await deletePhotoEverywhere(uid, row.id as string, { prune: false });
 
   const { data: cleared, error } = await supabase
     .from("photos")

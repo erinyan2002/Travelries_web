@@ -21,7 +21,7 @@ import {
 
 const ROLE_COLORS: Record<string, string> = {
   owner:       "bg-blue-100 text-blue-700",
-  contributor: "bg-blue-100 text-blue-700",
+  contributor: "bg-pink-100 text-pink-600",
   viewer:      "bg-slate-100 text-slate-500",
 };
 

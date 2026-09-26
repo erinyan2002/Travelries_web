@@ -22,10 +22,10 @@ import {
 import Link from "next/link";
 
 
-const EXPRESSION_EMOJI: Record<string, string> = {
-  happy: "😊", sad: "😢", angry: "😠", surprised: "😮",
-  fearful: "😨", disgusted: "🤢", neutral: "",
-};
+
+// Canvas stroke colours, index-aligned with PALETTE's ring colours (blue-*/indigo-*
+// are remapped to sky shades in globals.css, so these are sky hexes).
+const BOX_COLORS = ["#a78bfa", "#38bdf8", "#34d399", "#fbbf24", "#fb7185", "#0ea5e9", "#f472b6", "#22d3ee"];
 
 // Per-person color palette (rings cycle through these)
 const PALETTE = [
@@ -81,29 +81,29 @@ function PhotoWithBoxes({ photo }: { photo: FacePhoto }) {
       canvas.height = img.height;
       ctx.drawImage(img, 0, 0);
       if (!photo.boxes?.length) return;
-      const lineW = Math.max(3, img.width / 150);
-      const labelH = Math.max(26, img.height / 22);
-      const fontSize = Math.max(13, labelH * 0.62);
+      // Thin outline + a small number badge per face, in the same colour as that
+      // face's chip below (the number is how you tell which chip to remove).
+      // It used to be a thick bar over the face with the confidence as its colour
+      // and an expression emoji, which hid the faces and meant nothing to users.
+      const unit = Math.max(img.width, img.height) / 100;
+      const lineW = Math.max(2, unit * 0.45);
+      const r = Math.max(11, unit * 1.9);
       photo.boxes.forEach((box, i) => {
         if (isFaceRemoved(photo, i)) return;
         const x = box.x * img.width, y = box.y * img.height;
         const w = box.width * img.width, h = box.height * img.height;
-        const conf = photo.confidences?.[i] ?? 1;
-        const [stroke, fill] =
-          conf >= 0.7 ? ["#22c55e", "rgba(34,197,94,0.88)"]
-          : conf >= 0.4 ? ["#f59e0b", "rgba(245,158,11,0.88)"]
-          : ["#ef4444", "rgba(239,68,68,0.88)"];
-        ctx.strokeStyle = stroke; ctx.lineWidth = lineW;
-        ctx.strokeRect(x, y, w, h);
-        const expr  = photo.expressions?.[i];
-        const label = `#${i + 1}` + (expr && expr !== "neutral" ? ` ${EXPRESSION_EMOJI[expr] ?? ""}` : "");
-        const lh = Math.min(labelH, h * 0.35);
-        ctx.fillStyle = fill;
-        ctx.fillRect(x, y, w, lh);
+        const color = BOX_COLORS[i % BOX_COLORS.length];
+        ctx.strokeStyle = color; ctx.lineWidth = lineW;
+        ctx.shadowColor = "rgba(0,0,0,0.35)"; ctx.shadowBlur = lineW * 2;
+        ctx.beginPath(); ctx.roundRect(x, y, w, h, Math.min(w, h) * 0.08); ctx.stroke();
+        ctx.shadowBlur = 0;
+        const cx = x + r * 0.9, cy = y + r * 0.9;
+        ctx.fillStyle = color;
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = "white";
-        ctx.font = `bold ${fontSize}px sans-serif`;
-        ctx.textAlign = "left";
-        ctx.fillText(label, x + 6, y + lh * 0.8);
+        ctx.font = `bold ${r * 1.1}px sans-serif`;
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(String(i + 1), cx, cy + r * 0.05);
       });
     };
   }, [photo]);
@@ -115,6 +115,9 @@ function PhotoModal({ photo, onClose, onDelete, onRemoveFace }: {
   photo: FacePhoto; onClose: () => void; onDelete: (id: string) => void;
   onRemoveFace: (photoId: string, boxIndex: number) => void;
 }) {
+  // Counted from the boxes shown, not face_count: that column can lag behind
+  // (e.g. Save to Map wrote 0 before the face save finished).
+  const shownFaces = (photo.boxes ?? []).filter((_, i) => !isFaceRemoved(photo, i)).length;
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[3000] flex items-end sm:items-center justify-center sm:p-5 overflow-y-auto" onClick={onClose}>
       <div className="w-full sm:max-w-[600px] bg-white sm:rounded-3xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -124,7 +127,7 @@ function PhotoModal({ photo, onClose, onDelete, onRemoveFace }: {
           <div>
             <h3 className="font-bold text-white text-sm truncate max-w-[260px]">{photo.fileName}</h3>
             <p className="text-sky-100 text-xs mt-0.5 flex items-center gap-1.5">
-              <Users size={10} /> {photo.faceCount} face(s)
+              <Users size={10} /> {shownFaces} {shownFaces === 1 ? "face" : "faces"}
               {photo.location && <><span>·</span><MapPin size={10} />{photo.location.split(",")[0]}</>}
             </p>
           </div>
@@ -142,7 +145,7 @@ function PhotoModal({ photo, onClose, onDelete, onRemoveFace }: {
         {photo.boxes && photo.boxes.length > 0 && (
           <div className="px-5 py-4 border-b border-slate-100">
             <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-3">
-              Detected faces ({photo.faceCount})
+              Detected faces ({shownFaces})
             </p>
             <div className="flex gap-3 overflow-x-auto pb-1">
               {photo.boxes.map((box, i) => {
@@ -789,13 +792,6 @@ export default function FacesPage() {
                             <div className="absolute top-2 left-2 flex items-center gap-1 bg-black/60 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded-full">
                               <Users size={9} /> {photo.faceCount}
                             </div>
-
-                            {/* Expression badge */}
-                            {photo.expressions?.[0] && photo.expressions[0] !== "neutral" && (
-                              <div className="absolute top-2 right-10 bg-black/60 backdrop-blur-sm text-sm px-1.5 py-0.5 rounded-full">
-                                {EXPRESSION_EMOJI[photo.expressions[0]]}
-                              </div>
-                            )}
 
                             {/* Delete */}
                             <button
