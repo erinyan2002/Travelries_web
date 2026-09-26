@@ -142,7 +142,12 @@ Result stored in `FacePhoto` with normalized bounding boxes (`x_norm`, `y_norm`,
 ### Albums (`app/albums/page.tsx`)
 
 Photos grouped by location string. Filters:
-- **Search bar**: matches filename or location (case-insensitive substring)
+- **Search bar**: smart search, via `lib/photoSearch.ts` `matchesQuery` (tested). The query is split into words, with stopwords like "with" dropped, and **every** word must match:
+  - a year, or a month name / "6월", against the capture date
+  - a named person tagged in the photo (`personNamesByPhoto`, built from `person_ids` + `people`, loaded after the photos)
+  - otherwise the location, landmark name or description, or file name
+
+  So "Sokcho with Minji June 2026" works. Chips under the box show how each word was read (`describeQuery`), and when the box is empty they offer example searches built from the user's own photos. There's no image-content search: "beach" only matches text such as a landmark description.
 - **Date range chips**: All / This Week / This Month / This Year — filters by `captureDate` or `uploadedAt`
 - Both filters compose: category → date range → search
 

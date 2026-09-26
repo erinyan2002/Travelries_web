@@ -7,9 +7,11 @@ import { toggleSaved, getSavedIds, deletePhotoEverywhere } from "@/lib/savedUtil
 import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
 import { burstConfetti } from "@/lib/confetti";
-import { tripAnchorId, summarizeTrip } from "@/lib/tripMemory";
+import { tripAnchorId, summarizeTrip, cityOf } from "@/lib/tripMemory";
+import { matchesQuery, describeQuery, personNamesByPhoto } from "@/lib/photoSearch";
+import { fetchPeople } from "@/lib/peopleApi";
 import { DiaryLang, DIARY_LANGS, diaryCacheKey, loadDiaryLang, storeDiaryLang, requestDiary } from "@/lib/diary";
-import { fetchMapPhotos, fetchPhotosByIds, saveLandmarkResult, fetchTripDiary } from "@/lib/photosApi";
+import { fetchMapPhotos, fetchPhotosByIds, saveLandmarkResult, fetchTripDiary, fetchFacePhotos } from "@/lib/photosApi";
 import {
   Images, Users, Image as ImageIcon, Star, Download, Trash2,
   X, CalendarDays, SlidersHorizontal, Search, Calendar, Share2, Loader2, MapPin, Sparkles, LayoutTemplate, Check, Clock, BookOpen,
@@ -489,6 +491,8 @@ export default function AlbumsPage() {
   const [diaryWrittenFor,   setDiaryWrittenFor]   = useState<string>("");
   const [diaryLang,         setDiaryLang]         = useState<DiaryLang>(loadDiaryLang);
   const [uid,               setUid]               = useState<string | null>(null);
+  // photo id → named people in it, for searches like "Sokcho with Minji".
+  const [photoPeople,       setPhotoPeople]       = useState<Map<string, string[]>>(new Map());
 
   function changeDiaryLang(lang: DiaryLang) {
     setDiaryLang(lang);
@@ -559,6 +563,10 @@ export default function AlbumsPage() {
       setPhotos(stored);
       setSavedIds(await getSavedIds());
       setLoading(false);
+      if (resolvedUid !== "guest") {
+        const [faces, ppl] = await Promise.all([fetchFacePhotos(resolvedUid), fetchPeople(resolvedUid)]);
+        setPhotoPeople(personNamesByPhoto(faces, ppl));
+      }
     }
     load();
   }, []);
@@ -660,14 +668,26 @@ export default function AlbumsPage() {
       if (!isInDateRange(p, dateRange)) return false;
       if (personFilterIds && !personFilterIds.has(p.id)) return false;
       if (personFilterNames && !personFilterNames.has(p.fileName)) return false;
-      if (q) {
-        const inName     = p.fileName.toLowerCase().includes(q);
-        const inLocation = (p.location ?? "").toLowerCase().includes(q);
-        if (!inName && !inLocation) return false;
-      }
+      if (q && !matchesQuery(p, q, photoPeople.get(p.id))) return false;
       return true;
     });
-  }, [photos, filter, dateRange, searchQuery, personFilterIds, personFilterNames]);
+  }, [photos, filter, dateRange, searchQuery, personFilterIds, personFilterNames, photoPeople]);
+
+  const knownPeople = useMemo(() => [...new Set([...photoPeople.values()].flat())], [photoPeople]);
+  const queryChips = useMemo(() => describeQuery(searchQuery, knownPeople), [searchQuery, knownPeople]);
+  // Example searches built from the user's own photos.
+  const searchIdeas = useMemo(() => {
+    const ideas: string[] = [];
+    const cities = new Map<string, number>();
+    for (const p of photos) { const c = cityOf(p)?.replace(/-(si|gun)$/i, ""); if (c) cities.set(c, (cities.get(c) ?? 0) + 1); }
+    const topCity = [...cities.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+    if (topCity) ideas.push(topCity);
+    if (topCity && knownPeople[0]) ideas.push(`${topCity} with ${knownPeople[0].split(" ")[0]}`);
+    else if (knownPeople[0]) ideas.push(knownPeople[0].split(" ")[0]);
+    const newest = photos.map(getPhotoDate).filter((d) => d.getTime() > 0).sort((a, b) => b.getTime() - a.getTime())[0];
+    if (newest) ideas.push(`${MONTHS[newest.getMonth()]} ${newest.getFullYear()}`);
+    return ideas;
+  }, [photos, knownPeople]);
 
   const trips = useMemo(() => detectTrips(filtered), [filtered]);
 
@@ -757,14 +777,44 @@ export default function AlbumsPage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by filename or location..."
-            className="w-full pl-10 pr-10 py-3 rounded-2xl border border-slate-200 bg-white text-sm text-slate-800 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition-all shadow-sm"
+            placeholder="Search places, people, dates…"
+            className="w-full pl-10 pr-10 py-3 rounded-2xl border border-slate-200 bg-white text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all shadow-sm"
           />
           {searchQuery && (
             <button onClick={() => setSearchQuery("")}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors p-1">
               <X size={15} />
             </button>
+          )}
+        </div>
+
+        {/* How the query is read, or example searches when it's empty */}
+        <div className="flex flex-wrap items-center gap-1.5 -mt-2 mb-4 min-h-[26px]">
+          {searchQuery.trim() ? (
+            queryChips.map((t, i) => {
+              const style = {
+                place:  { icon: "📍", cls: "bg-sky-50 text-sky-700 border-sky-100" },
+                text:   { icon: "🔎", cls: "bg-slate-50 text-slate-600 border-slate-200" },
+                person: { icon: "👤", cls: "bg-amber-50 text-amber-700 border-amber-100" },
+                month:  { icon: "📅", cls: "bg-violet-50 text-violet-700 border-violet-100" },
+                year:   { icon: "📅", cls: "bg-violet-50 text-violet-700 border-violet-100" },
+              }[t.kind];
+              return (
+                <span key={`${t.raw}-${i}`} className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${style.cls}`}>
+                  {style.icon} {t.raw}
+                </span>
+              );
+            })
+          ) : searchIdeas.length > 0 && (
+            <>
+              <span className="text-[11px] font-semibold text-slate-400 mr-0.5">Try</span>
+              {searchIdeas.map((idea) => (
+                <button key={idea} type="button" onClick={() => setSearchQuery(idea)}
+                  className="text-[11px] font-bold text-blue-600 bg-white border border-blue-100 hover:bg-blue-50 px-2.5 py-0.5 rounded-full transition-colors">
+                  {idea}
+                </button>
+              ))}
+            </>
           )}
         </div>
 
