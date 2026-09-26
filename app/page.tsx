@@ -25,6 +25,7 @@ import { BACKEND_URL } from "@/lib/backend";
 import { newId } from "@/lib/id";
 import { runFaceDetection, DetectionResult } from "@/lib/faceDetection";
 import { isFaceAnalysisEnabled } from "@/lib/faceSettings";
+import { toDisplayableImage } from "@/lib/heic";
 import {
   NearbyPlace, formatBytes, createThumbnailDataUrl, cropFaceThumbnails,
   reverseGeocode, forwardGeocode, fetchNearbyPlaces, analyzeWithBackend,
@@ -76,6 +77,28 @@ function InfoRow({ label, value, icon: Icon }: {
   );
 }
 
+// GPS + capture time read in the browser. A HEIC converted to JPEG (lib/heic.ts)
+// loses its EXIF, so the backend can't read it from the upload — this reads the original.
+async function readExifInBrowser(file: File) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const exifData: any = await exifr.parse(file).catch(() => null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const gpsData:  any = await exifr.gps(file).catch(() => null);
+  const lat = typeof gpsData?.latitude  === "number" ? (gpsData.latitude as number)  : null;
+  const lng = typeof gpsData?.longitude === "number" ? (gpsData.longitude as number) : null;
+  const takenAt = exifData?.DateTimeOriginal || exifData?.CreateDate || null;
+  const d = takenAt ? new Date(takenAt) : null;
+  const location = lat !== null && lng !== null
+    ? (await reverseGeocode(lat, lng)) || `${lat.toFixed(6)}, ${lng.toFixed(6)}`
+    : null;
+  return {
+    lat, lng, location,
+    captureDate: d ? d.toLocaleDateString() : null,
+    captureTime: d ? d.toLocaleTimeString() : null,
+    captureTimestamp: d ? d.toISOString() : null,
+  };
+}
+
 // ── Main Component ──────────────────────────────
 export default function HomePage() {
   const uploadRequestIdRef = useRef(0);
@@ -98,6 +121,7 @@ export default function HomePage() {
   const [photoInfo,      setPhotoInfo]      = useState<PhotoInfo | null>(null);
   const [loading,        setLoading]        = useState(false);
   const [savedMessage,   setSavedMessage]   = useState("");
+  const [uploadError,    setUploadError]    = useState("");
   const [faceMessage,    setFaceMessage]    = useState("");
   const [customFileName, setCustomFileName] = useState("");
   const [draftFileName,  setDraftFileName]  = useState("");
@@ -371,10 +395,23 @@ export default function HomePage() {
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []);
+    event.target.value = ""; // so picking the same photo again still fires onChange
     if (files.length === 0) return;
+    setUploadError("");
     if (files.length > 1) { processBatch(files); return; }
-    const file = files[0];
+    const original = files[0];
     const requestId = ++uploadRequestIdRef.current;
+    setLoading(true);
+    let file: File;
+    try {
+      file = await toDisplayableImage(original);
+    } catch (err) {
+      console.error("Couldn't convert HEIC:", err);
+      setUploadError(`Couldn't open “${original.name}”. Try exporting it as JPG and uploading again.`);
+      setLoading(false);
+      return;
+    }
+    if (requestId !== uploadRequestIdRef.current) return;
 
     setSavedMessage("");
     setFaceMessage("");
@@ -430,6 +467,15 @@ export default function HomePage() {
         faceConfidences   = (data.confidences ?? []).map(Number);
         faceAges          = (data.ages ?? []).filter((a): a is number => a !== null);
         faceGenders       = (data.genders ?? []).filter((g): g is string => g !== null);
+        if (file !== original && lat === null) {
+          // Converted HEIC: the JPEG sent to the backend has no EXIF, so read the original here.
+          const ex = await readExifInBrowser(original);
+          lat = ex.lat; lng = ex.lng;
+          if (ex.location) location = ex.location;
+          if (ex.captureTimestamp) {
+            captureDate = ex.captureDate!; captureTime = ex.captureTime!; captureTimestamp = ex.captureTimestamp;
+          }
+        }
         // Temporary diagnostics for tuning the backend's det_thresh — if a face
         // gets wrongly detected (or a real one missed), check this in devtools
         // to see the confidence score and normalized box InsightFace actually
@@ -439,9 +485,9 @@ export default function HomePage() {
         })));
       } else {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const exifData: any = await exifr.parse(file).catch(() => null);
+        const exifData: any = await exifr.parse(original).catch(() => null);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const gpsData:  any = await exifr.gps(file).catch(() => null);
+        const gpsData:  any = await exifr.gps(original).catch(() => null);
         lat = typeof gpsData?.latitude  === "number" ? gpsData.latitude  : null;
         lng = typeof gpsData?.longitude === "number" ? gpsData.longitude : null;
         const takenAt = exifData?.DateTimeOriginal || exifData?.CreateDate || null;
@@ -474,6 +520,9 @@ export default function HomePage() {
       });
     } catch (err) {
       console.error(err);
+      if (requestId === uploadRequestIdRef.current) {
+        setUploadError(`Something went wrong while reading this photo: ${err instanceof Error ? err.message : String(err)}`);
+      }
     } finally {
       if (requestId === uploadRequestIdRef.current) setLoading(false);
     }
@@ -535,10 +584,11 @@ export default function HomePage() {
     const uid = user?.id ?? "guest";
 
     for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+      const original = files[i];
       items[i] = { ...items[i], status: "processing" };
       setBatchItems([...items]);
       try {
+        const file = await toDisplayableImage(original);
         let lat: number | undefined;
         let lng: number | undefined;
         let captureDate: string | undefined;
@@ -572,14 +622,21 @@ export default function HomePage() {
           faceConfs       = (data.confidences ?? []).map(Number);
           faceAgesB       = (data.ages ?? []).filter((a): a is number => a !== null);
           faceGendersB    = (data.genders ?? []).filter((g): g is string => g !== null);
+          if (file !== original && lat === undefined) {
+            const ex = await readExifInBrowser(original);
+            lat = ex.lat ?? undefined; lng = ex.lng ?? undefined;
+            location = ex.location ?? location;
+            captureDate = ex.captureDate ?? captureDate; captureTime = ex.captureTime ?? captureTime;
+            captureTimestamp = ex.captureTimestamp ?? captureTimestamp;
+          }
           console.log(`[API mode][batch] ${file.name}: ${faceCount} face(s) detected`, faceBoxes.map((b, j) => ({
             confidence: faceConfs[j], x: b.x.toFixed(3), y: b.y.toFixed(3), w: b.width.toFixed(3), h: b.height.toFixed(3),
           })));
         } else {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const exifData: any = await exifr.parse(file).catch(() => null);
+          const exifData: any = await exifr.parse(original).catch(() => null);
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const gpsData:  any = await exifr.gps(file).catch(() => null);
+          const gpsData:  any = await exifr.gps(original).catch(() => null);
           lat = typeof gpsData?.latitude  === "number" ? gpsData.latitude  : undefined;
           lng = typeof gpsData?.longitude === "number" ? gpsData.longitude : undefined;
           const takenAt = exifData?.DateTimeOriginal || exifData?.CreateDate || null;
@@ -649,7 +706,7 @@ export default function HomePage() {
           editName: file.name,
         };
       } catch (err) {
-        console.error(`Batch error [${file.name}]:`, err);
+        console.error(`Batch error [${original.name}]:`, err);
         items[i] = { ...items[i], status: "error", info: "Failed" };
       }
       setBatchItems([...items]);
@@ -826,6 +883,14 @@ export default function HomePage() {
                   </p>
                 </label>
               </div>
+
+              {uploadError && (
+                <div role="alert" className="flex items-start gap-2 text-sm font-semibold text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5">
+                  <X size={16} className="flex-shrink-0 mt-0.5" />
+                  <span className="flex-1">{uploadError}</span>
+                  <button onClick={() => setUploadError("")} className="text-red-400 hover:text-red-600 text-xs">Dismiss</button>
+                </div>
+              )}
 
               {/* Analyzing indicator */}
               {loading && (

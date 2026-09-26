@@ -84,7 +84,7 @@ The backend URL comes from `lib/backend.ts` (`NEXT_PUBLIC_BACKEND_URL`; without 
 
 ### Home page (`app/page.tsx`)
 
-Single-file upload OR multi-file batch upload. On file select:
+Single-file upload OR multi-file batch upload. A HEIC that the browser can't decode (Chrome, Firefox) is first converted to JPEG by `lib/heic.ts` (`heic-to`, loaded only then). Without that, uploads from iPhone photos silently did nothing. The JPEG has no EXIF, so GPS and date are read from the original file (`readExifInBrowser`), also after a backend `/analyze`. The file input's value is cleared on every pick so the same photo can be picked again. Failures show in `uploadError` instead of only the console. On file select:
 1. EXIF + GPS extracted via `exifr`
 2. Face detection runs in browser (or via the backend in API mode — see Face detection below)
 3. Thumbnail created via `canvas.toDataURL`
