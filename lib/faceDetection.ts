@@ -15,6 +15,8 @@ export type DetectionResult = {
   expressions: string[];
 };
 
+const RETRY_MIN_MP_SCORE = 0.65;
+
 export async function runFaceDetection(
   imgEl: HTMLImageElement,
   modelType: "mediapipe" | "ssd" | "tiny",
@@ -102,7 +104,13 @@ export async function runFaceDetection(
       // the neighbour's fully-visible face, not this box's partially-cut one —
       // so the neighbour got counted twice and this person vanished. Only accept
       // the face-api detection that actually overlaps THIS MediaPipe box.
-      const match = pickCropMatch(await detectInCrop(tinyOpts), box) ?? pickCropMatch(await detectInCrop(retryOpts), box);
+      // The permissive retry (score 0.01) also "confirmed" MediaPipe's false boxes on
+      // food, a cake, a Ferris wheel or the back of a head. On 59 real uploads, every such box
+      // had a MediaPipe score <= 0.64, while real faces that only the retry caught
+      // (cut off at the frame edge, turned away) scored 0.68-0.89. So the retry
+      // only gets to rescue a box MediaPipe itself was sure about.
+      const match = pickCropMatch(await detectInCrop(tinyOpts), box)
+        ?? (box.score >= RETRY_MIN_MP_SCORE ? pickCropMatch(await detectInCrop(retryOpts), box) : null);
       if (!match) {
         // face-api found no face matching this box even on the permissive retry —
         // treat that as MediaPipe having localized non-face content (its own

@@ -33,13 +33,22 @@ TILE_STRIDE  = 1024          # px — step between tiles (256 px overlap on each
 MIN_FACE_PX  = 12            # minimum face box side (pixels) after merging
 NMS_IOU_THR  = 0.45          # IoU threshold for duplicate suppression after tiling
 
-# A tight close-up (face fills most of the frame) can be too LARGE for the
-# detector's anchor scales even at the full 1280px pass — SCRFD's anchors have a
-# practical upper bound on face size relative to the input, and an oversized face
-# can fall outside all of them and be missed entirely. An extra pass on a shrunk
-# copy of the whole image brings an oversized face back down into a scale the
-# anchors actually cover. See _faces_from_scaled().
-DOWNSCALE_PASS_SIZE = 640    # px — long side of the shrunk copy
+# A tight close-up (face fills most of the frame) is too LARGE for SCRFD: its
+# biggest anchors cover faces up to ~40% of the input, and a selfie face at
+# 60-80% of the frame was missed entirely or came back as a box on one eye.
+# Shrinking the image alone doesn't help, because FaceAnalysis resizes every input
+# back up to det_size. The shrunk copy is therefore pasted onto a blank
+# TILE_SIZE canvas, so the face really does cover only 1/factor of what the detector sees.
+CLOSEUP_PAD_FACTORS = (2.0, 3.0)
+
+# Final keep rules, applied after NMS. Detection itself still runs at det_thresh
+# 0.4, so weak duplicates can merge into strong boxes first. On 59 real uploads, every
+# 0.40-0.46 box was clothing, a picture frame, food, foliage or the back of a
+# head, while real faces scored >= 0.5, except a few tiny far-off passers-by.
+KEEP_SCORE       = 0.50
+WEAK_SCORE       = 0.60  # below this, a box must also be a plausible size:
+MIN_AREA_VS_TOP  = 0.02  # >= 2% of the largest face's area (drops a speck on a
+                         # shirt next to a selfie face, scored 0.50)
 
 MATCH_THRESHOLD      = 0.60  # dlib / DBSCAN person-match threshold
 CONFIDENCE_THRESHOLD = 0.45  # SSD fallback confidence gate
@@ -154,14 +163,17 @@ def _faces_from_tile(app, rgb_tile: np.ndarray, offset_x: int, offset_y: int) ->
 # person dozens of units apart, so no two backend-detected faces ever grouped.
 
 
-def _faces_from_scaled(app, rgb: np.ndarray, scale: float) -> list:
-    """Run app.get() on a shrunk copy of the full image; bbox coords are scaled
-    back up to original-image space so they merge correctly with other passes."""
+def _faces_from_padded(app, rgb: np.ndarray, factor: float) -> list:
+    """Run app.get() on the whole image shrunk to 1/factor of TILE_SIZE and pasted
+    top-left on a black TILE_SIZE canvas (see CLOSEUP_PAD_FACTORS); bbox coords are
+    mapped back to original-image space so they merge with the other passes."""
     h, w = rgb.shape[:2]
-    small = cv2.resize(rgb, (max(1, round(w * scale)), max(1, round(h * scale))))
-    faces = app.get(small)
+    scale = (TILE_SIZE / factor) / max(h, w)
+    sw, sh = max(1, round(w * scale)), max(1, round(h * scale))
+    canvas = np.zeros((TILE_SIZE, TILE_SIZE, 3), dtype=rgb.dtype)
+    canvas[:sh, :sw] = cv2.resize(rgb, (sw, sh), interpolation=cv2.INTER_AREA)
     dets = []
-    for f in faces:
+    for f in app.get(canvas):
         bbox = f.bbox.copy().astype(float) / scale
         dets.append((float(f.det_score), bbox, f.normed_embedding, f.age, f.gender))
     return dets
@@ -172,8 +184,8 @@ def _collect_detections(app, rgb: np.ndarray) -> list:
     Whole-image pass always runs first — the safety net for a face that's large
     relative to a tile (extreme close-up) or straddles a tile seam, either of
     which a tile-only pass can miss entirely even though InsightFace's own
-    internal resize handles the full frame fine. A downscaled pass (see
-    DOWNSCALE_PASS_SIZE) adds recall for the opposite extreme — a face so large
+    internal resize handles the full frame fine. Padded shrunk passes (see
+    CLOSEUP_PAD_FACTORS) add recall for the opposite extreme — a face so large
     relative to the frame it exceeds the detector's anchor scale range even at
     the full pass. Tiles (for images larger than TILE_SIZE) add recall for
     small/far faces on top of both. _nms() in the caller dedupes whatever
@@ -182,8 +194,8 @@ def _collect_detections(app, rgb: np.ndarray) -> list:
     h, w = rgb.shape[:2]
     dets: list = _faces_from_tile(app, rgb, 0, 0)
 
-    if max(h, w) > DOWNSCALE_PASS_SIZE:
-        dets.extend(_faces_from_scaled(app, rgb, DOWNSCALE_PASS_SIZE / max(h, w)))
+    for factor in CLOSEUP_PAD_FACTORS:
+        dets.extend(_faces_from_padded(app, rgb, factor))
 
     if max(h, w) <= TILE_SIZE:
         return dets
@@ -253,8 +265,17 @@ def _detect_insightface(image: np.ndarray) -> dict:
     rgb  = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
     raw    = _collect_detections(app, rgb)
-    merged = _nms(raw)
+    merged = _filter_weak(_nms(raw))
     return _build_result(merged, h, w)
+
+
+def _filter_weak(dets: list) -> list:
+    """Drop likely false positives; see KEEP_SCORE / WEAK_SCORE / MIN_AREA_VS_TOP."""
+    dets = [d for d in dets if d[0] >= KEEP_SCORE]
+    if not dets:
+        return dets
+    top = max(_area(d[1]) for d in dets)
+    return [d for d in dets if d[0] >= WEAK_SCORE or _area(d[1]) >= MIN_AREA_VS_TOP * top]
 
 
 # ── Tier 2: SSD Caffe + dlib (fallback) ──────────────────────────────────────
