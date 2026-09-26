@@ -212,7 +212,8 @@ export async function saveTripDiary(uid: string, tripKey: string, diaryText: str
 }
 
 export async function renamePhoto(uid: string, photoId: string, fileName: string): Promise<void> {
-  await supabase.from("photos").update({ file_name: fileName }).eq("id", photoId).eq("user_id", uid);
+  const { error } = await supabase.from("photos").update({ file_name: fileName }).eq("id", photoId).eq("user_id", uid);
+  if (error) throw new Error(error.message);
 }
 
 // Removes ONE detected face from a photo (e.g. a stranger caught in a group

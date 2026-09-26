@@ -11,10 +11,10 @@ import { tripAnchorId, summarizeTrip, cityOf } from "@/lib/tripMemory";
 import { matchesQuery, describeQuery, personNamesByPhoto } from "@/lib/photoSearch";
 import { fetchPeople } from "@/lib/peopleApi";
 import { DiaryLang, DIARY_LANGS, diaryCacheKey, loadDiaryLang, storeDiaryLang, requestDiary } from "@/lib/diary";
-import { fetchMapPhotos, fetchPhotosByIds, saveLandmarkResult, fetchTripDiary, fetchFacePhotos } from "@/lib/photosApi";
+import { fetchMapPhotos, fetchPhotosByIds, saveLandmarkResult, renamePhoto, fetchTripDiary, fetchFacePhotos } from "@/lib/photosApi";
 import {
   Images, Users, Image as ImageIcon, Star, Download, Trash2,
-  X, CalendarDays, Search, Share2, Loader2, MapPin, Sparkles, LayoutTemplate, Check, Clock, BookOpen,
+  X, CalendarDays, Search, Share2, Loader2, MapPin, Sparkles, LayoutTemplate, Check, Clock, BookOpen, Pencil,
 } from "lucide-react";
 import Link from "next/link";
 import { sharePhoto } from "@/lib/shareUtils";
@@ -230,8 +230,9 @@ function DiaryModal({
 }
 
 function PhotoModal({
-  photo, onClose, onDelete, onDownload, onShare, sharing, uid, onLandmarkSaved, saved, onToggleSaved,
+  photo, onClose, onDelete, onDownload, onShare, sharing, uid, onLandmarkSaved, saved, onToggleSaved, onRenamed,
 }: {
+  onRenamed: (photoId: string, fileName: string) => void;
   photo: MapPhoto; onClose: () => void;
   saved: boolean; onToggleSaved: (e: React.MouseEvent) => void;
   onDelete: (id: string) => void; onDownload: (photo: MapPhoto) => void;
@@ -247,6 +248,24 @@ function PhotoModal({
   const [landmarkError,   setLandmarkError]   = useState<string | null>(null);
   const [isReanalyzing,   setIsReanalyzing]   = useState(false);
   const [showStoryCard,   setShowStoryCard]   = useState(false);
+  const [nameDraft,       setNameDraft]       = useState<string | null>(null); // non-null while renaming
+  const [renaming,        setRenaming]        = useState(false);
+
+  async function handleRename() {
+    const name = nameDraft?.trim();
+    if (!name || name === photo.fileName) { setNameDraft(null); return; }
+    if (!uid) return;
+    setRenaming(true);
+    try {
+      await renamePhoto(uid, photo.id, name);
+      onRenamed(photo.id, name);
+      setNameDraft(null);
+    } catch (err) {
+      alert(`Couldn't rename the photo:\n${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setRenaming(false);
+    }
+  }
 
   // A photo already carries its cached landmark_* fields from Supabase — this only
   // resets local state when the modal is reopened on a *different* photo, not on every
@@ -257,6 +276,7 @@ function PhotoModal({
       : null);
     setLandmarkError(null);
     setIsReanalyzing(false);
+    setNameDraft(null);
     // Ready for Download: the phone share sheet must open right after the tap.
     if (!photo.imageUrl.startsWith("data:")) prefetchImage(photo.imageUrl).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -312,7 +332,33 @@ function PhotoModal({
       <div className="max-w-[520px] w-full max-h-[94dvh] overflow-y-auto bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="sticky top-0 z-10 bg-white/95 backdrop-blur flex items-center gap-3 px-5 pt-4 pb-3">
           <div className="min-w-0 flex-1">
-            <p className="font-extrabold text-slate-900 truncate">{photo.fileName}</p>
+            {nameDraft !== null ? (
+              <form className="flex items-center gap-1.5" onSubmit={(e) => { e.preventDefault(); handleRename(); }}>
+                <input
+                  autoFocus
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setNameDraft(null); } }}
+                  maxLength={80}
+                  aria-label="Photo name"
+                  className="min-w-0 flex-1 font-extrabold text-slate-900 bg-slate-50 border border-sky-300 rounded-lg px-2.5 py-1 outline-none focus:ring-2 focus:ring-sky-100"
+                />
+                <button type="submit" disabled={renaming} aria-label="Save name"
+                  className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60">
+                  {renaming ? <Loader2 size={15} className="animate-spin" /> : <Check size={16} />}
+                </button>
+                <button type="button" onClick={() => setNameDraft(null)} aria-label="Cancel rename"
+                  className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg bg-slate-100 text-slate-500 hover:bg-slate-200">
+                  <X size={15} />
+                </button>
+              </form>
+            ) : (
+              <button type="button" onClick={() => setNameDraft(photo.fileName)} title="Rename"
+                className="group flex items-center gap-1.5 max-w-full text-left">
+                <span className="font-extrabold text-slate-900 truncate">{photo.fileName}</span>
+                <Pencil size={14} className="flex-shrink-0 text-slate-300 group-hover:text-blue-600 transition-colors" />
+              </button>
+            )}
             <p className="text-xs text-slate-400 mt-0.5 truncate">
               {photo.location?.split(",")[0] || "Unknown location"} · {photo.captureDate || photo.uploadedAt?.slice(0, 10) || ""}
             </p>
@@ -1036,6 +1082,10 @@ export default function AlbumsPage() {
           sharing={sharingId === selectedPhoto.id}
           uid={uid}
           onLandmarkSaved={handleLandmarkSaved}
+          onRenamed={(id, fileName) => {
+            setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, fileName } : p)));
+            setSelectedPhoto((prev) => (prev && prev.id === id ? { ...prev, fileName } : prev));
+          }}
           saved={savedIds.has(selectedPhoto.id)}
           onToggleSaved={(e) => handleToggleSaved(e, selectedPhoto)}
         />

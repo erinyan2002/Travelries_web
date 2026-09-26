@@ -3,11 +3,8 @@
 import { ChangeEvent, Fragment, useState, useEffect, useRef } from "react";
 import * as exifr from "exifr";
 import * as faceapi from "face-api.js";
-import { motion } from "framer-motion";
 import { loadMediaPipeDetector } from "@/lib/mediapipeDetector";
-import AnimatedNumber from "@/components/AnimatedNumber";
 import { burstConfetti } from "@/lib/confetti";
-import { fadeUp, staggerContainer } from "@/lib/motion";
 import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto, FacePhoto } from "@/lib/types";
 import { fetchAllPhotos, upsertPhoto, renamePhoto, uploadToUserPhotos, migrateInlineImages } from "@/lib/photosApi";
@@ -19,7 +16,10 @@ import {
   Coffee, Utensils, Wine, Sparkles, Trash2, Map, ScanFace,
 } from "lucide-react";
 import Link from "next/link";
-import AppLogo from "@/components/AppLogo";
+import { HomeHero, LatestTripCard, RecentMemories } from "@/components/HomeSections";
+import { detectTrips, Trip } from "@/lib/trips";
+import { summarizeTrip, TripMemory } from "@/lib/tripMemory";
+import { fetchProfile } from "@/lib/socialUtils";
 import BatchUploadPanel, { BatchFile } from "@/components/BatchUploadPanel";
 import { BACKEND_URL } from "@/lib/backend";
 import { newId } from "@/lib/id";
@@ -115,7 +115,10 @@ export default function HomePage() {
   const [placesLoading,    setPlacesLoading]    = useState(false);
   const [placesFetched,    setPlacesFetched]    = useState(false);
   const [dashStats,        setDashStats]        = useState({ totalPhotos: 0, totalLocations: 0, totalFaces: 0 });
-  const [highlights,       setHighlights]       = useState<{ recent: MapPhoto | null; mostFaces: MapPhoto | null }>({ recent: null, mostFaces: null });
+  const [recentPhotos,     setRecentPhotos]     = useState<MapPhoto[]>([]);
+  const [latestTrip,       setLatestTrip]       = useState<{ trip: Trip; memory: TripMemory } | null>(null);
+  const [userName,         setUserName]         = useState<string | null>(null);
+  const [hour,             setHour]             = useState<number | null>(null);
   const [batchItems,       setBatchItems]       = useState<BatchFile[]>([]);
   const [batchActive,      setBatchActive]      = useState(false);
   const [isMapSaved,       setIsMapSaved]       = useState(false);
@@ -141,21 +144,23 @@ export default function HomePage() {
     );
     const totalFaces = facePhotos.reduce((sum, p) => sum + (p.faceCount ?? 0), 0);
     setDashStats({ totalPhotos: mapPhotos.length, totalLocations: locationSet.size, totalFaces });
-    setHighlights({
-      recent: mapPhotos[0] ?? null,
-      mostFaces: mapPhotos.reduce<MapPhoto | null>(
-        (best, p) => ((p.faceCount ?? 0) > (best?.faceCount ?? 0) ? p : best), null
-      ),
-    });
+    setRecentPhotos(mapPhotos.filter((p) => !p.imageUrl.startsWith("data:")).slice(0, 12));
+    const trip = detectTrips(mapPhotos)[0]; // newest first
+    setLatestTrip(trip ? { trip, memory: summarizeTrip(trip) } : null);
   }
 
   useEffect(() => {
     refreshStats();
     isFaceAnalysisEnabled().then(setFaceAnalysisOn);
+    setHour(new Date().getHours()); // after mount: the server's clock isn't the viewer's
     (async () => {
       const { data: { user } } = await getSessionUser();
       const uid = user?.id ?? "guest";
       if (uid === "guest") return;
+      fetchProfile(uid).then((profile) => {
+        const name = profile?.name || (user?.user_metadata?.name as string | undefined) || user?.email?.split("@")[0];
+        setUserName(name ? name.split(" ")[0] : null);
+      });
       setPeople(await fetchPeople(uid));
       // Background, non-blocking: move any old inline-base64 images to Storage.
       if ((await migrateInlineImages(uid)) > 0) refreshStats();
@@ -756,59 +761,7 @@ export default function HomePage() {
     <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-24 lg:pb-10">
       <div className="max-w-5xl mx-auto">
 
-        {/* Header — soft pastel hero banner */}
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] }}
-          className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-sky-100 via-sky-50 to-blue-100 border border-sky-200/60 px-5 pt-5 pb-6 sm:px-6 sm:pt-6 sm:pb-7 mb-6 shadow-sm"
-        >
-          <div className="absolute -top-10 -right-10 w-40 h-40 bg-sky-200/50 rounded-full blur-2xl" />
-          <div className="absolute -bottom-16 -left-8 w-44 h-44 bg-blue-200/40 rounded-full blur-2xl" />
-
-          <div className="relative flex items-center gap-3 mb-1">
-            <motion.div whileHover={{ rotate: -8, scale: 1.05 }} transition={{ type: "spring", stiffness: 300, damping: 15 }}>
-              <AppLogo size="md" className="shadow-md shadow-blue-200" />
-            </motion.div>
-            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-800">
-              Travel<span className="bg-gradient-to-r from-sky-500 to-blue-500 bg-clip-text text-transparent">ries</span>
-            </h1>
-          </div>
-          <p className="relative text-slate-500 ml-[52px] text-sm mb-5">Upload travel photos to automatically analyze location &amp; faces.</p>
-
-          {/* ── Dashboard Stats ── */}
-          <motion.div
-            variants={staggerContainer}
-            initial="hidden"
-            animate="show"
-            className="relative grid grid-cols-3 gap-3"
-          >
-            {[
-              { label: "Photos Saved",   short: "Photos", value: dashStats.totalPhotos,    icon: Camera, gradient: "from-sky-400 to-blue-500" },
-              { label: "Places Visited", short: "Places", value: dashStats.totalLocations, icon: MapPin, gradient: "from-emerald-400 to-teal-500" },
-              { label: "Faces Detected", short: "Faces",  value: dashStats.totalFaces,     icon: Users,  gradient: "from-amber-400 to-orange-500" },
-            ].map(({ label, short, value, icon: Icon, gradient }) => (
-              <motion.div
-                key={label}
-                variants={fadeUp}
-                whileHover={{ y: -3, scale: 1.02, boxShadow: "0 10px 25px -5px rgba(0,0,0,0.08)" }}
-                className="bg-white/80 backdrop-blur rounded-2xl border border-white shadow-sm px-3 py-3 sm:px-4 flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3"
-              >
-                <div className={`w-9 h-9 bg-gradient-to-br ${gradient} rounded-xl flex items-center justify-center flex-shrink-0 shadow-md`}>
-                  <Icon size={17} className="text-white" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xl font-extrabold text-slate-800 leading-tight">
-                    <AnimatedNumber value={value} />
-                  </p>
-                  <p className="text-[11px] text-slate-500 font-medium truncate">
-                    <span className="sm:hidden">{short}</span><span className="hidden sm:inline">{label}</span>
-                  </p>
-                </div>
-              </motion.div>
-            ))}
-          </motion.div>
-        </motion.div>
+        <HomeHero name={userName} hour={hour} stats={dashStats} photos={recentPhotos} />
 
         {/* ── Batch Upload UI ── */}
         {batchActive && (
@@ -825,7 +778,7 @@ export default function HomePage() {
                 <div className="w-8 h-8 bg-gradient-to-br from-sky-400 to-blue-500 rounded-xl flex items-center justify-center shadow-md shadow-sky-200">
                   <FileImage size={16} className="text-white" />
                 </div>
-                <h2 className="text-lg font-bold text-slate-800">Upload Photo</h2>
+                <div><h2 className="text-lg font-bold text-slate-800 leading-tight">Add photos</h2><p className="text-xs text-slate-400">One or many at once — place, date and faces are read for you</p></div>
               </div>
             </div>
 
@@ -984,7 +937,10 @@ export default function HomePage() {
             </div>
           </section>
 
-          {/* ── Analysis Result Section ── */}
+          {/* ── Analysis Result Section (the latest trip until a photo is picked) ── */}
+          {!photoInfo && !loading && latestTrip ? (
+            <LatestTripCard trip={latestTrip.trip} memory={latestTrip.memory} />
+          ) : (
           <section className="tv-card overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
               <div className="flex items-center gap-2">
@@ -1240,74 +1196,11 @@ export default function HomePage() {
               )}
             </div>
           </section>
+          )}
 
         </div>
 
-        {/* ── Highlights ── */}
-        {(highlights.recent || (highlights.mostFaces && (highlights.mostFaces.faceCount ?? 0) > 0)) && (
-          <motion.section
-            initial={{ opacity: 0, y: 14 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, amount: 0.3 }}
-            transition={{ duration: 0.4 }}
-            className="mt-6 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
-          >
-            <div className="flex items-center gap-2 px-5 py-3.5 border-b border-slate-100 bg-gradient-to-r from-amber-50 to-orange-50">
-              <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center flex-shrink-0">
-                <Sparkles size={13} className="text-white" />
-              </div>
-              <h2 className="font-bold text-slate-800">Highlights</h2>
-            </div>
-            <motion.div
-              variants={staggerContainer}
-              initial="hidden"
-              whileInView="show"
-              viewport={{ once: true, amount: 0.3 }}
-              className="p-4 grid grid-cols-2 gap-3"
-            >
-              {highlights.recent && (
-                <motion.div variants={fadeUp} whileHover={{ y: -2 }}>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
-                    <Clock size={9} /> Recent Upload
-                  </p>
-                  <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-50 shadow-sm">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={highlights.recent.imageUrl} alt={highlights.recent.fileName} className="w-full h-36 object-cover bg-slate-100" />
-                    <div className="p-2.5">
-                      <p className="text-xs font-bold text-slate-800 truncate">{highlights.recent.fileName}</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
-                        <CalendarDays size={9} />
-                        {highlights.recent.captureDate ?? highlights.recent.uploadedAt?.slice(0, 10) ?? ""}
-                      </p>
-                      {(highlights.recent.location) && (
-                        <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1 truncate">
-                          <MapPin size={9} />{highlights.recent.location.split(",")[0]}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-              {highlights.mostFaces && (highlights.mostFaces.faceCount ?? 0) > 0 && (
-                <motion.div variants={fadeUp} whileHover={{ y: -2 }}>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
-                    <Users size={9} /> Most Faces
-                  </p>
-                  <div className="rounded-xl overflow-hidden border border-sky-200 bg-slate-50 shadow-sm">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={highlights.mostFaces.imageUrl} alt={highlights.mostFaces.fileName} className="w-full h-36 object-cover bg-slate-100" />
-                    <div className="p-2.5">
-                      <p className="text-xs font-bold text-slate-800 truncate">{highlights.mostFaces.fileName}</p>
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-600 bg-sky-50 px-2 py-0.5 rounded-full mt-1">
-                        <Users size={8} /> {highlights.mostFaces.faceCount} face(s)
-                      </span>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </motion.div>
-          </motion.section>
-        )}
+        <RecentMemories photos={recentPhotos} />
 
       </div>
     </main>
