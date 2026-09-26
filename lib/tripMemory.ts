@@ -4,12 +4,27 @@
 import { Trip, getPhotoDate, haversineKm } from "./trips";
 import { MapPhoto } from "./types";
 
-// Location strings come from lib/uploadHelpers.ts reverseGeocode:
-// "road, neighbourhood, district, city", each part optional.
+// Location strings come in two shapes:
+// - browser reverseGeocode (lib/uploadHelpers.ts): "road, neighbourhood, district, city"
+// - the backend's Nominatim address: "road, village, county/city, province, postcode, country",
+//   e.g. "Bukhangang-ro, Yangsu-ri, Yangpyeong-gun, Gyeonggi, 12280, South Korea"
+// Postcodes, a trailing country and a trailing province are dropped, so the last
+// remaining part is the city in both.
+const COUNTRIES = new Set([
+  "south korea", "korea", "republic of korea", "대한민국", "한국", "japan", "日本", "china", "中国", "taiwan",
+  "hong kong", "vietnam", "thailand", "singapore", "philippines", "indonesia", "malaysia", "myanmar",
+  "united states", "united states of america", "usa", "canada", "mexico", "united kingdom", "france",
+  "germany", "italy", "spain", "portugal", "switzerland", "netherlands", "australia", "new zealand",
+]);
+const PROVINCE = /(-do|\bstate|\bprovince|\bprefecture|\bregion|metropolitan france|île-de-france)$|^(north|south) (chungcheong|jeolla|gyeongsang)$|^(gyeonggi|gangwon|jeju|jeonbuk)$/i;
+
 function locationParts(p: MapPhoto): string[] {
-  return (p.location ?? "").split(",").map((s) => s.trim()).filter(Boolean)
-    // A GPS-only fallback ("37.123456, 127.123456") isn't a place name.
-    .filter((s) => !/^-?\d+(\.\d+)?$/.test(s));
+  const parts = (p.location ?? "").split(",").map((s) => s.trim()).filter(Boolean)
+    // Postcodes and a GPS-only fallback ("37.123456, 127.123456") aren't place names.
+    .filter((s) => !/^-?\d+(\.\d+)?$/.test(s) && !/^\d{3}-?\d{2,3}$/.test(s));
+  if (parts.length > 1 && COUNTRIES.has(parts[parts.length - 1].toLowerCase())) parts.pop();
+  while (parts.length > 1 && PROVINCE.test(parts[parts.length - 1])) parts.pop();
+  return parts;
 }
 
 export function cityOf(p: MapPhoto): string | null {

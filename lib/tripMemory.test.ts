@@ -15,6 +15,16 @@ describe("placeLabel / cityOf", () => {
     expect(cityOf(photo)).toBe("Sokcho-si");
   });
 
+  it("reads the backend's Nominatim address (province, postcode, country dropped)", () => {
+    const photo = p("a", "2026-09-16T10:00:00", "Bukhangang-ro, Yangsu-ri, Yangpyeong-gun, Gyeonggi, 12280, South Korea");
+    expect(cityOf(photo)).toBe("Yangpyeong-gun");
+    expect(placeLabel(photo)).toBe("Yangsu-ri");
+    const sokcho = p("b", "2026-09-16T10:00:00", "Cheongho-dong, Sokcho-si, Gangwon State, 24886, South Korea");
+    expect(cityOf(sokcho)).toBe("Sokcho-si");
+    expect(placeLabel(sokcho)).toBe("Cheongho-dong");
+    expect(summarizeTrip(trip([photo])).title).toBe("Yangpyeong Trip");
+  });
+
   it("prefers a recognized landmark", () => {
     expect(placeLabel(p("a", "2026-06-02T10:00:00", "Road, Dong, City", { landmarkName: "Eiffel Tower" }))).toBe("Eiffel Tower");
   });

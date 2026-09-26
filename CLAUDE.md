@@ -161,6 +161,7 @@ Photos grouped by location string. Filters:
 - **Diary**: the same AI diary.
 
 The derived numbers come from `lib/tripMemory.ts` `summarizeTrip` (tested):
+- location strings come in two shapes: the browser's "road, neighbourhood, district, city", and the backend's full Nominatim address "road, village, county, province, postcode, country". Postcodes, a trailing country and a trailing province are dropped first, so both parse the same way
 - title = the most common city, with `-si`/`-gun` stripped
 - place names = `landmarkName`, else the neighbourhood/district part of the reverse-geocoded `location` ("road, neighbourhood, district, city")
 - days = numbered by calendar distance
