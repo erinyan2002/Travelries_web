@@ -3,21 +3,21 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
-  Images, MapPin, ScanFace, Bookmark, Newspaper, FolderHeart, CircleUserRound, ChartColumn,
+  Images, MapPin, Wand2, Bookmark, Newspaper, FolderHeart, CircleUserRound, ChartColumn,
 } from "lucide-react";
 
-// The bottom nav has five tabs; the pages behind three of them are grouped here
-// as a segmented bar at the top of each page. Routes stay separate (/faces, /saved,
+// Albums, Social and Profile in the bottom nav each cover several pages, grouped here
+// as a segmented bar at the top of each page. Routes stay separate (/saved, /cleanup,
 // /stats, …), so notification and share links keep working. The bar sits above the
 // PageHero so it holds still when switching between siblings with different heroes.
 type Tab = { key: string; label: string; icon: React.ElementType; href: string };
 
 export const SECTIONS = {
   albums: [
-    { key: "photos", label: "Photos", icon: Images,   href: "/albums" },
-    { key: "trips",  label: "Trips",  icon: MapPin,   href: "/albums?view=trips" },
-    { key: "people", label: "People", icon: ScanFace, href: "/faces" },
-    { key: "saved",  label: "Saved",  icon: Bookmark, href: "/saved" },
+    { key: "photos",  label: "Photos",   icon: Images,   href: "/albums" },
+    { key: "trips",   label: "Trips",    icon: MapPin,   href: "/albums?view=trips" },
+    { key: "saved",   label: "Saved",    icon: Bookmark, href: "/saved" },
+    { key: "cleanup", label: "Clean up", icon: Wand2,    href: "/cleanup" },
   ],
   social: [
     { key: "feed",   label: "Feed",   icon: Newspaper,   href: "/feed" },

@@ -3,17 +3,19 @@
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { motion } from "framer-motion";
-import { House, MapPinned, Images, UsersRound, CircleUserRound, LogOut } from "lucide-react";
+import { House, MapPinned, Images, ScanFace, UsersRound, CircleUserRound, LogOut } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
-// Five tabs. Albums, Social and Profile each cover several routes, and the
+// Six tabs; Faces is its own tab because face recognition is the app's core feature.
+// Albums, Social and Profile each cover several routes, and the
 // sibling pages are switched with components/SectionTabs.tsx at the top of each page.
 type NavItem = { href: string; icon: React.ElementType; label: string; routes: string[] };
 
 const navItems: NavItem[] = [
   { href: "/",        icon: House,           label: "Home",    routes: ["/"] },
   { href: "/map",     icon: MapPinned,       label: "Map",     routes: ["/map"] },
-  { href: "/albums",  icon: Images,          label: "Albums",  routes: ["/albums", "/faces", "/saved", "/cleanup"] },
+  { href: "/albums",  icon: Images,          label: "Albums",  routes: ["/albums", "/saved", "/cleanup"] },
+  { href: "/faces",   icon: ScanFace,        label: "Faces",   routes: ["/faces"] },
   { href: "/feed",    icon: UsersRound,      label: "Social",  routes: ["/feed", "/collab", "/post", "/u"] },
   { href: "/profile", icon: CircleUserRound, label: "Profile", routes: ["/profile", "/stats"] },
 ];
@@ -65,7 +67,7 @@ export default function BottomNav() {
       initial={{ y: 40, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ type: "spring", stiffness: 300, damping: 28 }}
-      className="fixed bottom-3 sm:bottom-4 left-1/2 -translate-x-1/2 w-[min(520px,calc(100%-24px))] z-50"
+      className="fixed bottom-3 sm:bottom-4 left-1/2 -translate-x-1/2 w-[min(600px,calc(100%-24px))] z-50"
     >
       <div className={`${barClass} justify-between`}>
         {navItems.map((item) => {

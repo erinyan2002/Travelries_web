@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import PageHero from "@/components/PageHero";
+import SectionTabs from "@/components/SectionTabs";
 import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
 import { fetchEveryPhoto } from "@/lib/photosApi";
@@ -141,6 +142,8 @@ export default function CleanupPage() {
   return (
     <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-40">
       <div className="max-w-5xl mx-auto">
+        <SectionTabs section="albums" active="cleanup" />
+
         <PageHero icon={Wand2} title="Clean Up" subtitle="Find near-duplicate and blurry photos to tidy up." />
 
         {progress === null ? (

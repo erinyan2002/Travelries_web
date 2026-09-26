@@ -12,7 +12,7 @@ import { DiaryLang, DIARY_LANGS, diaryCacheKey, loadDiaryLang, storeDiaryLang, r
 import { fetchMapPhotos, fetchPhotosByIds, saveLandmarkResult, fetchTripDiary } from "@/lib/photosApi";
 import {
   Images, Users, Image as ImageIcon, Star, Download, Trash2,
-  X, CalendarDays, SlidersHorizontal, Search, Calendar, Share2, Loader2, MapPin, Sparkles, LayoutTemplate, Wand2, Check, Clock, BookOpen,
+  X, CalendarDays, SlidersHorizontal, Search, Calendar, Share2, Loader2, MapPin, Sparkles, LayoutTemplate, Check, Clock, BookOpen,
 } from "lucide-react";
 import Link from "next/link";
 import { sharePhoto } from "@/lib/shareUtils";
@@ -721,13 +721,7 @@ export default function AlbumsPage() {
         <SectionTabs section="albums" active={viewMode === "trips" ? "trips" : "photos"}
           onSelect={{ photos: () => switchView("monthly"), trips: () => switchView("trips") }} />
 
-        <PageHero icon={Images} title="Albums" subtitle="Browse your saved travel photos by date."
-          action={
-            <Link href="/cleanup"
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-blue-600 text-xs font-bold rounded-xl border border-blue-100 hover:bg-blue-50 transition-colors">
-              <Wand2 size={12} /> Clean up
-            </Link>
-          } />
+        <PageHero icon={Images} title="Albums" subtitle="Browse your saved travel photos by date." />
 
         {/* Person filter banner */}
         {(personFilterIds || personFilterNames) && (
