@@ -79,7 +79,6 @@ async function drawPhotoStoryCard(ctx: CanvasRenderingContext2D, w: number, h: n
 }
 
 type Filter    = "All" | "With People" | "Scenery";
-type DateRange = "all" | "week" | "month" | "year";
 
 
 // Downscale before sending to Claude — cuts image tokens (and cost) with no
@@ -98,31 +97,6 @@ async function resizeImageForApi(blob: Blob, maxSize = 1024, quality = 0.85): Pr
 }
 
 const FILTERS: Filter[] = ["All", "With People", "Scenery"];
-
-const DATE_RANGES: { value: DateRange; label: string }[] = [
-  { value: "all",   label: "All time" },
-  { value: "week",  label: "Week"     },
-  { value: "month", label: "Month"    },
-  { value: "year",  label: "Year"     },
-];
-
-function isInDateRange(photo: MapPhoto, range: DateRange): boolean {
-  if (range === "all") return true;
-  const raw = photo.uploadedAt;
-  if (!raw) return true;
-  const date = new Date(raw);
-  const now   = new Date();
-  if (range === "week") {
-    return date >= new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  }
-  if (range === "month") {
-    return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
-  }
-  if (range === "year") {
-    return date.getFullYear() === now.getFullYear();
-  }
-  return true;
-}
 
 function InfoChip({ label, value }: { label: string; value: string }) {
   return (
@@ -460,7 +434,6 @@ export default function AlbumsPage() {
   const [photos,           setPhotos]           = useState<MapPhoto[]>([]);
   const [loading,          setLoading]          = useState(true);
   const [filter,           setFilter]           = useState<Filter>("All");
-  const [dateRange,        setDateRange]        = useState<DateRange>("all");
   const [searchQuery,      setSearchQuery]      = useState("");
   const [selectedPhoto,    setSelectedPhoto]    = useState<MapPhoto | null>(null);
   const [savedIds,         setSavedIds]         = useState<Set<string>>(new Set());
@@ -648,7 +621,6 @@ export default function AlbumsPage() {
   function clearAllFilters() {
     setSearchQuery("");
     setFilter("All");
-    setDateRange("all");
   }
 
   const counts = useMemo(() => ({
@@ -662,13 +634,12 @@ export default function AlbumsPage() {
     return photos.filter((p) => {
       if (filter === "With People" && (p.faceCount ?? 0) === 0) return false;
       if (filter === "Scenery"     && (p.faceCount ?? 0) > 0)  return false;
-      if (!isInDateRange(p, dateRange)) return false;
       if (personFilterIds && !personFilterIds.has(p.id)) return false;
       if (personFilterNames && !personFilterNames.has(p.fileName)) return false;
       if (q && !matchesQuery(p, q, photoPeople.get(p.id))) return false;
       return true;
     });
-  }, [photos, filter, dateRange, searchQuery, personFilterIds, personFilterNames, photoPeople]);
+  }, [photos, filter, searchQuery, personFilterIds, personFilterNames, photoPeople]);
 
   const knownPeople = useMemo(() => [...new Set([...photoPeople.values()].flat())], [photoPeople]);
   const queryChips = useMemo(() => describeQuery(searchQuery, knownPeople), [searchQuery, knownPeople]);
@@ -719,7 +690,7 @@ export default function AlbumsPage() {
       });
   }, [filtered]);
 
-  const isFiltering = searchQuery.trim() !== "" || filter !== "All" || dateRange !== "all";
+  const isFiltering = searchQuery.trim() !== "" || filter !== "All";
 
   // Photos/Trips switch in place; the URL follows (keeping any person filter) so a
   // reload or the back button lands on the same view.
@@ -818,7 +789,7 @@ export default function AlbumsPage() {
         </div>
         )}
 
-        {/* Type + date filters: one compact row */}
+        {/* Type filter; dates are searched ("June 2026") — an upload-date filter here misled */}
         <div className="flex items-center gap-1.5 mb-4 overflow-x-auto no-scrollbar">
           {FILTERS.map((f) => {
             const active = filter === f;
@@ -828,17 +799,6 @@ export default function AlbumsPage() {
                   active ? "bg-blue-600 text-white" : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"}`}>
                 {f === "With People" ? "People" : f}
                 <span className={`ml-1 ${active ? "text-blue-100" : "text-slate-400"}`}>{counts[f]}</span>
-              </button>
-            );
-          })}
-          <span className="flex-shrink-0 w-px h-4 bg-slate-200 mx-1" />
-          {DATE_RANGES.map(({ value, label }) => {
-            const active = dateRange === value;
-            return (
-              <button key={value} onClick={() => setDateRange(value)}
-                className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-bold transition-colors ${
-                  active ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-white"}`}>
-                {label}
               </button>
             );
           })}
