@@ -52,14 +52,42 @@ describe("clusterByPerson", () => {
 });
 
 describe("buildPersonGroups", () => {
-  it("a manual person tag wins over descriptor distance", () => {
+  const alice = [{ id: "alice", name: "Alice", createdAt: "" }];
+
+  it("a new untagged photo of a named person joins that person", () => {
     const tagged = photo([fa(0.1)], { personIds: ["alice"] });
-    const lookalike = photo([fa(0.1)]);
+    const lookalike = photo([fa(0.1, 0.005)]);
+    const groups = buildPersonGroups([tagged, lookalike], alice, MATCH_THRESHOLD);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].label).toBe("Alice");
+    expect(groups[0].faces.map((f) => f.photo.id)).toEqual([tagged.id, lookalike.id]);
+  });
+
+  it("also for 512-dim ArcFace faces", () => {
     const groups = buildPersonGroups(
-      [tagged, lookalike], [{ id: "alice", name: "Alice", createdAt: "" }], MATCH_THRESHOLD);
-    const alice = groups.find((g) => g.personId === "alice");
-    expect(alice?.label).toBe("Alice");
-    expect(alice?.faces.map((f) => f.photo.id)).toEqual([tagged.id]);
+      [photo([arc(0)], { personIds: ["alice"] }), photo([arc(0, 1)])], alice, MATCH_THRESHOLD);
+    expect(groups).toHaveLength(1);
+  });
+
+  it("a different person stays a separate group", () => {
+    const groups = buildPersonGroups(
+      [photo([fa(0.1)], { personIds: ["alice"] }), photo([fa(0.3)])], alice, MATCH_THRESHOLD);
+    expect(groups).toHaveLength(2);
+    expect(groups.find((g) => g.personId === "alice")?.faces).toHaveLength(1);
+  });
+
+  it("a manually tagged face never moves to another person", () => {
+    const bob = { id: "bob", name: "Bob", createdAt: "" };
+    const a = photo([fa(0.1)], { personIds: ["alice"] });
+    const b = photo([fa(0.1)], { personIds: ["bob"] }); // looks like Alice, tagged Bob
+    const groups = buildPersonGroups([a, b], [...alice, bob], MATCH_THRESHOLD);
+    expect(groups.find((g) => g.personId === "bob")?.faces.map((f) => f.photo.id)).toEqual([b.id]);
+  });
+
+  it("never joins two faces from one photo to the same person", () => {
+    const tagged = photo([fa(0.1), fa(0.1)], { personIds: ["alice", null] });
+    const groups = buildPersonGroups([tagged], alice, MATCH_THRESHOLD);
+    expect(groups.find((g) => g.personId === "alice")?.faces).toHaveLength(1);
     expect(groups).toHaveLength(2);
   });
 });

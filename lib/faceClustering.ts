@@ -38,7 +38,8 @@ export function prepDescriptor(desc: number[]): number[] {
   return desc.length === ARCFACE_DIM ? l2normalize(desc) : desc;
 }
 
-export function clusterByPerson(photos: FacePhoto[], threshold: number): PersonCluster[] {
+/** `skip`: faces (`${photoId}_${index}`) already placed elsewhere, e.g. joined to a named person. */
+export function clusterByPerson(photos: FacePhoto[], threshold: number, skip?: Set<string>): PersonCluster[] {
   const clusters: PersonCluster[] = [];
   // Sort oldest-first so the seed face of each cluster is stable when new photos are added later
   const sorted = [...photos].sort(
@@ -55,6 +56,7 @@ export function clusterByPerson(photos: FacePhoto[], threshold: number): PersonC
       // groups in buildPersonGroups() instead — skip them here so a stray
       // distance match can't pull them into a different auto-cluster.
       if (photo.personIds?.[i]) continue;
+      if (skip?.has(`${photo.id}_${i}`)) continue;
       let nearest: PersonCluster | null = null;
       let minDist = Infinity;
       for (const c of clusters) {
@@ -81,9 +83,16 @@ export function clusterByPerson(photos: FacePhoto[], threshold: number): PersonC
 // Confirmed groups (manual tag at upload, or "merge into..." on this page) are
 // pulled out before clusterByPerson() runs and assembled here from photos.person_ids
 // — a manual override always wins over descriptor distance and never re-splits.
+// Untagged faces are then matched against those named people first (same distance
+// rules as auto-clustering), and only the rest are auto-clustered. Without that,
+// a new photo of someone you had already named always showed up as a separate
+// "Person N" next to them, because named groups had no centroid to match against.
 export function buildPersonGroups(photos: FacePhoto[], people: Person[], threshold: number): PersonCluster[] {
+  const sorted = [...photos].sort(
+    (a, b) => new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime()
+  );
   const confirmedMap = new Map<string, FaceEntry[]>();
-  for (const photo of photos) {
+  for (const photo of sorted) {
     photo.personIds?.forEach((personId, i) => {
       if (!personId || !photo.boxes?.[i]) return;
       if (!confirmedMap.has(personId)) confirmedMap.set(personId, []);
@@ -98,6 +107,51 @@ export function buildPersonGroups(photos: FacePhoto[], people: Person[], thresho
     centroid: [],
   }));
 
-  const auto = clusterByPerson(photos, threshold);
+  // One running centroid per descriptor size (a person merged across browser and
+  // backend uploads has both 128- and 512-dim faces, which can't be averaged).
+  const centroids = confirmed.map((g) => {
+    const byDim = new Map<number, { mean: number[]; n: number }>();
+    for (const { photo, boxIndex } of g.faces) {
+      const raw = photo.descriptors?.[boxIndex];
+      if (!raw?.length) continue;
+      addToCentroid(byDim, prepDescriptor(raw));
+    }
+    return byDim;
+  });
+
+  const joined = new Set<string>();
+  if (confirmed.length > 0) {
+    for (const photo of sorted) {
+      photo.descriptors?.forEach((raw, i) => {
+        if (!raw?.length || !photo.boxes?.[i] || photo.personIds?.[i]) return;
+        const desc = prepDescriptor(raw);
+        const limit = desc.length === ARCFACE_DIM ? ARCFACE_MATCH_THRESHOLD : threshold;
+        let best = -1, bestDist = Infinity;
+        confirmed.forEach((g, gi) => {
+          if (g.faces.some((f) => f.photo.id === photo.id)) return; // same-photo constraint
+          const c = centroids[gi].get(desc.length);
+          if (!c) return;
+          const d = euclidean(desc, c.mean);
+          if (d < bestDist) { bestDist = d; best = gi; }
+        });
+        if (best >= 0 && bestDist < limit) {
+          confirmed[best].faces.push({ photo, boxIndex: i });
+          addToCentroid(centroids[best], desc);
+          joined.add(`${photo.id}_${i}`);
+        }
+      });
+    }
+  }
+
+  const auto = clusterByPerson(photos, threshold, joined);
   return [...confirmed, ...auto].sort((a, b) => b.faces.length - a.faces.length);
+}
+
+function addToCentroid(byDim: Map<number, { mean: number[]; n: number }>, desc: number[]) {
+  const cur = byDim.get(desc.length);
+  if (!cur) { byDim.set(desc.length, { mean: [...desc], n: 1 }); return; }
+  const n = cur.n + 1;
+  const mean = cur.mean.map((v, j) => (v * cur.n + desc[j]) / n);
+  cur.mean = desc.length === ARCFACE_DIM ? l2normalize(mean) : mean;
+  cur.n = n;
 }
