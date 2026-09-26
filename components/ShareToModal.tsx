@@ -72,7 +72,7 @@ export default function ShareToModal({ post, uid, onClose }: { post: Post; uid: 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 tv-overlay z-[2000] flex items-end sm:items-center justify-center p-0 sm:p-5"
+      className="fixed inset-0 tv-overlay z-[3000] flex items-end sm:items-center justify-center p-0 sm:p-5"
       onClick={onClose}
     >
       <motion.div

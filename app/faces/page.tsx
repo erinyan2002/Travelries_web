@@ -116,7 +116,7 @@ function PhotoModal({ photo, onClose, onDelete, onRemoveFace }: {
   onRemoveFace: (photoId: string, boxIndex: number) => void;
 }) {
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[2000] flex items-end sm:items-center justify-center sm:p-5 overflow-y-auto" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[3000] flex items-end sm:items-center justify-center sm:p-5 overflow-y-auto" onClick={onClose}>
       <div className="w-full sm:max-w-[600px] bg-white sm:rounded-3xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
 
         {/* Header */}
@@ -206,7 +206,7 @@ function PersonModal({ cluster, onClose, colorIdx, onRemoveFace }: {
   const photoCount = new Set(cluster.faces.map(f => f.photo.id)).size;
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[2000] flex items-end sm:items-center justify-center sm:p-5 overflow-y-auto" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[3000] flex items-end sm:items-center justify-center sm:p-5 overflow-y-auto" onClick={onClose}>
       <div className="w-full sm:max-w-[640px] bg-white sm:rounded-3xl overflow-hidden shadow-2xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
 
         {/* Header */}

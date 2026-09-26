@@ -221,9 +221,10 @@ function DiaryModal({
 }
 
 function PhotoModal({
-  photo, onClose, onDelete, onDownload, onShare, sharing, uid, onLandmarkSaved,
+  photo, onClose, onDelete, onDownload, onShare, sharing, uid, onLandmarkSaved, saved, onToggleSaved,
 }: {
   photo: MapPhoto; onClose: () => void;
+  saved: boolean; onToggleSaved: (e: React.MouseEvent) => void;
   onDelete: (id: string) => void; onDownload: (photo: MapPhoto) => void;
   onShare: (photo: MapPhoto) => void; sharing: boolean;
   uid: string | null;
@@ -286,22 +287,43 @@ function PhotoModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/85 z-[2000] flex items-center justify-center p-5" onClick={onClose}>
-      <div className="max-w-[520px] w-full bg-white rounded-2xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
-          <div className="min-w-0">
-            <p className="font-bold text-slate-900 text-sm truncate">{photo.fileName}</p>
-            <p className="text-xs text-slate-400 mt-0.5">
+    // Bottom sheet on phones (the close button sits clear of the floating
+    // notification bell), a centered card on larger screens.
+    <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[3000] flex items-end sm:items-center justify-center sm:p-5" onClick={onClose}>
+      <div className="max-w-[520px] w-full max-h-[94dvh] overflow-y-auto bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 z-10 bg-white/95 backdrop-blur flex items-center gap-3 px-5 pt-4 pb-3">
+          <div className="min-w-0 flex-1">
+            <p className="font-extrabold text-slate-900 truncate">{photo.fileName}</p>
+            <p className="text-xs text-slate-400 mt-0.5 truncate">
               {photo.location?.split(",")[0] || "Unknown location"} · {photo.captureDate || photo.uploadedAt?.slice(0, 10) || ""}
             </p>
           </div>
-          <button onClick={onClose} className="ml-4 text-slate-400 hover:text-slate-700 transition-colors p-1">
-            <X size={20} />
+          <button onClick={onClose} aria-label="Close"
+            className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-800 transition-colors">
+            <X size={18} />
           </button>
         </div>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={photo.imageUrl} alt={photo.fileName} className="w-full max-h-[420px] object-contain bg-slate-100" />
-        <div className="p-4 grid grid-cols-2 gap-2">
+        <div className="px-4">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={photo.imageUrl} alt={photo.fileName} className="w-full max-h-[52dvh] object-contain bg-slate-100 rounded-2xl" />
+        </div>
+        {/* One row of matching actions; Delete is the only red one. */}
+        <div className="grid grid-cols-5 gap-1.5 px-4 pt-3">
+          {[
+            { label: saved ? "Saved" : "Save", icon: <Star size={18} className={saved ? "fill-amber-400 text-amber-400" : ""} />, onClick: onToggleSaved, cls: saved ? "text-amber-600" : "text-slate-600 hover:text-amber-600" },
+            { label: "Story", icon: <LayoutTemplate size={18} />, onClick: () => setShowStoryCard(true), cls: "text-slate-600 hover:text-blue-600" },
+            { label: "Share", icon: sharing ? <Loader2 size={18} className="animate-spin" /> : <Share2 size={18} />, onClick: () => onShare(photo), cls: "text-slate-600 hover:text-blue-600", disabled: sharing },
+            { label: "Download", icon: <Download size={18} />, onClick: () => onDownload(photo), cls: "text-slate-600 hover:text-blue-600" },
+            { label: "Delete", icon: <Trash2 size={18} />, onClick: () => { onClose(); onDelete(photo.id); }, cls: "text-red-500 hover:bg-red-50" },
+          ].map(({ label, icon, onClick, cls, disabled }) => (
+            <button key={label} onClick={onClick} disabled={disabled}
+              className={`flex flex-col items-center gap-1 py-2.5 rounded-2xl bg-slate-50 hover:bg-sky-50 text-[11px] font-bold transition-colors disabled:opacity-60 ${cls}`}>
+              {icon}
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="p-4 pb-5 grid grid-cols-2 gap-2">
           {photo.captureDate && photo.captureDate !== "Not available" && <InfoChip label="Taken" value={photo.captureDate} />}
           {photo.location && <div className="col-span-2"><InfoChip label="Location" value={photo.location} /></div>}
           <InfoChip label="AI label" value={(photo.faceCount ?? 0) > 0 ? `With people (${photo.faceCount})` : "Scenery"} />
@@ -334,26 +356,6 @@ function PhotoModal({
               </button>
             </div>
           )}
-        </div>
-        <div className="flex gap-2 px-4 pt-3 border-t border-slate-100">
-          <button onClick={() => setShowStoryCard(true)}
-            className="flex-1 flex items-center justify-center gap-2 bg-violet-500 text-white py-2.5 rounded-xl text-sm font-bold hover:bg-violet-600 transition-colors">
-            <LayoutTemplate size={15} /> Story
-          </button>
-          <button onClick={() => onShare(photo)} disabled={sharing}
-            className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-sky-500 to-blue-600 text-white py-2.5 rounded-xl text-sm font-bold hover:bg-gradient-to-r from-sky-500 to-blue-600 transition-all disabled:opacity-60">
-            {sharing ? <Loader2 size={15} className="animate-spin" /> : <Share2 size={15} />} Share
-          </button>
-        </div>
-        <div className="flex gap-2 px-4 pt-2 pb-3">
-          <button onClick={() => onDownload(photo)}
-            className="flex-1 flex items-center justify-center gap-2 bg-slate-900 text-white py-2.5 rounded-xl text-sm font-bold hover:bg-slate-700 transition-colors">
-            <Download size={15} /> Download
-          </button>
-          <button onClick={() => { onClose(); onDelete(photo.id); }}
-            className="flex-1 flex items-center justify-center gap-2 bg-red-500 text-white py-2.5 rounded-xl text-sm font-bold hover:bg-red-600 transition-colors">
-            <Trash2 size={15} /> Delete
-          </button>
         </div>
       </div>
       {showStoryCard && (
@@ -963,11 +965,10 @@ export default function AlbumsPage() {
                         <span className="flex-1 h-px bg-slate-100 self-center ml-1" />
                         <span className="text-[11px] font-semibold text-slate-400">{day.photos.length}</span>
                       </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-2.5 sm:gap-3">
                         {day.photos.map((photo) => {
                           const isPortrait = (photo.faceCount ?? 0) > 0;
                           const saved = savedIds.has(photo.id);
-                          const actionBtn = "w-8 h-8 rounded-full bg-white/90 backdrop-blur-sm shadow-sm flex items-center justify-center transition-colors";
                           return (
                             <div key={photo.id} onClick={() => setSelectedPhoto(photo)}
                               className="photo-card group rounded-2xl overflow-hidden bg-white border border-slate-100 shadow-sm cursor-pointer">
@@ -979,31 +980,12 @@ export default function AlbumsPage() {
                                   {isPortrait ? <Users size={9} className="text-blue-600" /> : <ImageIcon size={9} />}
                                   {isPortrait ? `${photo.faceCount}` : "Scene"}
                                 </span>
-                                {/* Actions float on the photo: always on touch screens,
-                                    on hover with a mouse — instead of a 4-button row under every tile. */}
-                                <div className="absolute inset-x-0 bottom-0 p-2 flex justify-between items-end bg-gradient-to-t from-black/45 to-transparent pt-8 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                                  <button onClick={(e) => handleToggleSaved(e, photo)} title={saved ? "Unsave" : "Save"}
-                                    className={`${actionBtn} ${saved ? "text-amber-500" : "text-slate-600 hover:text-amber-500"}`}>
-                                    <Star size={14} className={saved ? "fill-amber-400" : ""} />
-                                  </button>
-                                  <div className="flex gap-1.5">
-                                    <button onClick={(e) => { e.stopPropagation(); handleShare(photo); }} disabled={sharingId === photo.id} title="Share"
-                                      className={`${actionBtn} text-slate-600 hover:text-blue-600 disabled:opacity-60`}>
-                                      {sharingId === photo.id ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
-                                    </button>
-                                    <button onClick={(e) => { e.stopPropagation(); handleDownload(photo); }} title="Download"
-                                      className={`${actionBtn} text-slate-600 hover:text-slate-900`}>
-                                      <Download size={14} />
-                                    </button>
-                                    <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(photo.id); }} title="Delete"
-                                      className={`${actionBtn} text-slate-600 hover:text-red-500`}>
-                                      <Trash2 size={14} />
-                                    </button>
-                                  </div>
-                                </div>
-                                {saved && (
-                                  <Star size={14} className="absolute top-2.5 right-2.5 text-amber-400 fill-amber-400 drop-shadow sm:group-hover:opacity-0 transition-opacity" />
-                                )}
+                                {/* Just a save toggle on the tile — share/download/delete live in the photo view. */}
+                                <button onClick={(e) => handleToggleSaved(e, photo)} title={saved ? "Unsave" : "Save"} aria-label={saved ? "Unsave" : "Save"}
+                                  className={`absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center backdrop-blur-sm shadow-sm transition-all ${
+                                    saved ? "bg-white/90 text-amber-500" : "bg-black/20 text-white sm:opacity-0 sm:group-hover:opacity-100 hover:bg-black/35"}`}>
+                                  <Star size={13} className={saved ? "fill-amber-400" : ""} />
+                                </button>
                               </div>
                               <div className="px-3 py-2.5">
                                 <p className="font-bold text-slate-800 text-sm truncate">{photo.fileName}</p>
@@ -1038,6 +1020,8 @@ export default function AlbumsPage() {
           sharing={sharingId === selectedPhoto.id}
           uid={uid}
           onLandmarkSaved={handleLandmarkSaved}
+          saved={savedIds.has(selectedPhoto.id)}
+          onToggleSaved={(e) => handleToggleSaved(e, selectedPhoto)}
         />
       )}
       {confirmDeleteId && (

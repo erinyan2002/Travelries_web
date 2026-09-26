@@ -22,7 +22,7 @@ function PhotoModal({ photo, onClose, onRemove, onDownload }: {
   onRemove: (id: string) => void; onDownload: (photo: MapPhoto) => void;
 }) {
   return (
-    <div className="fixed inset-0 bg-black/85 z-[2000] flex items-center justify-center p-5" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/85 z-[3000] flex items-center justify-center p-5" onClick={onClose}>
       <div className="max-w-[520px] w-full bg-white rounded-2xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
           <div className="min-w-0">
