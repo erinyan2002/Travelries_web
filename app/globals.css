@@ -67,6 +67,15 @@ body {
    so every button without an explicit cursor class looked unclickable. Restore
    it app-wide, plus a small press effect and a visible keyboard focus ring. */
 @layer base {
+  /* App-like on phones: nothing can push the page wider than the screen,
+     and double-tap no longer zooms. */
+  html, body {
+    overflow-x: clip;
+  }
+  html {
+    touch-action: manipulation;
+    -webkit-text-size-adjust: 100%;
+  }
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
   a[href],

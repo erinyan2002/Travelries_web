@@ -14,8 +14,15 @@ export const metadata: Metadata = {
   },
 };
 
+// maximumScale 1: iOS zooms in when an input under 16px is focused and, in the
+// home-screen app, never zooms back out — the whole page then sat enlarged and
+// slid sideways. Locking the scale keeps it fitted to the phone like an app.
 export const viewport: Viewport = {
   themeColor: "#0284c7",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
