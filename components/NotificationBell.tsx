@@ -12,7 +12,7 @@ import {
   markRead,
   subscribeToNotifications,
 } from "@/lib/notificationUtils";
-import { profilesByIds } from "@/lib/socialUtils";
+import { profilesByIds, getFollowingIds, followUser } from "@/lib/socialUtils";
 import { msg, useLang, localeOf } from "@/lib/i18n";
 
 const TYPE_ICON: Record<string, string> = {
@@ -25,6 +25,7 @@ const TYPE_ICON: Record<string, string> = {
   comment_liked:      "❤️",
   comment_replied:    "💬",
   post_shared:        "📤",
+  new_follower:       "👋",
 };
 
 // Only these types carry a `from_user_id` (the person who acted) in their `data` —
@@ -36,6 +37,7 @@ const ACTION_TEXT: Record<string, string> = {
   comment_liked:   msg("liked your comment"),
   comment_replied: msg("replied to your comment"),
   post_shared:     msg("shared a post with you"),
+  new_follower:    msg("started following you"),
 };
 
 // The older types store an English `message` written by their SQL functions;
@@ -54,6 +56,9 @@ export default function NotificationBell() {
   const [ring, setRing] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const { t, lang } = useLang();
+  // Who I already follow, for the "Follow back" button on new-follower rows.
+  const [followingIds, setFollowingIds] = useState<Set<string> | null>(null);
+  const [followingBack, setFollowingBack] = useState<string | null>(null);
 
   // Mounted once in the root layout, so it must follow auth changes: checking
   // only on mount left the bell missing after logging in (until a full reload)
@@ -98,6 +103,11 @@ export default function NotificationBell() {
     });
   }, [notes, actorNames]);
 
+  // Refreshed each time the list opens, so a follow made elsewhere is reflected.
+  useEffect(() => {
+    if (open && userId) getFollowingIds(userId).then(setFollowingIds).catch(() => {});
+  }, [open, userId]);
+
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
@@ -107,6 +117,19 @@ export default function NotificationBell() {
   }, []);
 
   if (!userId) return null;
+
+  async function handleFollowBack(fromUserId: string) {
+    if (!userId) return;
+    setFollowingBack(fromUserId);
+    try {
+      await followUser(userId, fromUserId);
+      setFollowingIds((prev) => new Set(prev ?? []).add(fromUserId));
+    } catch (err) {
+      console.error("Follow back failed:", err);
+    } finally {
+      setFollowingBack(null);
+    }
+  }
   // xl+: one step down, under the language button (see LanguageToggle).
 
   const unread = notes.filter((n) => !n.read).length;
@@ -219,6 +242,13 @@ export default function NotificationBell() {
                                   {t(actionText)}
                                 </Link>
                               ) : t(actionText)}
+                              {n.type === "new_follower" && followingIds && !followingIds.has(fromUserId) && (
+                                <button type="button" disabled={followingBack === fromUserId}
+                                  onClick={(e) => { e.stopPropagation(); handleOpen(n); handleFollowBack(fromUserId); }}
+                                  className="ml-1.5 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 align-middle disabled:opacity-60">
+                                  {t("Follow back")}
+                                </button>
+                              )}
                             </>
                           );
                         }

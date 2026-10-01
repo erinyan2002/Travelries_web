@@ -657,4 +657,8 @@ export const KO: Record<string, string> = {
   // Crop
   "This is how it shows in the feed.": "피드에는 이렇게 보여요.",
   "Crop again": "다시 자르기",
+  // Follow notifications
+  "started following you": "님이 나를 팔로우하기 시작했어요",
+  "Follow back": "맞팔로우",
+  "Someone started following you": "누군가 나를 팔로우하기 시작했어요",
 };

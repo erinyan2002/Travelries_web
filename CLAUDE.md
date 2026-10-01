@@ -204,7 +204,7 @@ The diary cache/request logic lives in `lib/diary.ts` (`requestDiary`, `diaryCac
 
 ### Notifications (`lib/notificationUtils.ts`)
 
-Real-time notifications via Supabase Realtime. `subscribeToNotifications(userId, onNew)` opens a postgres_changes channel filtered to `user_id`. The `NotificationBell` component polls on mount and subscribes for live inserts. Notification types: `share_viewed`, `collab_joined`, `collab_photo_added`, plus the social types listed under Social feed.
+Real-time notifications via Supabase Realtime. `subscribeToNotifications(userId, onNew)` opens a postgres_changes channel filtered to `user_id`. The `NotificationBell` component polls on mount and subscribes for live inserts. Notification types: `share_viewed`, `collab_joined`, `collab_photo_added`, plus the social types listed under Social feed. `new_follower` comes from an AFTER INSERT trigger on `follows` (migration `0016_follow_notifications.sql`, at most one per follower per day), and its row has a **Follow back** button when you don't follow them yet.
 
 ### Collaborative albums (`lib/collabUtils.ts`, `app/collab/page.tsx`)
 
