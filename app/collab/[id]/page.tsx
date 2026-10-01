@@ -18,6 +18,7 @@ import {
   Users, Images, X, LogOut, Loader2, CalendarDays, UserPlus, Share2,
   MessageCircle, Send,
 } from "lucide-react";
+import { useLang, localeOf } from "@/lib/i18n";
 
 const ROLE_COLORS: Record<string, string> = {
   owner:       "bg-blue-100 text-blue-700",
@@ -26,6 +27,7 @@ const ROLE_COLORS: Record<string, string> = {
 };
 
 function InviteModal({ inviteCode, onClose }: { inviteCode: string; onClose: () => void }) {
+  const { t } = useLang();
   const [linkCopied, setLinkCopied] = useState(false);
   const [codeCopied, setCodeCopied] = useState(false);
   const inviteLink = `${window.location.origin}/collab/join?code=${inviteCode}`;
@@ -45,7 +47,7 @@ function InviteModal({ inviteCode, onClose }: { inviteCode: string; onClose: () 
   async function nativeShare() {
     if (!navigator.share) return copyLink();
     try {
-      await navigator.share({ title: "Join my Collab Album", url: inviteLink });
+      await navigator.share({ title: t("Join my Collab Album"), url: inviteLink });
     } catch (err) {
       // AbortError = the user closed the share sheet (desktop Chrome also throws it
       // when no share target is available) — not a failure. Unhandled, it crashed
@@ -64,8 +66,8 @@ function InviteModal({ inviteCode, onClose }: { inviteCode: string; onClose: () 
         onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <div>
-            <h2 className="font-bold text-slate-900">Invite Members</h2>
-            <p className="text-xs text-slate-400 mt-0.5">Share the link or code with others</p>
+            <h2 className="font-bold text-slate-900">{t("Invite Members")}</h2>
+            <p className="text-xs text-slate-400 mt-0.5">{t("Share the link or code with others")}</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1"><X size={18} /></button>
         </div>
@@ -73,7 +75,7 @@ function InviteModal({ inviteCode, onClose }: { inviteCode: string; onClose: () 
         <div className="p-5 space-y-4">
           {/* Invite link */}
           <div>
-            <p className="text-xs font-bold text-slate-600 mb-1.5">Invite Link</p>
+            <p className="text-xs font-bold text-slate-600 mb-1.5">{t("Invite Link")}</p>
             <div className="flex gap-2">
               <input readOnly value={inviteLink}
                 className="flex-1 text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-slate-600 truncate outline-none" />
@@ -81,17 +83,17 @@ function InviteModal({ inviteCode, onClose }: { inviteCode: string; onClose: () 
                 className={`px-3 py-2.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 whitespace-nowrap ${
                   linkCopied ? "bg-emerald-500 text-white" : "bg-slate-900 text-white hover:bg-slate-700"
                 }`}>
-                {linkCopied ? <><Check size={13} /> Copied!</> : <><Copy size={13} /> Copy Link</>}
+                {linkCopied ? <><Check size={13} /> {t("Copied!")}</> : <><Copy size={13} /> {t("Copy Link")}</>}
               </button>
             </div>
             <p className="text-[10px] text-slate-400 mt-1.5">
-              Anyone with this link can join the album.
+              {t("Anyone with this link can join the album.")}
             </p>
           </div>
 
           {/* Raw code */}
           <div>
-            <p className="text-xs font-bold text-slate-600 mb-1.5">Or share the code</p>
+            <p className="text-xs font-bold text-slate-600 mb-1.5">{t("Or share the code")}</p>
             <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
               <code className="flex-1 text-2xl font-mono font-bold text-blue-600 tracking-[0.3em]">
                 {inviteCode}
@@ -102,7 +104,7 @@ function InviteModal({ inviteCode, onClose }: { inviteCode: string; onClose: () 
               </button>
             </div>
             <p className="text-[10px] text-slate-400 mt-1.5">
-              They can enter this code at <strong className="text-slate-600">Collab → Join</strong>.
+              {t("They can enter this code at Collab → Join.")}
             </p>
           </div>
 
@@ -110,7 +112,7 @@ function InviteModal({ inviteCode, onClose }: { inviteCode: string; onClose: () 
           {canNativeShare && (
             <button onClick={nativeShare}
               className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-sky-500 to-blue-600 text-white font-bold rounded-xl hover:from-sky-600 hover:to-blue-700 transition-colors">
-              <Share2 size={16} /> Share via...
+              <Share2 size={16} /> {t("Share via...")}
             </button>
           )}
         </div>
@@ -126,6 +128,7 @@ function PhotoPicker({
   onAdd: (photos: MapPhoto[]) => Promise<void>;
   onClose: () => void;
 }) {
+  const { t, tn } = useLang();
   const [localPhotos, setLocalPhotos] = useState<MapPhoto[]>([]);
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
   const [adding,      setAdding]      = useState(false);
@@ -158,7 +161,7 @@ function PhotoPicker({
       await onAdd(toAdd);
       onClose();
     } catch (err) {
-      alert(`Failed to add photos: ${err instanceof Error ? err.message : String(err)}`);
+      alert(`${t("Failed to add photos:")} ${err instanceof Error ? t(err.message) : String(err)}`);
       setAdding(false);
     }
   }
@@ -170,8 +173,8 @@ function PhotoPicker({
         onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <div>
-            <h2 className="font-bold text-slate-900">Add Photos</h2>
-            <p className="text-xs text-slate-400 mt-0.5">Select from your photos · {selected.size} selected</p>
+            <h2 className="font-bold text-slate-900">{t("Add Photos")}</h2>
+            <p className="text-xs text-slate-400 mt-0.5">{t("Select from your photos")} · {t("{n} selected", { n: selected.size })}</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1"><X size={18} /></button>
         </div>
@@ -179,7 +182,7 @@ function PhotoPicker({
         <div className="overflow-y-auto flex-1 p-4">
           {localPhotos.length === 0 ? (
             <div className="text-center py-12 text-slate-400 text-sm">
-              No photos saved yet. Upload photos from the home screen.
+              {t("No photos saved yet. Upload photos from the home screen.")}
             </div>
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
@@ -214,8 +217,8 @@ function PhotoPicker({
           <button onClick={handleAdd} disabled={selected.size === 0 || adding}
             className="w-full py-3 bg-gradient-to-r from-sky-500 to-blue-600 text-white font-bold rounded-xl hover:from-sky-600 hover:to-blue-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
             {adding
-              ? <><Loader2 size={16} className="animate-spin" /> Uploading...</>
-              : `Add ${selected.size} Photo${selected.size !== 1 ? "s" : ""}`
+              ? <><Loader2 size={16} className="animate-spin" /> {t("Uploading...")}</>
+              : tn(selected.size, "Add {n} Photo", "Add {n} Photos")
             }
           </button>
         </div>
@@ -236,6 +239,7 @@ function CollabPhotoModal({
   onClose: () => void;
   onRemove: (id: string) => void;
 }) {
+  const { t } = useLang();
   const [reactions, setReactions] = useState<CollabReaction[]>([]);
   const [comments,  setComments]  = useState<CollabComment[]>([]);
   const [draft,     setDraft]     = useState("");
@@ -282,7 +286,7 @@ function CollabPhotoModal({
           <div className="min-w-0">
             <p className="font-bold text-slate-900 text-sm truncate">{photo.file_name}</p>
             {photo.added_by_email && (
-              <p className="text-[10px] text-slate-400 mt-0.5">by {photo.added_by_email.split("@")[0]}</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">{t("by {name}", { name: photo.added_by_email.split("@")[0] })}</p>
             )}
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1 ml-3 flex-shrink-0"><X size={18} /></button>
@@ -310,7 +314,7 @@ function CollabPhotoModal({
         {/* Comments */}
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5 min-h-[80px]">
           {comments.length === 0 ? (
-            <p className="text-xs text-slate-400 text-center py-3">No comments yet. Be the first!</p>
+            <p className="text-xs text-slate-400 text-center py-3">{t("No comments yet. Be the first!")}</p>
           ) : (
             comments.map(c => (
               <div key={c.id} className="flex gap-2 items-start">
@@ -320,7 +324,7 @@ function CollabPhotoModal({
                   </span>
                 </div>
                 <div className="bg-slate-50 rounded-xl px-3 py-1.5 flex-1 min-w-0">
-                  <p className="text-[10px] font-bold text-slate-500">{c.user_email?.split("@")[0] ?? "user"}</p>
+                  <p className="text-[10px] font-bold text-slate-500">{c.user_email?.split("@")[0] ?? t("user")}</p>
                   <p className="text-xs text-slate-800 mt-0.5 break-words">{c.content}</p>
                 </div>
               </div>
@@ -334,7 +338,7 @@ function CollabPhotoModal({
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => e.key === "Enter" && !e.shiftKey && handleSendComment()}
-            placeholder="Add a comment..."
+            placeholder={t("Add a comment...")}
             className="flex-1 text-sm bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 transition-all"
           />
           <button onClick={handleSendComment} disabled={!draft.trim() || sending}
@@ -348,7 +352,7 @@ function CollabPhotoModal({
           <div className="px-4 pb-4 flex-shrink-0">
             <button onClick={() => { onRemove(photo.id); onClose(); }}
               className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-50 text-red-500 hover:bg-red-100 text-sm font-bold transition-colors">
-              <Trash2 size={14} /> Remove from album
+              <Trash2 size={14} /> {t("Remove from album")}
             </button>
           </div>
         )}
@@ -360,6 +364,7 @@ function CollabPhotoModal({
 export default function CollabAlbumPage() {
   const { id } = useParams<{ id: string }>();
   const router  = useRouter();
+  const { t, lang } = useLang();
 
   const [album,              setAlbum]              = useState<CollabAlbum | null | undefined>(undefined);
   const [members,            setMembers]            = useState<CollabMember[]>([]);
@@ -396,38 +401,38 @@ export default function CollabAlbumPage() {
   }
 
   async function handleRemovePhoto(photoId: string) {
-    if (!confirm("Remove this photo from the album?")) return;
+    if (!confirm(t("Remove this photo from the album?"))) return;
     await removePhotoFromAlbum(photoId);
     setPhotos((prev) => prev.filter((p) => p.id !== photoId));
   }
 
   async function handleLeave() {
-    if (!confirm("Leave this album?")) return;
+    if (!confirm(t("Leave this album?"))) return;
     try {
       await leaveAlbum(id);
       router.push("/collab");
     } catch (err) {
-      alert(`Failed: ${err instanceof Error ? err.message : String(err)}`);
+      alert(`${t("Failed:")} ${err instanceof Error ? t(err.message) : String(err)}`);
     }
   }
 
   async function handleDelete() {
-    if (!confirm("Deleting this album will remove all photos and members. Continue?")) return;
+    if (!confirm(t("Deleting this album will remove all photos and members. Continue?"))) return;
     try {
       await deleteAlbum(id);
       router.push("/collab");
     } catch (err) {
-      alert(`Failed: ${err instanceof Error ? err.message : String(err)}`);
+      alert(`${t("Failed:")} ${err instanceof Error ? t(err.message) : String(err)}`);
     }
   }
 
   async function handleRemoveMember(userId: string) {
-    if (!confirm("Remove this member?")) return;
+    if (!confirm(t("Remove this member?"))) return;
     try {
       await removeMember(id, userId);
       setMembers((prev) => prev.filter((m) => m.user_id !== userId));
     } catch (err) {
-      alert(`Failed: ${err instanceof Error ? err.message : String(err)}`);
+      alert(`${t("Failed:")} ${err instanceof Error ? t(err.message) : String(err)}`);
     }
   }
 
@@ -437,7 +442,7 @@ export default function CollabAlbumPage() {
   if (album === undefined) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-slate-400 text-sm animate-pulse">Loading...</div>
+        <div className="text-slate-400 text-sm animate-pulse">{t("Loading...")}</div>
       </div>
     );
   }
@@ -449,8 +454,8 @@ export default function CollabAlbumPage() {
           <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <FolderOpen size={28} className="text-slate-300" />
           </div>
-          <p className="font-bold text-slate-700 mb-2">Album not found</p>
-          <Link href="/collab" className="text-sm text-blue-600 font-semibold hover:underline">← Back to albums</Link>
+          <p className="font-bold text-slate-700 mb-2">{t("Album not found")}</p>
+          <Link href="/collab" className="text-sm text-blue-600 font-semibold hover:underline">← {t("Back to albums")}</Link>
         </div>
       </div>
     );
@@ -472,7 +477,7 @@ export default function CollabAlbumPage() {
                 <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">{album.name}</h1>
                 {album.role && (
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${ROLE_COLORS[album.role] ?? ""}`}>
-                    {album.role}
+                    {t(album.role)}
                   </span>
                 )}
               </div>
@@ -483,17 +488,17 @@ export default function CollabAlbumPage() {
           <div className="flex gap-2 flex-wrap items-center">
             <button onClick={() => setShowInvite(true)}
               className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-sky-500 to-blue-600 text-white rounded-xl text-sm font-bold hover:from-sky-600 hover:to-blue-700 transition-colors shadow-md shadow-blue-200/70">
-              <UserPlus size={15} /> Invite Members
+              <UserPlus size={15} /> {t("Invite Members")}
             </button>
             {isOwner ? (
               <button onClick={handleDelete}
                 className="flex items-center gap-1.5 px-3 py-2.5 bg-red-50 text-red-500 rounded-xl text-sm font-bold hover:bg-red-100 transition-colors">
-                <Trash2 size={15} /> Delete
+                <Trash2 size={15} /> {t("Delete")}
               </button>
             ) : (
               <button onClick={handleLeave}
                 className="flex items-center gap-1.5 px-3 py-2.5 bg-red-50 text-red-500 rounded-xl text-sm font-bold hover:bg-red-100 transition-colors">
-                <LogOut size={15} /> Leave
+                <LogOut size={15} /> {t("Leave")}
               </button>
             )}
           </div>
@@ -507,7 +512,7 @@ export default function CollabAlbumPage() {
                 ? "bg-gradient-to-r from-sky-500 to-blue-600 text-white shadow-lg shadow-blue-200/70"
                 : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
             }`}>
-            <Images size={15} /> Photos
+            <Images size={15} /> {t("Photos")}
             <span className={`text-xs ml-0.5 ${tab === "photos" ? "text-blue-200" : "text-slate-400"}`}>{photos.length}</span>
           </button>
           <button onClick={() => setTab("members")}
@@ -516,13 +521,13 @@ export default function CollabAlbumPage() {
                 ? "bg-gradient-to-r from-sky-500 to-blue-600 text-white shadow-lg shadow-blue-200/70"
                 : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
             }`}>
-            <Users size={15} /> Members
+            <Users size={15} /> {t("Members")}
             <span className={`text-xs ml-0.5 ${tab === "members" ? "text-blue-200" : "text-slate-400"}`}>{members.length}</span>
           </button>
           {canContribute && (
             <button onClick={() => setShowPicker(true)}
               className="ml-auto flex items-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-sky-500 to-blue-600 text-white rounded-xl text-sm font-bold hover:from-sky-600 hover:to-blue-700 transition-colors">
-              <Plus size={15} /> Add Photos
+              <Plus size={15} /> {t("Add Photos")}
             </button>
           )}
         </div>
@@ -534,12 +539,12 @@ export default function CollabAlbumPage() {
               <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
                 <Images size={28} className="text-slate-300" />
               </div>
-              <p className="font-bold text-slate-700 mb-1">No photos yet</p>
-              <p className="text-slate-400 text-sm mb-4">Members can add photos here.</p>
+              <p className="font-bold text-slate-700 mb-1">{t("No photos yet")}</p>
+              <p className="text-slate-400 text-sm mb-4">{t("Members can add photos here.")}</p>
               {canContribute && (
                 <button onClick={() => setShowPicker(true)}
                   className="px-5 py-2.5 bg-gradient-to-r from-sky-500 to-blue-600 text-white text-sm font-bold rounded-xl hover:from-sky-600 hover:to-blue-700 transition-colors">
-                  Add your first photo
+                  {t("Add your first photo")}
                 </button>
               )}
             </div>
@@ -561,12 +566,12 @@ export default function CollabAlbumPage() {
                     )}
                     {photo.added_by_email && (
                       <p className="text-[10px] text-slate-400 mt-0.5 truncate">
-                        by {photo.added_by_email.split("@")[0]}
+                        {t("by {name}", { name: photo.added_by_email.split("@")[0] })}
                       </p>
                     )}
                     <div className="flex items-center gap-1 mt-1.5">
                       <MessageCircle size={10} className="text-slate-300" />
-                      <span className="text-[10px] text-slate-400">tap to react &amp; comment</span>
+                      <span className="text-[10px] text-slate-400">{t("tap to react & comment")}</span>
                     </div>
                   </div>
                 </div>
@@ -592,14 +597,14 @@ export default function CollabAlbumPage() {
                   <div className="flex-1 min-w-0">
                     <p className="font-bold text-slate-800 text-sm truncate">
                       {member.email ?? `${member.user_id.slice(0, 8)}...`}
-                      {isMe && <span className="text-blue-400 font-normal ml-1">(me)</span>}
+                      {isMe && <span className="text-blue-400 font-normal ml-1">{t("(me)")}</span>}
                     </p>
                     <p className="text-[11px] text-slate-400">
-                      Joined {new Date(member.joined_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+                      {t("Joined {date}", { date: new Date(member.joined_at).toLocaleDateString(localeOf(lang), { year: "numeric", month: "short", day: "numeric" }) })}
                     </p>
                   </div>
                   <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full flex-shrink-0 ${ROLE_COLORS[member.role] ?? ""}`}>
-                    {member.role}
+                    {t(member.role)}
                   </span>
                   {canRemove && (
                     <button onClick={() => handleRemoveMember(member.user_id)}

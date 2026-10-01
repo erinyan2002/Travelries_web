@@ -9,6 +9,7 @@ import SectionTabs from "@/components/SectionTabs";
 import FaceAnalysisSettings from "@/components/FaceAnalysisSettings";
 import PhotoDataSettings from "@/components/PhotoDataSettings";
 import { supabase, getSessionUser } from "@/lib/supabase";
+import { msg, useLang, localeOf, Lang } from "@/lib/i18n";
 
 type Profile = { id: string; name: string; created_at: string; avatar_url?: string | null };
 
@@ -31,12 +32,13 @@ function initials(name: string) {
   return name.split(" ").map((w) => w[0]?.toUpperCase() ?? "").slice(0, 2).join("");
 }
 
-function formatDate(ts: string) {
-  return new Date(ts).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+function formatDate(ts: string, lang: Lang) {
+  return new Date(ts).toLocaleDateString(localeOf(lang), { year: "numeric", month: "long", day: "numeric" });
 }
 
 export default function ProfilePage() {
   const router = useRouter();
+  const { t, lang } = useLang();
 
   const [email,   setEmail]   = useState("");
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -92,7 +94,7 @@ export default function ProfilePage() {
 
   async function saveName() {
     const trimmed = draftName.trim();
-    if (!trimmed) { setNameMsg({ type: "err", text: "Name cannot be empty." }); return; }
+    if (!trimmed) { setNameMsg({ type: "err", text: msg("Name cannot be empty.") }); return; }
 
     const { data: { user } } = await getSessionUser();
     if (!user) return;
@@ -102,22 +104,22 @@ export default function ProfilePage() {
 
     setProfile((p) => p ? { ...p, name: trimmed } : p);
     setEditingName(false);
-    setNameMsg({ type: "ok", text: "Name updated!" });
+    setNameMsg({ type: "ok", text: msg("Name updated!") });
     setTimeout(() => setNameMsg(null), 3000);
   }
 
   async function savePassword() {
     setPwMsg(null);
-    if (!oldPw || !newPw || !confirmPw) { setPwMsg({ type: "err", text: "Please fill in all fields." }); return; }
-    if (newPw.length < 6)               { setPwMsg({ type: "err", text: "New password must be at least 6 characters." }); return; }
-    if (newPw !== confirmPw)            { setPwMsg({ type: "err", text: "New passwords do not match." }); return; }
+    if (!oldPw || !newPw || !confirmPw) { setPwMsg({ type: "err", text: msg("Please fill in all fields.") }); return; }
+    if (newPw.length < 6)               { setPwMsg({ type: "err", text: msg("New password must be at least 6 characters.") }); return; }
+    if (newPw !== confirmPw)            { setPwMsg({ type: "err", text: msg("New passwords do not match.") }); return; }
 
     setPwLoading(true);
 
     // Validate current password by re-authenticating
     const { error: signInError } = await supabase.auth.signInWithPassword({ email, password: oldPw });
     if (signInError) {
-      setPwMsg({ type: "err", text: "Current password is incorrect." });
+      setPwMsg({ type: "err", text: msg("Current password is incorrect.") });
       setPwLoading(false);
       return;
     }
@@ -130,7 +132,7 @@ export default function ProfilePage() {
     } else {
       setOldPw(""); setNewPw(""); setConfirmPw("");
       setShowPwSection(false);
-      setPwMsg({ type: "ok", text: "Password changed successfully!" });
+      setPwMsg({ type: "ok", text: msg("Password changed successfully!") });
       setTimeout(() => setPwMsg(null), 3000);
     }
   }
@@ -164,7 +166,7 @@ export default function ProfilePage() {
 
       setProfile((p) => p ? { ...p, avatar_url: publicUrl } : p);
     } catch (err) {
-      setAvatarMsg(err instanceof Error ? err.message : "Failed to upload photo.");
+      setAvatarMsg(err instanceof Error ? err.message : msg("Failed to upload photo."));
     } finally {
       setAvatarUploading(false);
     }
@@ -209,20 +211,20 @@ export default function ProfilePage() {
           <div className="min-w-0">
             <p className="text-lg font-bold text-slate-900 truncate">{displayName}</p>
             <p className="text-sm text-slate-500 truncate">{email}</p>
-            {avatarMsg && <p className="text-xs text-red-500 font-medium mt-1">{avatarMsg}</p>}
+            {avatarMsg && <p className="text-xs text-red-500 font-medium mt-1">{t(avatarMsg)}</p>}
           </div>
         </div>
 
         {/* Account info */}
         <div className="tv-card overflow-hidden">
           <p className="px-6 py-3 text-xs font-bold uppercase tracking-widest text-slate-400 border-b border-slate-100">
-            Account Details
+            {t("Account Details")}
           </p>
 
           {/* Name row */}
           <div className="px-6 py-4 border-b border-slate-100">
             <div className="flex items-center gap-2 text-slate-400 text-xs font-semibold mb-1">
-              <User size={13} /> FULL NAME
+              <User size={13} /> {t("FULL NAME")}
             </div>
             {editingName ? (
               <div className="flex gap-2 mt-1">
@@ -254,7 +256,7 @@ export default function ProfilePage() {
             {nameMsg && (
               <p className={`text-xs mt-1 font-medium flex items-center gap-1 ${nameMsg.type === "ok" ? "text-emerald-600" : "text-red-500"}`}>
                 {nameMsg.type === "ok" ? <CheckCircle2 size={12} /> : <AlertCircle size={12} />}
-                {nameMsg.text}
+                {t(nameMsg.text)}
               </p>
             )}
           </div>
@@ -262,7 +264,7 @@ export default function ProfilePage() {
           {/* Email row */}
           <div className="px-6 py-4 border-b border-slate-100">
             <div className="flex items-center gap-2 text-slate-400 text-xs font-semibold mb-1">
-              <Mail size={13} /> EMAIL
+              <Mail size={13} /> {t("EMAIL")}
             </div>
             <p className="text-sm font-semibold text-slate-800">{email}</p>
           </div>
@@ -270,9 +272,9 @@ export default function ProfilePage() {
           {/* Member since */}
           <div className="px-6 py-4">
             <div className="flex items-center gap-2 text-slate-400 text-xs font-semibold mb-1">
-              <CalendarDays size={13} /> MEMBER SINCE
+              <CalendarDays size={13} /> {t("MEMBER SINCE")}
             </div>
-            <p className="text-sm font-semibold text-slate-800">{formatDate(profile.created_at)}</p>
+            <p className="text-sm font-semibold text-slate-800">{formatDate(profile.created_at, lang)}</p>
           </div>
         </div>
 
@@ -284,21 +286,21 @@ export default function ProfilePage() {
           >
             <div className="flex items-center gap-3">
               <KeyRound size={18} className="text-slate-500" />
-              <span className="text-sm font-bold text-slate-800">Change Password</span>
+              <span className="text-sm font-bold text-slate-800">{t("Change Password")}</span>
             </div>
-            <span className="text-xs text-blue-600 font-semibold">{showPwSection ? "Cancel" : "Update"}</span>
+            <span className="text-xs text-blue-600 font-semibold">{showPwSection ? t("Cancel") : t("Update")}</span>
           </button>
 
           {showPwSection && (
             <div className="px-6 pb-5 space-y-3 border-t border-slate-100 pt-4">
-              {(["Current password", "New password", "Confirm new password"] as const).map((label, idx) => {
+              {([msg("Current password"), msg("New password"), msg("Confirm new password")] as const).map((label, idx) => {
                 const val     = [oldPw, newPw, confirmPw][idx];
                 const setter  = [setOldPw, setNewPw, setConfirmPw][idx];
                 const show    = [showOld, showNew, showConfirm][idx];
                 const toggler = [() => setShowOld((v) => !v), () => setShowNew((v) => !v), () => setShowConfirm((v) => !v)][idx];
                 return (
                   <div key={label}>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">{label}</label>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">{t(label)}</label>
                     <div className="relative">
                       <input
                         type={show ? "text" : "password"} value={val}
@@ -318,7 +320,7 @@ export default function ProfilePage() {
               {pwMsg && (
                 <p className={`text-xs font-medium flex items-center gap-1 ${pwMsg.type === "ok" ? "text-emerald-600" : "text-red-500"}`}>
                   {pwMsg.type === "ok" ? <CheckCircle2 size={12} /> : <AlertCircle size={12} />}
-                  {pwMsg.text}
+                  {t(pwMsg.text)}
                 </p>
               )}
 
@@ -328,7 +330,7 @@ export default function ProfilePage() {
                   pwLoading ? "bg-blue-300 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
                 }`}
               >
-                {pwLoading ? "Saving…" : "Save new password"}
+                {pwLoading ? t("Saving…") : t("Save new password")}
               </button>
             </div>
           )}
@@ -336,7 +338,7 @@ export default function ProfilePage() {
 
         {pwMsg && !showPwSection && (
           <div className="flex items-center gap-2 text-emerald-600 text-sm font-semibold">
-            <CheckCircle2 size={16} /> {pwMsg.text}
+            <CheckCircle2 size={16} /> {t(pwMsg.text)}
           </div>
         )}
 
@@ -348,7 +350,7 @@ export default function ProfilePage() {
           onClick={handleLogout}
           className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border-2 border-red-200 text-red-500 font-bold text-sm hover:bg-red-50 transition-colors"
         >
-          <LogOut size={16} /> Sign out
+          <LogOut size={16} /> {t("Sign out")}
         </button>
 
       </div>

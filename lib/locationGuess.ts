@@ -24,10 +24,13 @@ export function guessLocationByTime(
   return best;
 }
 
-export function describeGap(ms: number): string {
+type Translate = (en: string, vars?: Record<string, string | number>) => string;
+const english: Translate = (en, vars) => en.replace(/\{(\w+)\}/g, (m, k) => (vars && k in vars ? String(vars[k]) : m));
+
+/** `t` is the UI translator (useLang().t); English without it. */
+export function describeGap(ms: number, t: Translate = english): string {
   const min = Math.round(ms / 60000);
-  if (min < 1) return "at the same time";
-  if (min < 60) return `${min} min apart`;
-  const h = Math.round(min / 6) / 10;
-  return `${h} h apart`;
+  if (min < 1) return t("at the same time");
+  if (min < 60) return t("{n} min apart", { n: min });
+  return t("{n} h apart", { n: Math.round(min / 6) / 10 });
 }

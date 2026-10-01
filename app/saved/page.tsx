@@ -8,6 +8,7 @@ import { saveImage, prefetchImage } from "@/lib/saveImage";
 import { getSavedIds, toggleSaved } from "@/lib/savedUtils";
 import { fetchMapPhotos } from "@/lib/photosApi";
 import { Star, Download, X, MapPin, BookmarkX } from "lucide-react";
+import { useLang } from "@/lib/i18n";
 
 function InfoChip({ label, value }: { label: string; value: string }) {
   return (
@@ -22,6 +23,7 @@ function PhotoModal({ photo, onClose, onRemove, onDownload }: {
   photo: MapPhoto; onClose: () => void;
   onRemove: (id: string) => void; onDownload: (photo: MapPhoto) => void;
 }) {
+  const { t } = useLang();
   // Ready for Download: the phone share sheet must open right after the tap.
   useEffect(() => { prefetchImage(photo.imageUrl).catch(() => {}); }, [photo.imageUrl]);
   return (
@@ -31,7 +33,7 @@ function PhotoModal({ photo, onClose, onRemove, onDownload }: {
           <div className="min-w-0">
             <p className="font-bold text-slate-900 text-sm truncate">{photo.fileName}</p>
             <p className="text-xs text-slate-400 mt-0.5">
-              {photo.location?.split(",")[0] || "Unknown location"} · {photo.captureDate || photo.uploadedAt || ""}
+              {photo.location?.split(",")[0] || t("Unknown location")} · {t(photo.captureDate || photo.uploadedAt || "")}
             </p>
           </div>
           <button onClick={onClose} className="ml-4 text-slate-400 hover:text-slate-700 transition-colors p-1"><X size={20} /></button>
@@ -39,18 +41,18 @@ function PhotoModal({ photo, onClose, onRemove, onDownload }: {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={photo.imageUrl} alt={photo.fileName} className="w-full max-h-[420px] object-contain bg-slate-100" />
         <div className="p-4 grid grid-cols-2 gap-2">
-          {photo.captureDate && photo.captureDate !== "Not available" && <InfoChip label="Taken" value={photo.captureDate} />}
-          {photo.location && <div className="col-span-2"><InfoChip label="Location" value={photo.location} /></div>}
-          <InfoChip label="AI label" value={(photo.faceCount ?? 0) > 0 ? `With people (${photo.faceCount})` : "Scenery"} />
+          {photo.captureDate && photo.captureDate !== "Not available" && <InfoChip label={t("Taken")} value={photo.captureDate} />}
+          {photo.location && <div className="col-span-2"><InfoChip label={t("Location")} value={photo.location} /></div>}
+          <InfoChip label={t("AI label")} value={(photo.faceCount ?? 0) > 0 ? t("With people ({n})", { n: photo.faceCount ?? 0 }) : t("Scenery")} />
         </div>
         <div className="flex gap-2 px-4 py-3 border-t border-slate-100">
           <button onClick={() => onDownload(photo)}
             className="flex-1 flex items-center justify-center gap-2 bg-slate-900 text-white py-2.5 rounded-xl text-sm font-bold hover:bg-slate-700 transition-colors">
-            <Download size={15} /> Download
+            <Download size={15} /> {t("Download")}
           </button>
           <button onClick={() => { onRemove(photo.id); onClose(); }}
             className="flex-1 flex items-center justify-center gap-2 bg-amber-100 text-amber-800 py-2.5 rounded-xl text-sm font-bold hover:bg-amber-200 transition-colors">
-            <BookmarkX size={15} /> Unsave
+            <BookmarkX size={15} /> {t("Unsave")}
           </button>
         </div>
       </div>
@@ -59,6 +61,7 @@ function PhotoModal({ photo, onClose, onRemove, onDownload }: {
 }
 
 export default function SavedPage() {
+  const { t } = useLang();
   const [saved,         setSaved]         = useState<MapPhoto[]>([]);
   const [loading,       setLoading]       = useState(true);
   const [selectedPhoto, setSelectedPhoto] = useState<MapPhoto | null>(null);
@@ -107,12 +110,12 @@ export default function SavedPage() {
             <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <Star size={28} className="text-blue-300" />
             </div>
-            <p className="font-bold text-slate-700 mb-1">No saved photos</p>
-            <p className="text-slate-400 text-sm">Tap the ★ button on any photo in Albums to save it here.</p>
+            <p className="font-bold text-slate-700 mb-1">{t("No saved photos")}</p>
+            <p className="text-slate-400 text-sm">{t("Tap the ★ button on any photo in Albums to save it here.")}</p>
           </div>
         ) : (
           <>
-            <p className="text-sm text-slate-400 mb-4"><strong className="text-slate-600">{saved.length}</strong> saved</p>
+            <p className="text-sm text-slate-400 mb-4">{t("{n} saved", { n: saved.length })}</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
               {saved.map((photo) => (
                 <div key={photo.id} onClick={() => setSelectedPhoto(photo)}
@@ -128,16 +131,16 @@ export default function SavedPage() {
                   <div className="p-2.5">
                     <p className="font-bold text-slate-800 text-xs truncate">{photo.fileName}</p>
                     <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1 truncate">
-                      <MapPin size={9} />{photo.location?.split(",")[0] || "No location"}
+                      <MapPin size={9} />{photo.location?.split(",")[0] || t("No location")}
                     </p>
                     <div className="flex gap-1.5 mt-2">
                       <button onClick={(e) => { e.stopPropagation(); handleDownload(photo); }}
                         className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">
-                        <Download size={10} /> Download
+                        <Download size={10} /> {t("Download")}
                       </button>
                       <button onClick={(e) => { e.stopPropagation(); handleRemove(photo.id); }}
                         className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[10px] font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors">
-                        <Star size={10} /> Unsave
+                        <Star size={10} /> {t("Unsave")}
                       </button>
                     </div>
                   </div>

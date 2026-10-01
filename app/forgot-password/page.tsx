@@ -7,8 +7,10 @@ import { AlertCircle, CheckCircle2, Mail, ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import AppLogo from "@/components/AppLogo";
 import AuthBackdrop from "@/components/AuthBackdrop";
+import { msg, useLang } from "@/lib/i18n";
 
 export default function ForgotPasswordPage() {
+  const { t } = useLang();
   const [email,   setEmail]   = useState("");
   const [loading, setLoading] = useState(false);
   const [sent,    setSent]    = useState(false);
@@ -19,7 +21,7 @@ export default function ForgotPasswordPage() {
     setError("");
 
     if (!email.trim()) {
-      setError("Please enter your email address.");
+      setError(msg("Please enter your email address."));
       return;
     }
 
@@ -58,7 +60,7 @@ export default function ForgotPasswordPage() {
           <h1 className="text-3xl font-black tracking-tight text-slate-900 mb-1">
             Travel<span className="bg-gradient-to-r from-blue-600 to-indigo-500 bg-clip-text text-transparent">ries</span>
           </h1>
-          <p className="text-slate-500 text-sm">Reset your password</p>
+          <p className="text-slate-500 text-sm">{t("Reset your password")}</p>
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xl p-8">
@@ -79,26 +81,26 @@ export default function ForgotPasswordPage() {
               >
                 <CheckCircle2 size={28} className="text-emerald-600" />
               </motion.div>
-              <h2 className="text-lg font-extrabold text-slate-900 mb-2">Check your inbox</h2>
+              <h2 className="text-lg font-extrabold text-slate-900 mb-2">{t("Check your inbox")}</h2>
               <p className="text-sm text-slate-500 mb-1">
-                We sent a password reset link to
+                {t("We sent a password reset link to")}
               </p>
               <p className="text-sm font-semibold text-slate-800 mb-6">{email}</p>
               <p className="text-xs text-slate-400 mb-6">
-                Didn&apos;t get it? Check your spam folder, or{" "}
+                {t("Didn't get it? Check your spam folder, or")}{" "}
                 <button
                   onClick={() => setSent(false)}
                   className="text-blue-600 font-semibold hover:underline"
                 >
-                  try again
+                  {t("try again")}
                 </button>
-                .
+                {t(".")}
               </p>
               <Link
                 href="/login"
                 className="inline-flex items-center gap-2 text-sm font-semibold text-blue-600 hover:text-blue-700 transition-colors"
               >
-                <ArrowLeft size={15} /> Back to sign in
+                <ArrowLeft size={15} /> {t("Back to sign in")}
               </Link>
             </motion.div>
           ) : (
@@ -110,10 +112,10 @@ export default function ForgotPasswordPage() {
               onSubmit={handleSubmit} noValidate className="space-y-5">
               <div>
                 <p className="text-sm text-slate-500 mb-5">
-                  Enter the email address you used to sign up and we&apos;ll send you a link to reset your password.
+                  {t("Enter the email address you used to sign up and we'll send you a link to reset your password.")}
                 </p>
                 <label htmlFor="email" className="block text-sm font-semibold text-slate-700 mb-2">
-                  Email address
+                  {t("Email address")}
                 </label>
                 <input
                   id="email" type="email" value={email}
@@ -126,7 +128,7 @@ export default function ForgotPasswordPage() {
               {error && (
                 <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-700 text-sm font-medium">
                   <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
-                  {error}
+                  {t(error)}
                 </div>
               )}
 
@@ -139,13 +141,13 @@ export default function ForgotPasswordPage() {
                 }`}
               >
                 <Mail size={16} />
-                {loading ? "Sending…" : "Send reset link"}
+                {loading ? t("Sending…") : t("Send reset link")}
               </motion.button>
 
               <p className="text-center text-sm text-slate-500">
-                Remember your password?{" "}
+                {t("Remember your password?")}{" "}
                 <Link href="/login" className="font-semibold text-blue-600 hover:text-blue-700 transition-colors">
-                  Sign in
+                  {t("Sign in")}
                 </Link>
               </p>
             </motion.form>
@@ -154,7 +156,7 @@ export default function ForgotPasswordPage() {
         </div>
 
         <p className="text-center mt-5 text-xs text-slate-400">
-          Travelries · Photo Map &amp; Face Detection
+          {t("Travelries · Photo Map & Face Detection")}
         </p>
       </motion.div>
     </AuthBackdrop>

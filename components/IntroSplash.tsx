@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Aperture, Plane } from "lucide-react";
+import { useLang } from "@/lib/i18n";
 
 // Brand intro shown once per browser session. It is server-rendered visible so the
 // app never flashes underneath it; an inline script in app/layout.tsx marks
@@ -12,6 +13,7 @@ const SEEN_KEY = "tv-intro-seen";
 const DURATION_MS = 1900;
 
 export default function IntroSplash() {
+  const { t } = useLang();
   const [show, setShow] = useState(true);
 
   useEffect(() => {
@@ -96,7 +98,7 @@ export default function IntroSplash() {
             transition={{ delay: 1.05, duration: 0.4 }}
             className="mt-1 text-sm font-medium text-sky-700/80"
           >
-            Every photo, a place to remember
+            {t("Every photo, a place to remember")}
           </motion.p>
         </motion.div>
       )}

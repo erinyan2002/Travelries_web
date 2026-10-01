@@ -6,6 +6,7 @@ import { Link2, Loader2, Search, Send, X, Check } from "lucide-react";
 import Avatar from "@/components/Avatar";
 import { fetchFollowingProfiles, sharePostToUser, Profile, Post } from "@/lib/socialUtils";
 import { sharePhoto } from "@/lib/shareUtils";
+import { msg, useLang } from "@/lib/i18n";
 
 // Instagram-style "Send" sheet for a feed post: an in-app list of people you
 // follow (each send delivers a `post_shared` notification, no OS share sheet
@@ -13,6 +14,7 @@ import { sharePhoto } from "@/lib/shareUtils";
 // /share/[id] link generation — kept because that link works for people who
 // don't follow you too, unlike an in-app send.
 export default function ShareToModal({ post, uid, onClose }: { post: Post; uid: string; onClose: () => void }) {
+  const { t } = useLang();
   const [profiles, setProfiles] = useState<Profile[] | null>(null);
   const [query, setQuery] = useState("");
   const [sentIds, setSentIds] = useState<Set<string>>(new Set());
@@ -27,7 +29,7 @@ export default function ShareToModal({ post, uid, onClose }: { post: Post; uid: 
   }, [uid]);
 
   const filtered = (profiles ?? []).filter((p) =>
-    (p.name || "Traveler").toLowerCase().includes(query.trim().toLowerCase())
+    (p.name || t("Traveler")).toLowerCase().includes(query.trim().toLowerCase())
   );
 
   async function handleSend(targetId: string) {
@@ -38,7 +40,7 @@ export default function ShareToModal({ post, uid, onClose }: { post: Post; uid: 
       setSentIds((prev) => new Set(prev).add(targetId));
     } catch (err) {
       console.error("Share failed:", err);
-      setSendError(err instanceof Error ? err.message : "Failed to send. Please try again.");
+      setSendError(err instanceof Error ? err.message : msg("Failed to send. Please try again."));
     } finally {
       setSendingId(null);
     }
@@ -61,7 +63,7 @@ export default function ShareToModal({ post, uid, onClose }: { post: Post; uid: 
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       console.error("Copy link failed:", err);
-      setCopyError(err instanceof Error ? err.message : "Failed to create link. Please try again.");
+      setCopyError(err instanceof Error ? err.message : msg("Failed to create link. Please try again."));
     } finally {
       setCopying(false);
     }
@@ -84,7 +86,7 @@ export default function ShareToModal({ post, uid, onClose }: { post: Post; uid: 
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
-          <h2 className="font-bold text-slate-800">Share</h2>
+          <h2 className="font-bold text-slate-800">{t("Share")}</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors p-1">
             <X size={18} />
           </button>
@@ -96,7 +98,7 @@ export default function ShareToModal({ post, uid, onClose }: { post: Post; uid: 
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search people you follow..."
+              placeholder={t("Search people you follow...")}
               className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
             />
           </div>
@@ -104,7 +106,7 @@ export default function ShareToModal({ post, uid, onClose }: { post: Post; uid: 
 
         {sendError && (
           <p className="mx-5 mb-2 text-xs font-semibold text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
-            {sendError}
+            {t(sendError)}
           </p>
         )}
 
@@ -115,15 +117,15 @@ export default function ShareToModal({ post, uid, onClose }: { post: Post; uid: 
             </div>
           ) : filtered.length === 0 ? (
             <p className="text-center text-slate-400 text-sm py-10 px-5">
-              {profiles.length === 0 ? "Follow people to send them posts directly." : "No one found."}
+              {profiles.length === 0 ? t("Follow people to send them posts directly.") : t("No one found.")}
             </p>
           ) : (
             filtered.map((p) => {
               const sent = sentIds.has(p.id);
               return (
                 <div key={p.id} className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-50">
-                  <Avatar name={p.name || "Traveler"} url={p.avatar_url} />
-                  <p className="text-sm font-semibold text-slate-800 flex-1 min-w-0 truncate">{p.name || "Traveler"}</p>
+                  <Avatar name={p.name || t("Traveler")} url={p.avatar_url} />
+                  <p className="text-sm font-semibold text-slate-800 flex-1 min-w-0 truncate">{p.name || t("Traveler")}</p>
                   <motion.button
                     whileTap={{ scale: 0.92 }}
                     onClick={() => handleSend(p.id)}
@@ -135,9 +137,9 @@ export default function ShareToModal({ post, uid, onClose }: { post: Post; uid: 
                     {sendingId === p.id ? (
                       <Loader2 size={12} className="animate-spin" />
                     ) : sent ? (
-                      <><Check size={12} /> Sent</>
+                      <><Check size={12} /> {t("Sent")}</>
                     ) : (
-                      <><Send size={12} /> Send</>
+                      <><Send size={12} /> {t("Send")}</>
                     )}
                   </motion.button>
                 </div>
@@ -149,7 +151,7 @@ export default function ShareToModal({ post, uid, onClose }: { post: Post; uid: 
         <div className="p-3 border-t border-slate-100">
           {copyError && (
             <p className="mb-2 text-xs font-semibold text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
-              {copyError}
+              {t(copyError)}
             </p>
           )}
           <motion.button
@@ -161,15 +163,15 @@ export default function ShareToModal({ post, uid, onClose }: { post: Post; uid: 
             <AnimatePresence mode="wait" initial={false}>
               {copying ? (
                 <motion.span key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-2">
-                  <Loader2 size={16} className="animate-spin" /> Creating link...
+                  <Loader2 size={16} className="animate-spin" /> {t("Creating link...")}
                 </motion.span>
               ) : copied ? (
                 <motion.span key="copied" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-2 text-emerald-600">
-                  <Check size={16} /> Link copied!
+                  <Check size={16} /> {t("Link copied!")}
                 </motion.span>
               ) : (
                 <motion.span key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-2">
-                  <Link2 size={16} /> Copy Link
+                  <Link2 size={16} /> {t("Copy Link")}
                 </motion.span>
               )}
             </AnimatePresence>

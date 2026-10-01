@@ -8,11 +8,13 @@ import { Eye, EyeOff, AlertCircle, CheckCircle2, KeyRound, ArrowLeft } from "luc
 import { supabase } from "@/lib/supabase";
 import AppLogo from "@/components/AppLogo";
 import AuthBackdrop from "@/components/AuthBackdrop";
+import { msg, useLang } from "@/lib/i18n";
 
 type Stage = "waiting" | "form" | "success" | "invalid";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
+  const { t } = useLang();
   const [stage,           setStage]           = useState<Stage>("waiting");
   const [password,        setPassword]        = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -79,11 +81,11 @@ export default function ResetPasswordPage() {
     setError("");
 
     if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
+      setError(msg("Password must be at least 6 characters."));
       return;
     }
     if (password !== confirmPassword) {
-      setError("Passwords do not match.");
+      setError(msg("Passwords do not match."));
       return;
     }
 
@@ -121,7 +123,7 @@ export default function ResetPasswordPage() {
           <h1 className="text-3xl font-black tracking-tight text-slate-900 mb-1">
             Travel<span className="bg-gradient-to-r from-blue-600 to-indigo-500 bg-clip-text text-transparent">ries</span>
           </h1>
-          <p className="text-slate-500 text-sm">Set a new password</p>
+          <p className="text-slate-500 text-sm">{t("Set a new password")}</p>
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xl p-8">
@@ -131,7 +133,7 @@ export default function ResetPasswordPage() {
           {stage === "waiting" && (
             <motion.div key="waiting" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-center py-6">
               <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4" />
-              <p className="text-sm text-slate-500">Verifying your reset link…</p>
+              <p className="text-sm text-slate-500">{t("Verifying your reset link…")}</p>
             </motion.div>
           )}
 
@@ -141,19 +143,19 @@ export default function ResetPasswordPage() {
               <div className="w-14 h-14 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
                 <AlertCircle size={28} className="text-red-500" />
               </div>
-              <h2 className="text-lg font-extrabold text-slate-900 mb-2">Link expired</h2>
+              <h2 className="text-lg font-extrabold text-slate-900 mb-2">{t("Link expired")}</h2>
               <p className="text-sm text-slate-500 mb-6">
-                This password reset link is invalid or has expired. Please request a new one.
+                {t("This password reset link is invalid or has expired. Please request a new one.")}
               </p>
               <Link
                 href="/forgot-password"
                 className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-sky-500 to-blue-600 text-white text-sm font-bold rounded-xl hover:from-sky-600 hover:to-blue-700 shadow-md shadow-blue-200/70 transition-all"
               >
-                Request new link
+                {t("Request new link")}
               </Link>
               <div className="mt-4">
                 <Link href="/login" className="text-sm font-semibold text-slate-500 hover:text-slate-700 transition-colors inline-flex items-center gap-1">
-                  <ArrowLeft size={14} /> Back to sign in
+                  <ArrowLeft size={14} /> {t("Back to sign in")}
                 </Link>
               </div>
             </motion.div>
@@ -163,12 +165,12 @@ export default function ResetPasswordPage() {
           {stage === "form" && (
             <motion.form key="form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onSubmit={handleSubmit} noValidate className="space-y-5">
               <p className="text-sm text-slate-500 mb-1">
-                Choose a strong password of at least 6 characters.
+                {t("Choose a strong password of at least 6 characters.")}
               </p>
 
               <div>
                 <label htmlFor="password" className="block text-sm font-semibold text-slate-700 mb-2">
-                  New password
+                  {t("New password")}
                 </label>
                 <div className="relative">
                   <input
@@ -180,7 +182,7 @@ export default function ResetPasswordPage() {
                   <button
                     type="button" onClick={() => setShowPassword((v) => !v)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors p-1"
-                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-label={showPassword ? t("Hide password") : t("Show password")}
                   >
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
@@ -189,7 +191,7 @@ export default function ResetPasswordPage() {
 
               <div>
                 <label htmlFor="confirm" className="block text-sm font-semibold text-slate-700 mb-2">
-                  Confirm new password
+                  {t("Confirm new password")}
                 </label>
                 <input
                   id="confirm" type={showPassword ? "text" : "password"} value={confirmPassword}
@@ -202,7 +204,7 @@ export default function ResetPasswordPage() {
               {error && (
                 <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-700 text-sm font-medium">
                   <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
-                  {error}
+                  {t(error)}
                 </div>
               )}
 
@@ -215,7 +217,7 @@ export default function ResetPasswordPage() {
                 }`}
               >
                 <KeyRound size={16} />
-                {loading ? "Saving…" : "Set new password"}
+                {loading ? t("Saving…") : t("Set new password")}
               </motion.button>
             </motion.form>
           )}
@@ -231,15 +233,15 @@ export default function ResetPasswordPage() {
               >
                 <CheckCircle2 size={28} className="text-emerald-600" />
               </motion.div>
-              <h2 className="text-lg font-extrabold text-slate-900 mb-2">Password updated!</h2>
+              <h2 className="text-lg font-extrabold text-slate-900 mb-2">{t("Password updated!")}</h2>
               <p className="text-sm text-slate-500 mb-6">
-                Your password has been changed. Redirecting you to sign in…
+                {t("Your password has been changed. Redirecting you to sign in…")}
               </p>
               <Link
                 href="/login"
                 className="inline-flex items-center gap-2 text-sm font-semibold text-blue-600 hover:text-blue-700 transition-colors"
               >
-                <ArrowLeft size={15} /> Go to sign in
+                <ArrowLeft size={15} /> {t("Go to sign in")}
               </Link>
             </motion.div>
           )}
@@ -248,7 +250,7 @@ export default function ResetPasswordPage() {
         </div>
 
         <p className="text-center mt-5 text-xs text-slate-400">
-          Travelries · Photo Map &amp; Face Detection
+          {t("Travelries · Photo Map & Face Detection")}
         </p>
       </motion.div>
     </AuthBackdrop>

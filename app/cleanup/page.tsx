@@ -13,6 +13,7 @@ import {
   toGrayscale, dHash, laplacianVariance, groupSimilar, findBlurry,
 } from "@/lib/photoCleanup";
 import { Copy, Droplets, Trash2, Loader2, Check, CheckCircle2 } from "lucide-react";
+import { useLang } from "@/lib/i18n";
 
 function grayOf(img: HTMLImageElement, w: number, h: number): Float32Array {
   const canvas = document.createElement("canvas");
@@ -42,6 +43,7 @@ async function analyze(photo: MapPhoto): Promise<AnalyzedPhoto> {
 // Suggests near-duplicate and blurry photos to delete. Everything is analyzed in
 // the browser (lib/photoCleanup.ts); nothing is deleted without confirmation.
 export default function CleanupPage() {
+  const { t, tn } = useLang();
   const [photos,    setPhotos]    = useState<MapPhoto[]>([]);
   const [analyzed,  setAnalyzed]  = useState<AnalyzedPhoto[]>([]);
   const [progress,  setProgress]  = useState<{ done: number; total: number } | null>(null);
@@ -113,7 +115,7 @@ export default function CleanupPage() {
     setSelected((prev) => new Set([...prev].filter((id) => !removed.has(id))));
     setDeleting(false);
     setConfirm(false);
-    if (removed.size < selected.size) alert(`${selected.size - removed.size} photo(s) couldn't be deleted. Please try again.`);
+    if (removed.size < selected.size) alert(tn(selected.size - removed.size, "{n} photo couldn't be deleted. Please try again.", "{n} photos couldn't be deleted. Please try again."));
   }
 
   // A plain render function, not a nested component — a component defined in
@@ -128,7 +130,7 @@ export default function CleanupPage() {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={photo.imageUrl} alt={photo.fileName} className={`w-full h-28 object-cover ${isSel ? "opacity-60" : ""}`} />
         {best && !isSel && (
-          <span className="absolute top-1 left-1 text-[9px] font-bold bg-emerald-500 text-white px-1.5 py-0.5 rounded-full">Sharpest</span>
+          <span className="absolute top-1 left-1 text-[9px] font-bold bg-emerald-500 text-white px-1.5 py-0.5 rounded-full">{t("Sharpest")}</span>
         )}
         <span className={`absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center ${isSel ? "bg-red-500 text-white" : "bg-white/80 text-transparent"}`}>
           <Check size={12} />
@@ -142,14 +144,14 @@ export default function CleanupPage() {
     <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-40">
       <div className="max-w-5xl mx-auto">
         <SectionTabs section="albums" active="cleanup" />
-        <p className="text-sm text-slate-500 -mt-1 mb-4">Find near-duplicate and blurry photos to tidy up.</p>
+        <p className="text-sm text-slate-500 -mt-1 mb-4">{t("Find near-duplicate and blurry photos to tidy up.")}</p>
 
         {progress === null ? (
-          <p className="text-sm text-slate-400 text-center py-12 animate-pulse">Loading photos…</p>
+          <p className="text-sm text-slate-400 text-center py-12 animate-pulse">{t("Loading photos…")}</p>
         ) : analyzing ? (
           <div className="tv-card p-6 text-center">
             <Loader2 size={22} className="animate-spin text-blue-500 mx-auto mb-3" />
-            <p className="text-sm font-bold text-slate-700">Analyzing photos… {progress.done} / {progress.total}</p>
+            <p className="text-sm font-bold text-slate-700">{t("Analyzing photos… {done} / {total}", { done: progress.done, total: progress.total })}</p>
             <div className="h-2 bg-slate-100 rounded-full overflow-hidden mt-3">
               <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${Math.round((progress.done / Math.max(1, progress.total)) * 100)}%` }} />
             </div>
@@ -157,15 +159,15 @@ export default function CleanupPage() {
         ) : groups.length === 0 && blurry.length === 0 ? (
           <div className="tv-card p-8 text-center">
             <CheckCircle2 size={28} className="text-emerald-500 mx-auto mb-2" />
-            <p className="font-bold text-slate-700">All tidy!</p>
-            <p className="text-sm text-slate-400 mt-1">No near-duplicate or blurry photos found in {analyzed.length} photos.</p>
+            <p className="font-bold text-slate-700">{t("All tidy!")}</p>
+            <p className="text-sm text-slate-400 mt-1">{t("No near-duplicate or blurry photos found in {n} photos.", { n: analyzed.length })}</p>
           </div>
         ) : (
           <div className="space-y-6">
             {groups.length > 0 && (
               <section>
-                <h2 className="font-bold text-slate-800 flex items-center gap-2 mb-1"><Copy size={16} className="text-blue-500" /> Similar photos</h2>
-                <p className="text-xs text-slate-400 mb-3">{groups.length} group{groups.length !== 1 ? "s" : ""} of near-identical shots. The sharpest is kept; tap to change what gets deleted.</p>
+                <h2 className="font-bold text-slate-800 flex items-center gap-2 mb-1"><Copy size={16} className="text-blue-500" /> {t("Similar photos")}</h2>
+                <p className="text-xs text-slate-400 mb-3">{tn(groups.length, "{n} group of near-identical shots. The sharpest is kept; tap to change what gets deleted.", "{n} groups of near-identical shots. The sharpest is kept; tap to change what gets deleted.")}</p>
                 <div className="space-y-3">
                   {groups.map((g) => (
                     <div key={g[0].id} className="tv-card p-3 flex gap-2 overflow-x-auto">
@@ -177,8 +179,8 @@ export default function CleanupPage() {
             )}
             {blurry.length > 0 && (
               <section>
-                <h2 className="font-bold text-slate-800 flex items-center gap-2 mb-1"><Droplets size={16} className="text-blue-500" /> Possibly blurry</h2>
-                <p className="text-xs text-slate-400 mb-3">Low-detail photos: out of focus or shaken, or just a plain scene like sky or water. Check before deleting.</p>
+                <h2 className="font-bold text-slate-800 flex items-center gap-2 mb-1"><Droplets size={16} className="text-blue-500" /> {t("Possibly blurry")}</h2>
+                <p className="text-xs text-slate-400 mb-3">{t("Low-detail photos: out of focus or shaken, or just a plain scene like sky or water. Check before deleting.")}</p>
                 <div className="tv-card p-3 flex flex-wrap gap-2">
                   {blurry.map((a) => renderThumb(a))}
                 </div>
@@ -187,7 +189,7 @@ export default function CleanupPage() {
           </div>
         )}
         {failed > 0 && !analyzing && (
-          <p className="text-xs text-slate-400 text-center mt-4">{failed} photo(s) couldn&apos;t be analyzed and were skipped.</p>
+          <p className="text-xs text-slate-400 text-center mt-4">{tn(failed, "{n} photo couldn't be analyzed and was skipped.", "{n} photos couldn't be analyzed and were skipped.")}</p>
         )}
       </div>
 
@@ -195,7 +197,7 @@ export default function CleanupPage() {
         <div className="fixed bottom-24 left-0 right-0 flex justify-center px-4 z-40">
           <button onClick={() => setConfirm(true)}
             className="flex items-center gap-2 px-5 py-3 bg-red-500 hover:bg-red-600 text-white font-bold text-sm rounded-2xl shadow-lg shadow-red-200 transition-colors">
-            <Trash2 size={16} /> Delete {selected.size} photo{selected.size !== 1 ? "s" : ""}
+            <Trash2 size={16} /> {tn(selected.size, "Delete {n} photo", "Delete {n} photos")}
           </button>
         </div>
       )}
@@ -203,14 +205,14 @@ export default function CleanupPage() {
       {confirm && (
         <div className="fixed inset-0 tv-overlay z-[3000] flex items-center justify-center p-4" onClick={() => !deleting && setConfirm(false)}>
           <div className="tv-modal p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
-            <p className="font-bold text-slate-900 mb-1">Delete {selected.size} photo{selected.size !== 1 ? "s" : ""}?</p>
-            <p className="text-sm text-slate-500 mb-5">They&apos;ll be removed from your map, albums and faces. This can&apos;t be undone.</p>
+            <p className="font-bold text-slate-900 mb-1">{tn(selected.size, "Delete {n} photo?", "Delete {n} photos?")}</p>
+            <p className="text-sm text-slate-500 mb-5">{t("They'll be removed from your map, albums and faces. This can't be undone.")}</p>
             <div className="flex gap-2">
               <button onClick={() => setConfirm(false)} disabled={deleting}
-                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50 disabled:opacity-60">Cancel</button>
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50 disabled:opacity-60">{t("Cancel")}</button>
               <button onClick={handleDelete} disabled={deleting}
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-500 text-white font-bold text-sm hover:bg-red-600 disabled:opacity-60">
-                {deleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />} Delete
+                {deleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />} {t("Delete")}
               </button>
             </div>
           </div>

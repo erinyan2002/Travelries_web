@@ -12,6 +12,7 @@ import {
   subscribeToNotifications,
 } from "@/lib/notificationUtils";
 import { profilesByIds } from "@/lib/socialUtils";
+import { msg, useLang, localeOf } from "@/lib/i18n";
 
 const TYPE_ICON: Record<string, string> = {
   share_viewed:       "👁️",
@@ -28,12 +29,20 @@ const TYPE_ICON: Record<string, string> = {
 // Only these types carry a `from_user_id` (the person who acted) in their `data` —
 // share_viewed/collab_joined/collab_photo_added predate this and keep their static message.
 const ACTION_TEXT: Record<string, string> = {
-  post_liked:      "liked your post",
-  post_commented:  "commented on your post",
-  tagged_in_post:  "tagged you in a post",
-  comment_liked:   "liked your comment",
-  comment_replied: "replied to your comment",
-  post_shared:     "shared a post with you",
+  post_liked:      msg("liked your post"),
+  post_commented:  msg("commented on your post"),
+  tagged_in_post:  msg("tagged you in a post"),
+  comment_liked:   msg("liked your comment"),
+  comment_replied: msg("replied to your comment"),
+  post_shared:     msg("shared a post with you"),
+};
+
+// The older types store an English `message` written by their SQL functions;
+// in Korean they're shown with a generic line per type instead.
+const TYPE_TEXT: Record<string, string> = {
+  share_viewed:       msg("Someone viewed your shared photo"),
+  collab_joined:      msg("Someone joined your shared album"),
+  collab_photo_added: msg("A photo was added to your shared album"),
 };
 
 export default function NotificationBell() {
@@ -43,6 +52,7 @@ export default function NotificationBell() {
   const [actorNames, setActorNames] = useState<Record<string, string>>({});
   const [ring, setRing] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const { t, lang } = useLang();
 
   // Mounted once in the root layout, so it must follow auth changes: checking
   // only on mount left the bell missing after logging in (until a full reload)
@@ -96,6 +106,7 @@ export default function NotificationBell() {
   }, []);
 
   if (!userId) return null;
+  // xl+: one step down, under the language button (see LanguageToggle).
 
   const unread = notes.filter((n) => !n.read).length;
 
@@ -105,7 +116,7 @@ export default function NotificationBell() {
   }
 
   return (
-    <div ref={ref} className="fixed top-4 right-4 z-[2000]">
+    <div ref={ref} className="fixed top-4 xl:top-[68px] right-4 z-[2000]">
       {/* Bell button */}
       <motion.button
         whileTap={{ scale: 0.88 }}
@@ -149,10 +160,10 @@ export default function NotificationBell() {
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
             <div className="flex items-center gap-2">
               <Bell size={14} className="text-blue-600" />
-              <span className="font-bold text-slate-800 text-sm">Notifications</span>
+              <span className="font-bold text-slate-800 text-sm">{t("Notifications")}</span>
               {unread > 0 && (
                 <span className="text-[10px] font-bold bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">
-                  {unread} new
+                  {t("{n} new", { n: unread })}
                 </span>
               )}
             </div>
@@ -160,7 +171,7 @@ export default function NotificationBell() {
               {unread > 0 && (
                 <button onClick={handleMarkAll}
                   className="flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800 transition-colors">
-                  <CheckCheck size={12} /> All read
+                  <CheckCheck size={12} /> {t("All read")}
                 </button>
               )}
               <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-600 p-0.5">
@@ -174,7 +185,7 @@ export default function NotificationBell() {
             {notes.length === 0 ? (
               <div className="py-12 text-center">
                 <Bell size={28} className="text-slate-200 mx-auto mb-2" />
-                <p className="text-slate-400 text-xs">No notifications yet</p>
+                <p className="text-slate-400 text-xs">{t("No notifications yet")}</p>
               </div>
             ) : (
               notes.map((n) => (
@@ -193,21 +204,21 @@ export default function NotificationBell() {
                           return (
                             <>
                               <Link href={`/u/${fromUserId}`} onClick={() => setOpen(false)} className="font-bold hover:underline">
-                                {actorNames[fromUserId] ?? "Someone"}
+                                {actorNames[fromUserId] ?? t("Someone")}
                               </Link>{" "}
                               {postId ? (
                                 <Link href={`/post/${postId}`} onClick={() => setOpen(false)} className="hover:underline">
-                                  {actionText}
+                                  {t(actionText)}
                                 </Link>
-                              ) : actionText}
+                              ) : t(actionText)}
                             </>
                           );
                         }
-                        return n.message;
+                        return lang === "ko" && TYPE_TEXT[n.type] ? t(TYPE_TEXT[n.type]) : n.message;
                       })()}
                     </p>
                     <p className="text-[10px] text-slate-400 mt-0.5">
-                      {new Date(n.created_at).toLocaleString()}
+                      {new Date(n.created_at).toLocaleString(localeOf(lang))}
                     </p>
                   </div>
                   {!n.read && (

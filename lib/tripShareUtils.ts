@@ -2,7 +2,8 @@
 // supabase/migrations/0013_trip_shares.sql for the snapshot model.
 import { supabase, getSessionUser } from "./supabase";
 import { Trip, getPhotoDate } from "./trips";
-import { summarizeTrip, formatTripDates } from "./tripMemory";
+import { summarizeTrip, formatTripDates, tripTitle } from "./tripMemory";
+import { translate, currentLang } from "./i18n";
 
 export type TripSharePhoto = {
   imageUrl: string;
@@ -57,8 +58,9 @@ export async function createTripShare(trip: Trip, diary: string | null): Promise
     .from("trip_shares")
     .insert({
       user_id: user.id,
-      title: memory.title,
-      date_range: formatTripDates(memory.start, memory.end),
+      // A snapshot, in the sharer's UI language.
+      title: tripTitle(memory, (en, vars) => translate(currentLang(), en, vars)),
+      date_range: formatTripDates(memory.start, memory.end, currentLang()),
       locations: trip.locations,
       diary,
       photos,

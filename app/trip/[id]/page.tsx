@@ -7,6 +7,7 @@ import Link from "next/link";
 import { MapPin, CalendarDays, Images, Sparkles, X } from "lucide-react";
 import AppLogo from "@/components/AppLogo";
 import { getTripShare, TripShare, TripSharePhoto } from "@/lib/tripShareUtils";
+import { useLang } from "@/lib/i18n";
 
 const TripRouteMap = dynamic(() => import("@/components/TripRouteMap"), {
   ssr: false,
@@ -17,6 +18,7 @@ const TripRouteMap = dynamic(() => import("@/components/TripRouteMap"), {
 // AI diary if one had been generated, and every photo in order.
 export default function TripSharePage() {
   const { id } = useParams<{ id: string }>();
+  const { t, tn } = useLang();
   const [share, setShare] = useState<TripShare | null | undefined>(undefined);
   const [open, setOpen] = useState<TripSharePhoto | null>(null);
 
@@ -27,7 +29,7 @@ export default function TripSharePage() {
   if (share === undefined) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-slate-400 text-sm animate-pulse">Loading...</div>
+        <div className="text-slate-400 text-sm animate-pulse">{t("Loading...")}</div>
       </div>
     );
   }
@@ -39,17 +41,20 @@ export default function TripSharePage() {
           <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4 opacity-40">
             <AppLogo size="lg" />
           </div>
-          <p className="font-bold text-slate-700 mb-1">Trip not found</p>
-          <p className="text-slate-400 text-sm mb-4">This link may have expired or been removed.</p>
+          <p className="font-bold text-slate-700 mb-1">{t("Trip not found")}</p>
+          <p className="text-slate-400 text-sm mb-4">{t("This link may have expired or been removed.")}</p>
           <Link href="/"
             className="inline-block px-4 py-2 bg-gradient-to-r from-sky-500 to-blue-600 text-white text-sm font-bold rounded-xl hover:bg-gradient-to-r from-sky-500 to-blue-600 transition-all">
-            Open Travelries
+            {t("Open Travelries")}
           </Link>
         </div>
       </div>
     );
   }
 
+  // Titles were saved in the sharer's language; an English "Sokcho Trip" reads "Sokcho 여행" in Korean.
+  const city = share.title.match(/^(.*) Trip$/)?.[1];
+  const title = city ? t("{city} Trip", { city }) : share.title;
   const points = share.photos
     .filter((p) => p.lat != null && p.lng != null)
     .map((p) => ({ lat: p.lat!, lng: p.lng! }));
@@ -63,12 +68,12 @@ export default function TripSharePage() {
             Travel<span className="bg-gradient-to-r from-blue-600 to-indigo-500 bg-clip-text text-transparent">ries</span>
           </span>
           <span className="text-slate-300 mx-1">·</span>
-          <span className="text-xs text-slate-400">Shared trip</span>
+          <span className="text-xs text-slate-400">{t("Shared trip")}</span>
         </div>
 
         <div className="rounded-3xl bg-gradient-to-br from-sky-100 via-sky-50 to-blue-100 border border-sky-200/60 p-6 mb-4 shadow-sm">
           <h1 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
-            <MapPin size={20} className="text-blue-500 flex-shrink-0" /> {share.title}
+            <MapPin size={20} className="text-blue-500 flex-shrink-0" /> {title}
           </h1>
           <div className="flex flex-wrap gap-2 mt-3">
             {share.dateRange && (
@@ -77,7 +82,7 @@ export default function TripSharePage() {
               </span>
             )}
             <span className="inline-flex items-center gap-1 text-xs font-bold bg-white/80 text-slate-600 px-2.5 py-1 rounded-full">
-              <Images size={11} /> {share.photos.length} photo{share.photos.length !== 1 ? "s" : ""}
+              <Images size={11} /> {tn(share.photos.length, "{n} photo", "{n} photos")}
             </span>
             {share.locations.length > 1 && (
               <span className="inline-flex items-center gap-1 text-xs font-bold bg-white/80 text-slate-600 px-2.5 py-1 rounded-full">
@@ -95,7 +100,7 @@ export default function TripSharePage() {
 
         {share.diary && (
           <div className="tv-card p-5 mb-4">
-            <p className="text-xs font-bold text-blue-500 flex items-center gap-1 mb-2"><Sparkles size={12} /> Travel diary</p>
+            <p className="text-xs font-bold text-blue-500 flex items-center gap-1 mb-2"><Sparkles size={12} /> {t("Travel diary")}</p>
             <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">{share.diary}</p>
           </div>
         )}
@@ -109,7 +114,7 @@ export default function TripSharePage() {
         </div>
 
         <div className="text-center pb-6">
-          <Link href="/" className="text-xs text-blue-500 font-semibold hover:underline">Open Travelries →</Link>
+          <Link href="/" className="text-xs text-blue-500 font-semibold hover:underline">{t("Open Travelries")} →</Link>
         </div>
       </div>
 

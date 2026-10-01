@@ -7,7 +7,8 @@ import AppLogo from "@/components/AppLogo";
 import AnimatedNumber from "@/components/AnimatedNumber";
 import { MapPhoto } from "@/lib/types";
 import { Trip } from "@/lib/trips";
-import { TripMemory, tripAnchorId, formatTripDates, placeLabel } from "@/lib/tripMemory";
+import { TripMemory, tripAnchorId, formatTripDates, placeLabel, tripTitle } from "@/lib/tripMemory";
+import { msg, useLang } from "@/lib/i18n";
 
 // Home page pieces: a personal hero (greeting, stats, a polaroid stack of the
 // latest photos), the latest-trip card shown while nothing is being uploaded,
@@ -20,10 +21,10 @@ const POLAROID_POSES = [
 ];
 
 function greetingFor(hour: number) {
-  if (hour < 5) return "Good night";
-  if (hour < 12) return "Good morning";
-  if (hour < 18) return "Good afternoon";
-  return "Good evening";
+  if (hour < 5) return msg("Good night");
+  if (hour < 12) return msg("Good morning");
+  if (hour < 18) return msg("Good afternoon");
+  return msg("Good evening");
 }
 
 export function HomeHero({
@@ -35,11 +36,12 @@ export function HomeHero({
   stats: { totalPhotos: number; totalLocations: number; totalFaces: number };
   photos: MapPhoto[];
 }) {
+  const { t } = useLang();
   const stack = photos.slice(0, 3).reverse(); // newest ends on top
   const chips = [
-    { label: "Photos", value: stats.totalPhotos, icon: Camera, gradient: "from-sky-400 to-blue-500" },
-    { label: "Places", value: stats.totalLocations, icon: MapPin, gradient: "from-emerald-400 to-teal-500" },
-    { label: "Faces", value: stats.totalFaces, icon: Users, gradient: "from-amber-400 to-orange-500" },
+    { label: msg("Photos"), value: stats.totalPhotos, icon: Camera, gradient: "from-sky-400 to-blue-500" },
+    { label: msg("Places"), value: stats.totalLocations, icon: MapPin, gradient: "from-emerald-400 to-teal-500" },
+    { label: msg("Faces"), value: stats.totalFaces, icon: Users, gradient: "from-amber-400 to-orange-500" },
   ];
   return (
     <motion.section
@@ -65,11 +67,11 @@ export function HomeHero({
             </span>
           </div>
           <h1 className="text-[26px] sm:text-4xl leading-[1.15] font-extrabold tracking-tight text-slate-800">
-            {hour === null ? "Welcome back" : greetingFor(hour)}
+            {hour === null ? t("Welcome back") : t(greetingFor(hour))}
             {name && <>,<br className="sm:hidden" /> <span className="bg-gradient-to-r from-sky-500 to-blue-600 bg-clip-text text-transparent">{name}</span></>}
           </h1>
           <p className="text-slate-500 text-sm sm:text-[15px] mt-2 max-w-md">
-            Add your travel photos. We&apos;ll pin them on your map, find the people in them and turn them into trips.
+            {t("Add your travel photos. We'll pin them on your map, find the people in them and turn them into trips.")}
           </p>
 
           <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-1.5 sm:gap-2 mt-5">
@@ -80,14 +82,14 @@ export function HomeHero({
                   <Icon size={13} className="text-white" />
                 </span>
                 <span className="text-base font-extrabold text-slate-800 leading-none"><AnimatedNumber value={value} /></span>
-                <span className="text-[11px] sm:text-xs font-semibold text-slate-500 truncate">{label}</span>
+                <span className="text-[11px] sm:text-xs font-semibold text-slate-500 truncate">{t(label)}</span>
               </div>
             ))}
           </div>
         </div>
 
         {/* Polaroid stack of the latest photos (hidden on phones to keep the upload box high) */}
-        <Link href="/albums" aria-label="Open Albums"
+        <Link href="/albums" aria-label={t("Open Albums")}
           className="group hidden sm:block relative w-[260px] h-[190px] flex-shrink-0 mr-2">
           {stack.length > 0 ? stack.map((p, i) => {
             const pose = POLAROID_POSES[i + (3 - stack.length)];
@@ -122,6 +124,7 @@ export function HomeHero({
 }
 
 export function LatestTripCard({ trip, memory }: { trip: Trip; memory: TripMemory }) {
+  const { t, tn, lang } = useLang();
   const cover = memory.days.flatMap((d) => d.photos).find((p) => !p.imageUrl.startsWith("data:")) ?? trip.photos[0];
   const thumbs = trip.photos.filter((p) => p.id !== cover.id).slice(0, 3);
   return (
@@ -136,7 +139,7 @@ export function LatestTripCard({ trip, memory }: { trip: Trip; memory: TripMemor
         <img src={cover.imageUrl} alt="" className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
         <div className="absolute inset-0 bg-gradient-to-t from-slate-900/85 via-slate-900/25 to-transparent" />
         <span className="absolute top-4 left-4 inline-flex items-center gap-1.5 text-[11px] font-bold text-white bg-white/20 backdrop-blur-md border border-white/30 rounded-full px-2.5 py-1">
-          <Plane size={12} /> Your latest trip
+          <Plane size={12} /> {t("Your latest trip")}
         </span>
         <div className="absolute inset-x-0 bottom-0 p-5">
           {thumbs.length > 0 && (
@@ -147,18 +150,18 @@ export function LatestTripCard({ trip, memory }: { trip: Trip; memory: TripMemor
               ))}
             </div>
           )}
-          <h2 className="text-2xl font-extrabold text-white tracking-tight leading-tight">{memory.title}</h2>
+          <h2 className="text-2xl font-extrabold text-white tracking-tight leading-tight">{tripTitle(memory, t)}</h2>
           <p className="text-sm text-white/80 font-semibold mt-0.5 flex items-center gap-1.5">
-            <CalendarDays size={13} /> {formatTripDates(memory.start, memory.end)}
+            <CalendarDays size={13} /> {formatTripDates(memory.start, memory.end, lang)}
           </p>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-3 text-xs font-bold text-white/90">
-            <span>{memory.dayCount} {memory.dayCount === 1 ? "day" : "days"}</span>
+            <span>{tn(memory.dayCount, "{n} day", "{n} days")}</span>
             <span className="opacity-50">·</span>
-            <span>{memory.places.length} {memory.places.length === 1 ? "place" : "places"}</span>
+            <span>{tn(memory.places.length, "{n} place", "{n} places")}</span>
             <span className="opacity-50">·</span>
-            <span>{memory.photoCount} {memory.photoCount === 1 ? "photo" : "photos"}</span>
+            <span>{tn(memory.photoCount, "{n} photo", "{n} photos")}</span>
             <span className="ml-auto inline-flex items-center gap-1 bg-white text-slate-800 rounded-full px-3 py-1.5 group-hover:bg-sky-50 transition-colors">
-              Open trip <ArrowRight size={13} className="transition-transform group-hover:translate-x-0.5" />
+              {t("Open trip")} <ArrowRight size={13} className="transition-transform group-hover:translate-x-0.5" />
             </span>
           </div>
         </div>
@@ -168,6 +171,7 @@ export function LatestTripCard({ trip, memory }: { trip: Trip; memory: TripMemor
 }
 
 export function RecentMemories({ photos }: { photos: MapPhoto[] }) {
+  const { t } = useLang();
   if (photos.length === 0) return null;
   return (
     <motion.section
@@ -182,10 +186,10 @@ export function RecentMemories({ photos }: { photos: MapPhoto[] }) {
           <span className="w-7 h-7 rounded-[9px] bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center shadow-sm shadow-rose-200">
             <Images size={14} className="text-white" />
           </span>
-          Recent memories
+          {t("Recent memories")}
         </h2>
         <Link href="/albums" className="text-sm font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1">
-          See all <ArrowRight size={14} />
+          {t("See all")} <ArrowRight size={14} />
         </Link>
       </div>
       <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 snap-x">
@@ -205,7 +209,7 @@ export function RecentMemories({ photos }: { photos: MapPhoto[] }) {
                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-900/75 to-transparent pt-8 pb-2 px-2.5">
                   <p className="text-xs font-bold text-white truncate">{p.fileName}</p>
                   <p className="text-[10px] text-white/80 truncate flex items-center gap-0.5">
-                    <MapPin size={9} className="flex-shrink-0" /> {placeLabel(p) ?? "Unknown place"}
+                    <MapPin size={9} className="flex-shrink-0" /> {placeLabel(p) ?? t("Unknown place")}
                   </p>
                 </div>
               </div>

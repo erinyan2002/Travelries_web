@@ -3,15 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { MapPhoto } from "@/lib/types";
 import {
-  ProvinceGeoData, buildProjection, geometryToPath, geometryBBox,
-  matchRegionCode, REGION_LABELS,
+  ProvinceGeoData, buildProjection, geometryToPath, provinceLayout, LABEL_LNG_LAT,
+  regionCodeOf, loadProvinceGeo, regionLabel,
 } from "@/lib/koreaGeo";
-
-let geoPromise: Promise<ProvinceGeoData> | null = null;
-function loadGeo(): Promise<ProvinceGeoData> {
-  if (!geoPromise) geoPromise = fetch("/data/skorea-provinces.geo.json").then((r) => r.json());
-  return geoPromise;
-}
+import { useLang } from "@/lib/i18n";
 
 const VIEW_W = 640;
 
@@ -19,7 +14,8 @@ type Region = {
   code: string;
   label: string;
   path: string;
-  bbox: { x: number; y: number; width: number; height: number };
+  imageBox: { x: number; y: number; width: number; height: number };
+  labelAt: [number, number];
   photos: MapPhoto[];
   // Most recent photo in the region — the one shape-filled onto the province.
   repPhoto: MapPhoto | null;
@@ -33,9 +29,10 @@ export default function KoreaRegionMap({
   onSelectRegion: (code: string | null) => void;
 }) {
   const [geo, setGeo] = useState<ProvinceGeoData | null>(null);
+  const { t, lang } = useLang();
 
   useEffect(() => {
-    loadGeo().then(setGeo).catch((err) => console.error("Failed to load province map:", err));
+    loadProvinceGeo().then(setGeo).catch((err) => console.error("Failed to load province map:", err));
   }, []);
 
   const projected = useMemo(() => (geo ? buildProjection(geo, VIEW_W) : null), [geo]);
@@ -45,23 +42,27 @@ export default function KoreaRegionMap({
     return geo.features.map((f) => {
       const code = f.properties.code;
       const regionPhotos = photos
-        .filter((p) => matchRegionCode(p.location) === code)
+        .filter((p) => regionCodeOf(p, geo) === code)
         .sort((a, b) => (a.captureTimestamp ?? a.uploadedAt ?? "").localeCompare(b.captureTimestamp ?? b.uploadedAt ?? ""));
       return {
         code,
-        label: REGION_LABELS[code] ?? f.properties.name,
+        label: regionLabel(code, lang) ?? f.properties.name,
         path: geometryToPath(f.geometry, projected.project),
-        bbox: geometryBBox(f.geometry, projected.project),
+        ...(() => {
+          const { imageBox, labelAt } = provinceLayout(f.geometry, projected.project);
+          const fixed = LABEL_LNG_LAT[code];
+          return { imageBox, labelAt: fixed ? projected.project(fixed) : labelAt };
+        })(),
         photos: regionPhotos,
         repPhoto: regionPhotos[regionPhotos.length - 1] ?? null,
       };
     });
-  }, [geo, projected, photos]);
+  }, [geo, projected, photos, lang]);
 
   if (!geo || !projected) {
     return (
       <div className="h-[380px] w-full rounded-2xl border border-slate-200 bg-white flex items-center justify-center text-slate-400 text-sm">
-        Loading map…
+        {t("Loading map…")}
       </div>
     );
   }
@@ -85,7 +86,7 @@ export default function KoreaRegionMap({
                 <g clipPath={`url(#region-clip-${r.code})`}>
                   <image
                     href={r.repPhoto.imageUrl}
-                    x={r.bbox.x} y={r.bbox.y} width={r.bbox.width} height={r.bbox.height}
+                    x={r.imageBox.x} y={r.imageBox.y} width={r.imageBox.width} height={r.imageBox.height}
                     preserveAspectRatio="xMidYMid slice"
                   />
                 </g>
@@ -101,7 +102,7 @@ export default function KoreaRegionMap({
                 onClick={() => onSelectRegion(isSelected ? null : r.code)}
               />
               <text
-                x={r.bbox.x + r.bbox.width / 2} y={r.bbox.y + r.bbox.height / 2}
+                x={r.labelAt[0]} y={r.labelAt[1]}
                 textAnchor="middle" dominantBaseline="middle" fontSize={11} fontWeight={700}
                 fill={r.photos.length > 0 ? "#fff" : "#94a3b8"}
                 style={{ pointerEvents: "none", paintOrder: "stroke", stroke: r.photos.length > 0 ? "rgba(0,0,0,0.45)" : "none", strokeWidth: 3 }}

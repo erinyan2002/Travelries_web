@@ -10,12 +10,14 @@ import {
   Profile, Post,
 } from "@/lib/socialUtils";
 import { ArrowLeft, UserPlus, UserCheck, Lock, Loader2, Heart, MessageCircle } from "lucide-react";
+import { useLang } from "@/lib/i18n";
 
 export default function UserProfilePage() {
   const params = useParams();
   const router = useRouter();
   const targetId = params.id as string;
 
+  const { t, lang } = useLang();
   const [uid, setUid] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -62,7 +64,7 @@ export default function UserProfilePage() {
   if (!profile) {
     return (
       <main className="min-h-screen px-4 sm:px-6 py-8 pb-24 lg:pb-10 flex items-center justify-center">
-        <p className="text-slate-400 text-sm">User not found.</p>
+        <p className="text-slate-400 text-sm">{t("User not found.")}</p>
       </main>
     );
   }
@@ -74,21 +76,22 @@ export default function UserProfilePage() {
     <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-24 lg:pb-10">
       <div className="max-w-2xl mx-auto space-y-5">
         <button onClick={() => router.back()} className="flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700 transition-colors">
-          <ArrowLeft size={16} /> Back
+          <ArrowLeft size={16} /> {t("Back")}
         </button>
 
         <div className="tv-card p-6 flex items-center gap-5">
-          <Avatar name={profile.name || "Traveler"} url={profile.avatar_url} size="lg" />
+          <Avatar name={profile.name || t("Traveler")} url={profile.avatar_url} size="lg" />
           <div className="min-w-0 flex-1">
-            <p className="text-lg font-bold text-slate-900 truncate">{profile.name || "Traveler"}</p>
+            <p className="text-lg font-bold text-slate-900 truncate">{profile.name || t("Traveler")}</p>
             <p className="text-sm text-slate-500">
-              <strong className="text-slate-700">{counts.following}</strong> following ·{" "}
-              <strong className="text-slate-700">{counts.followers}</strong> followers
+              {lang === "ko"
+                ? <>{t("following")} <strong className="text-slate-700">{counts.following}</strong> · {t("followers")} <strong className="text-slate-700">{counts.followers}</strong></>
+                : <><strong className="text-slate-700">{counts.following}</strong> following · <strong className="text-slate-700">{counts.followers}</strong> followers</>}
             </p>
           </div>
           {isSelf ? (
             <Link href="/profile" className="text-sm font-bold text-blue-600 hover:text-blue-700 transition-colors">
-              Edit profile
+              {t("Edit profile")}
             </Link>
           ) : (
             <button onClick={handleFollowToggle} disabled={followBusy}
@@ -97,7 +100,7 @@ export default function UserProfilePage() {
               }`}>
               {followBusy
                 ? <Loader2 size={14} className="animate-spin" />
-                : following ? <><UserCheck size={14} /> Following</> : <><UserPlus size={14} /> Follow</>
+                : following ? <><UserCheck size={14} /> {t("Following")}</> : <><UserPlus size={14} /> {t("Follow")}</>
               }
             </button>
           )}
@@ -106,12 +109,12 @@ export default function UserProfilePage() {
         {!canSeePosts ? (
           <div className="bg-white/60 backdrop-blur-sm rounded-3xl border-2 border-dashed border-sky-200 p-14 text-center">
             <Lock size={28} className="text-slate-300 mx-auto mb-3" />
-            <p className="font-bold text-slate-700 mb-1">Follow to see their posts</p>
-            <p className="text-slate-400 text-sm">Posts are only visible to people {profile.name || "this traveler"} follows back.</p>
+            <p className="font-bold text-slate-700 mb-1">{t("Follow to see their posts")}</p>
+            <p className="text-slate-400 text-sm">{t("Posts are only visible to people {name} follows back.", { name: profile.name || t("this traveler") })}</p>
           </div>
         ) : posts.length === 0 ? (
           <div className="bg-white/60 backdrop-blur-sm rounded-3xl border-2 border-dashed border-sky-200 p-14 text-center">
-            <p className="font-bold text-slate-700 mb-1">No posts yet</p>
+            <p className="font-bold text-slate-700 mb-1">{t("No posts yet")}</p>
           </div>
         ) : (
           <div className="grid grid-cols-3 gap-1.5">

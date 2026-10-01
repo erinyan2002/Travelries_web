@@ -3,6 +3,7 @@
 import { supabase } from "./supabase";
 import { fetchTripDiary, saveTripDiary } from "./photosApi";
 import { MapPhoto } from "./types";
+import { currentLang } from "./i18n";
 
 export type DiaryLang = "en" | "ko";
 export const DIARY_LANGS: { value: DiaryLang; label: string }[] = [
@@ -14,8 +15,9 @@ export const DIARY_LANG_STORAGE = "diary-lang";
 export function loadDiaryLang(): DiaryLang {
   try {
     const v = typeof window !== "undefined" ? localStorage.getItem(DIARY_LANG_STORAGE) : null;
-    return v === "ko" || v === "en" ? v : "en";
-  } catch { return "en"; }
+    // Nothing chosen yet: write in the UI language.
+    return v === "ko" || v === "en" ? v : currentLang();
+  } catch { return currentLang(); }
 }
 
 export function storeDiaryLang(lang: DiaryLang) {

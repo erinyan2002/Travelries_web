@@ -5,16 +5,8 @@ import Link from "next/link";
 import Avatar from "@/components/Avatar";
 import { fetchComments, addComment, deleteComment, toggleCommentLike, Comment } from "@/lib/socialUtils";
 import { Heart, Send, Trash2, Loader2 } from "lucide-react";
-
-function timeAgo(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
+import { useLang } from "@/lib/i18n";
+import { timeAgo } from "@/lib/timeAgo";
 
 // Self-contained comment section: fetches its own comments, and owns
 // add/reply/like/delete. Used by both the feed (mounted only while a post's
@@ -27,6 +19,7 @@ export default function CommentThread({
   postId: string;
   onCountChange?: (count: number) => void;
 }) {
+  const { t } = useLang();
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState("");
@@ -78,7 +71,7 @@ export default function CommentThread({
             <Link href={`/u/${c.userId}`} className="font-bold hover:underline">{c.authorName}</Link> {c.content}
           </p>
           <div className="flex items-center gap-3 mt-0.5">
-            <p className="text-[10px] text-slate-400">{timeAgo(c.createdAt)}</p>
+            <p className="text-[10px] text-slate-400">{timeAgo(c.createdAt, t)}</p>
             <button onClick={() => handleLike(c)}
               className="flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-red-500 transition-colors">
               <Heart size={11} className={c.likedByMe ? "fill-red-500 text-red-500" : ""} />
@@ -88,7 +81,7 @@ export default function CommentThread({
               <button
                 onClick={() => { setReplyingTo(replyingTo === c.id ? null : c.id); setReplyDraft(""); }}
                 className="text-[10px] font-bold text-slate-400 hover:text-blue-600 transition-colors">
-                Reply
+                {t("Reply")}
               </button>
             )}
           </div>
@@ -98,7 +91,7 @@ export default function CommentThread({
                 value={replyDraft}
                 onChange={(e) => setReplyDraft(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") handleAdd(c.id); }}
-                placeholder={`Reply to ${c.authorName}...`}
+                placeholder={t("Reply to {name}...", { name: c.authorName })}
                 autoFocus
                 className="flex-1 text-xs bg-white border border-slate-200 rounded-full px-3 py-1.5 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
               />
@@ -121,9 +114,9 @@ export default function CommentThread({
   return (
     <div className="space-y-2.5">
       {loading && (
-        <p className="text-xs text-slate-400 flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Loading comments...</p>
+        <p className="text-xs text-slate-400 flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> {t("Loading comments...")}</p>
       )}
-      {!loading && comments.length === 0 && <p className="text-xs text-slate-400">No comments yet.</p>}
+      {!loading && comments.length === 0 && <p className="text-xs text-slate-400">{t("No comments yet.")}</p>}
       {topLevel.map((c) => (
         <div key={c.id} className="space-y-2">
           <CommentRow c={c} />
@@ -135,7 +128,7 @@ export default function CommentThread({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
-          placeholder="Add a comment..."
+          placeholder={t("Add a comment...")}
           className="flex-1 text-xs bg-white border border-slate-200 rounded-full px-3 py-2 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
         />
         <button onClick={() => handleAdd()}

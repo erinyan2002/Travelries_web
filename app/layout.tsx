@@ -3,6 +3,19 @@ import "./globals.css";
 import AuthGuard from "@/components/AuthGuard";
 import NotificationBell from "@/components/NotificationBell";
 import IntroSplash from "@/components/IntroSplash";
+import LanguageToggle from "@/components/LanguageToggle";
+import { LanguageProvider } from "@/lib/i18n";
+import { LANG_COOKIE, type Lang } from "@/lib/langCookie";
+import { cookies, headers } from "next/headers";
+
+// The UI language: the `lang` cookie (set by LanguageToggle), else the browser's
+// Accept-Language, else English. Read on the server so the first paint is right.
+async function initialLang(): Promise<Lang> {
+  const saved = (await cookies()).get(LANG_COOKIE)?.value;
+  if (saved === "en" || saved === "ko") return saved;
+  const accept = (await headers()).get("accept-language") ?? "";
+  return /^ko\b/i.test(accept.trim()) ? "ko" : "en";
+}
 
 export const metadata: Metadata = {
   title: "Travelries",
@@ -25,9 +38,10 @@ export const viewport: Viewport = {
   userScalable: false,
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const lang = await initialLang();
   return (
-    <html lang="ko" suppressHydrationWarning>
+    <html lang={lang} suppressHydrationWarning>
       <head>
         {/* Pretendard: one typeface that pairs Korean (locations, diaries) with Latin
             UI text cleanly. Linked here rather than @import-ed in globals.css so a
@@ -47,9 +61,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="antialiased">
-        <AuthGuard>{children}</AuthGuard>
-        <NotificationBell />
-        <IntroSplash />
+        <LanguageProvider initialLang={lang}>
+          <AuthGuard>{children}</AuthGuard>
+          <LanguageToggle />
+          <NotificationBell />
+          <IntroSplash />
+        </LanguageProvider>
       </body>
     </html>
   );

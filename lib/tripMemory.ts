@@ -67,7 +67,10 @@ export type JourneyStop = { place: string; time: Date; photoIds: string[] };
 export type TripDay = { day: number; date: Date; stops: JourneyStop[]; photos: MapPhoto[] };
 
 export type TripMemory = {
+  /** English title ("Sokcho Trip"); show it with tripTitle() for the UI language. */
   title: string;
+  /** The trip's main city, admin suffix stripped ("Sokcho"). */
+  city: string;
   start: Date;
   end: Date;
   dayCount: number;
@@ -89,7 +92,8 @@ export function summarizeTrip(trip: Trip): TripMemory {
 
   const city = mostCommon(photos.map(cityOf))?.value ?? trip.name;
   // "Sokcho-si" → "Sokcho": the romanized Korean admin suffix reads oddly in a title.
-  const title = `${city.replace(/-(si|gun)$/i, "")} Trip`;
+  const cityName = city.replace(/-(si|gun)$/i, "");
+  const title = `${cityName} Trip`;
 
   // Days are numbered by calendar distance from the first day, so a day with no
   // photos leaves a gap (Day 1, Day 3) rather than renumbering.
@@ -126,6 +130,7 @@ export function summarizeTrip(trip: Trip): TripMemory {
   const top = mostCommon(photos.map(placeLabel));
   return {
     title,
+    city: cityName,
     start,
     end,
     dayCount: days.length === 0 ? 0 : days[days.length - 1].day,
@@ -141,8 +146,20 @@ export function summarizeTrip(trip: Trip): TripMemory {
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/** "Jun 2 – Jun 7, 2026", "Jun 2, 2026", or across years "Dec 30, 2025 – Jan 2, 2026". */
-export function formatTripDates(start: Date, end: Date): string {
+/** "Sokcho Trip" / "Sokcho 여행", with the UI translator (useLang().t). */
+export function tripTitle(m: { city: string }, t: (en: string, vars?: Record<string, string>) => string): string {
+  return t("{city} Trip", { city: m.city });
+}
+
+/** "Jun 2 – Jun 7, 2026", "Jun 2, 2026", or across years "Dec 30, 2025 – Jan 2, 2026";
+ *  in Korean "2026년 6월 2일 – 6월 7일". */
+export function formatTripDates(start: Date, end: Date, lang: "en" | "ko" = "en"): string {
+  if (lang === "ko") {
+    const ymd = (d: Date) => `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`;
+    if (localDayKey(start) === localDayKey(end)) return ymd(start);
+    if (start.getFullYear() !== end.getFullYear()) return `${ymd(start)} – ${ymd(end)}`;
+    return `${ymd(start)} – ${end.getMonth() + 1}월 ${end.getDate()}일`;
+  }
   const md = (d: Date) => `${MONTHS[d.getMonth()]} ${d.getDate()}`;
   if (localDayKey(start) === localDayKey(end)) return `${md(start)}, ${start.getFullYear()}`;
   if (start.getFullYear() !== end.getFullYear()) return `${md(start)}, ${start.getFullYear()} – ${md(end)}, ${end.getFullYear()}`;

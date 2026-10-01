@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { X, Download, Share2, Loader2 } from "lucide-react";
 import { saveImage } from "@/lib/saveImage";
+import { useLang } from "@/lib/i18n";
 
 // Instagram Story aspect ratio (9:16). Rendered at a fixed pixel size so the
 // exported PNG looks sharp regardless of the viewer's screen density.
@@ -22,6 +23,7 @@ type ShareCardModalProps = {
 // Review card, which differ only in what they draw.
 export default function ShareCardModal({ title, fileName, onClose, draw }: ShareCardModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { t } = useLang();
   const [ready, setReady] = useState(false);
   const [drawError, setDrawError] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -89,7 +91,7 @@ export default function ShareCardModal({ title, fileName, onClose, draw }: Share
           )}
           {drawError && (
             <div className="absolute inset-0 flex items-center justify-center p-4">
-              <p className="text-xs text-slate-400 text-center">Couldn&apos;t create the card. Please try again.</p>
+              <p className="text-xs text-slate-400 text-center">{t("Couldn't create the card. Please try again.")}</p>
             </div>
           )}
         </div>
@@ -97,11 +99,11 @@ export default function ShareCardModal({ title, fileName, onClose, draw }: Share
         <div className="flex gap-2 w-full">
           <button onClick={handleDownload} disabled={!ready}
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50 transition-colors disabled:opacity-50">
-            <Download size={15} /> Save
+            <Download size={15} /> {t("Save")}
           </button>
           <button onClick={handleShare} disabled={!ready || busy}
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 text-white font-bold text-sm hover:from-sky-600 hover:to-blue-700 shadow-md shadow-blue-200/70 transition-all disabled:opacity-50">
-            {busy ? <Loader2 size={15} className="animate-spin" /> : <Share2 size={15} />} Share
+            {busy ? <Loader2 size={15} className="animate-spin" /> : <Share2 size={15} />} {t("Share")}
           </button>
         </div>
       </div>

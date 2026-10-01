@@ -12,7 +12,8 @@ import { detectTrips, Trip } from "@/lib/trips";
 import { deletePhotoEverywhere } from "@/lib/savedUtils";
 import { fetchPeople, createPerson, renamePerson, linkPersonToUser, Person } from "@/lib/peopleApi";
 import { fetchFollowingProfiles, fetchFollowerProfiles, Profile } from "@/lib/socialUtils";
-import { FaceEntry, PersonCluster, MATCH_THRESHOLD, buildPersonGroups } from "@/lib/faceClustering";
+import { FaceEntry, PersonCluster, MATCH_THRESHOLD, buildPersonGroups, clusterLabel } from "@/lib/faceClustering";
+import { msg, useLang, localeOf, Lang } from "@/lib/i18n";
 import { nestedDuplicateIndices } from "@/lib/faceMatching";
 import { useRouter } from "next/navigation";
 import {
@@ -117,6 +118,7 @@ function PhotoModal({ photo, onClose, onDelete, onRemoveFace }: {
 }) {
   // Counted from the boxes shown, not face_count: that column can lag behind
   // (e.g. Save to Map wrote 0 before the face save finished).
+  const { t, tn } = useLang();
   const shownFaces = (photo.boxes ?? []).filter((_, i) => !isFaceRemoved(photo, i)).length;
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[3000] flex items-end sm:items-center justify-center sm:p-5 overflow-y-auto" onClick={onClose}>
@@ -127,7 +129,7 @@ function PhotoModal({ photo, onClose, onDelete, onRemoveFace }: {
           <div>
             <h3 className="font-bold text-white text-sm truncate max-w-[260px]">{photo.fileName}</h3>
             <p className="text-sky-100 text-xs mt-0.5 flex items-center gap-1.5">
-              <Users size={10} /> {shownFaces} {shownFaces === 1 ? "face" : "faces"}
+              <Users size={10} /> {tn(shownFaces, "{n} face", "{n} faces")}
               {photo.location && <><span>·</span><MapPin size={10} />{photo.location.split(",")[0]}</>}
             </p>
           </div>
@@ -145,7 +147,7 @@ function PhotoModal({ photo, onClose, onDelete, onRemoveFace }: {
         {photo.boxes && photo.boxes.length > 0 && (
           <div className="px-5 py-4 border-b border-slate-100">
             <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-3">
-              Detected faces ({shownFaces})
+              {t("Detected faces ({n})", { n: shownFaces })}
             </p>
             <div className="flex gap-3 overflow-x-auto pb-1">
               {photo.boxes.map((box, i) => {
@@ -156,11 +158,11 @@ function PhotoModal({ photo, onClose, onDelete, onRemoveFace }: {
                       ringClass={PALETTE[i % PALETTE.length].ring} />
                     <button
                       onClick={() => {
-                        if (confirm("Remove this face? The photo stays in your Albums.")) {
+                        if (confirm(t("Remove this face? The photo stays in your Albums."))) {
                           onRemoveFace(photo.id, i);
                         }
                       }}
-                      title="Remove this face"
+                      title={t("Remove this face")}
                       className="absolute -top-1 -right-1 w-5 h-5 flex items-center justify-center rounded-full bg-red-500 hover:bg-red-600 text-white shadow-sm transition-colors">
                       <X size={11} />
                     </button>
@@ -191,7 +193,7 @@ function PhotoModal({ photo, onClose, onDelete, onRemoveFace }: {
             onClick={() => { onDelete(photo.id); onClose(); }}
             className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-600 active:scale-[0.98] text-white py-3 rounded-2xl font-bold text-sm transition-all shadow-lg shadow-red-200"
           >
-            <Trash2 size={15} /> Delete Photo
+            <Trash2 size={15} /> {t("Delete Photo")}
           </button>
         </div>
       </div>
@@ -203,6 +205,7 @@ function PersonModal({ cluster, onClose, colorIdx, onRemoveFace }: {
   cluster: PersonCluster; onClose: () => void; colorIdx: number;
   onRemoveFace: (photoId: string, boxIndex: number) => void;
 }) {
+  const { t, tn } = useLang();
   const color = PALETTE[colorIdx % PALETTE.length];
   const rep = cluster.faces[0];
   const repBox = rep?.photo.boxes?.[rep.boxIndex];
@@ -222,10 +225,10 @@ function PersonModal({ cluster, onClose, colorIdx, onRemoveFace }: {
             <h3 className="font-black text-white text-lg">{cluster.label}</h3>
             <div className="flex items-center gap-2 mt-1">
               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${color.bg} ${color.text}`}>
-                {cluster.faces.length} appearance{cluster.faces.length !== 1 ? "s" : ""}
+                {tn(cluster.faces.length, "{n} appearance", "{n} appearances")}
               </span>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/10 text-white/70">
-                {photoCount} photo{photoCount !== 1 ? "s" : ""}
+                {tn(photoCount, "{n} photo", "{n} photos")}
               </span>
             </div>
           </div>
@@ -243,11 +246,11 @@ function PersonModal({ cluster, onClose, colorIdx, onRemoveFace }: {
                 <div key={`${face.photo.id}_${face.boxIndex}_${idx}`} className="relative bg-slate-50 rounded-2xl overflow-hidden border border-slate-100 shadow-sm">
                   <button
                     onClick={() => {
-                      if (confirm("Remove this face? The photo stays in your Albums.")) {
+                      if (confirm(t("Remove this face? The photo stays in your Albums."))) {
                         onRemoveFace(face.photo.id, face.boxIndex);
                       }
                     }}
-                    title="Remove this face"
+                    title={t("Remove this face")}
                     className="absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center rounded-full bg-black/50 hover:bg-red-500 text-white transition-colors">
                     <X size={12} />
                   </button>
@@ -273,15 +276,14 @@ function PersonModal({ cluster, onClose, colorIdx, onRemoveFace }: {
   );
 }
 
-function getGroupKey(photo: FacePhoto): string {
+function getGroupKey(photo: FacePhoto, lang: Lang): string {
   if (photo.location) {
     const parts = photo.location.split(",").map((s) => s.trim());
     return parts.slice(-2).join(", ");
   }
   const d = new Date(photo.uploadedAt);
   const y = d.getFullYear();
-  const m = d.toLocaleString("en", { month: "short" });
-  return y > 1970 ? `${m} ${y}` : "Other";
+  return y > 1970 ? d.toLocaleDateString(localeOf(lang), { year: "numeric", month: "short" }) : msg("Other");
 }
 
 function FacesSkeleton() {
@@ -304,6 +306,7 @@ function FacesSkeleton() {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function FacesPage() {
+  const { t, tn, lang } = useLang();
   const [storedPhotos,    setStoredPhotos]    = useState<FacePhoto[]>([]);
   const [loading,         setLoading]         = useState(true);
   const [activeTab,       setActiveTab]       = useState<"people" | "photos">("people");
@@ -418,7 +421,7 @@ export default function FacesPage() {
       });
     } catch (err) {
       console.error("Remove face failed:", err);
-      alert("Couldn't remove this face. Please try again.");
+      alert(t("Couldn't remove this face. Please try again."));
     }
   }
 
@@ -432,7 +435,7 @@ export default function FacesPage() {
         setStoredPhotos((prev) => prev.filter((p) => p.id !== id));
       } else {
         console.error("Delete failed:", err);
-        alert("Couldn't delete this photo. Please try again.");
+        alert(t("Couldn't delete this photo. Please try again."));
       }
     } finally {
       setConfirmDeleteId(null);
@@ -446,11 +449,11 @@ export default function FacesPage() {
   // Confirmed clusters are named from the `people` table; auto-clusters show their
   // "Person N" placeholder until renamed (which turns them into a confirmed person).
   function labelOf(cluster: PersonCluster): string {
-    return cluster.label;
+    return clusterLabel(cluster, t);
   }
 
   async function commitRename(cluster: PersonCluster) {
-    const name = editDraft.trim() || cluster.label;
+    const name = editDraft.trim() || labelOf(cluster);
     setEditingId(null);
     if (cluster.personId) {
       try {
@@ -458,13 +461,13 @@ export default function FacesPage() {
         setPeople((prev) => prev.map((p) => (p.id === cluster.personId ? { ...p, name } : p)));
       } catch (err) {
         console.error("Rename failed:", err);
-        alert("Couldn't rename this person. Please try again.");
+        alert(t("Couldn't rename this person. Please try again."));
       }
     } else {
       // Naming an auto-cluster makes it a real person (synced across devices) and
       // pins its current faces to it, so the name can't drift to other faces if
       // clustering regroups later.
-      if (!uid || name === cluster.label) return;
+      if (!uid || name === labelOf(cluster)) return;
       try {
         const created = await createPerson(uid, name);
         await assignPersonToFaces(uid, cluster.faces, created.id);
@@ -472,7 +475,7 @@ export default function FacesPage() {
         setStoredPhotos(await fetchFacePhotos(uid));
       } catch (err) {
         console.error("Rename failed:", err);
-        alert("Couldn't rename this person. Please try again.");
+        alert(t("Couldn't rename this person. Please try again."));
       }
     }
   }
@@ -485,7 +488,7 @@ export default function FacesPage() {
     if (!uid || source.id === target.id) return;
     const sourceLabel = labelOf(source);
     const targetLabel = labelOf(target);
-    if (!confirm(`Merge "${sourceLabel}" into "${targetLabel}"?`)) return;
+    if (!confirm(t("Merge “{source}” into “{target}”?", { source: sourceLabel, target: targetLabel }))) return;
     setMerging(source.id);
     try {
       let personId = target.personId ?? source.personId;
@@ -498,7 +501,7 @@ export default function FacesPage() {
       setStoredPhotos(await fetchFacePhotos(uid));
     } catch (err) {
       console.error("Merge failed:", err);
-      alert("Couldn't merge these people. Please try again.");
+      alert(t("Couldn't merge these people. Please try again."));
     } finally {
       setMerging(null);
     }
@@ -514,7 +517,7 @@ export default function FacesPage() {
       if (!personId) {
         if (!userId) return;
         const friend = friends.find((f) => f.id === userId);
-        const created = await createPerson(uid, friend?.name || "Friend");
+        const created = await createPerson(uid, friend?.name || t("Friend"));
         await assignPersonToFaces(uid, cluster.faces, created.id);
         personId = created.id;
         setPeople((prev) => [...prev, created]);
@@ -524,13 +527,13 @@ export default function FacesPage() {
       setPeople((prev) => prev.map((p) => (p.id === personId ? { ...p, linkedUserId: userId } : p)));
     } catch (err) {
       console.error("Link failed:", err);
-      alert("Couldn't link this person. If this keeps happening, run supabase/migrations/0012_people_linked_user.sql.");
+      alert(t("Couldn't link this person. Please try again."));
     }
   }
 
   const photoGroups: Record<string, FacePhoto[]> = {};
   storedPhotos.forEach((p) => {
-    const key = getGroupKey(p);
+    const key = t(getGroupKey(p, lang));
     if (!photoGroups[key]) photoGroups[key] = [];
     photoGroups[key].push(p);
   });
@@ -542,19 +545,19 @@ export default function FacesPage() {
         {/* ── Hero header ── */}
         <PageHero
           icon={Scan}
-          title="People"
-          subtitle="People in your memories, grouped by face recognition"
+          title={t("People")}
+          subtitle={t("People in your memories, grouped by face recognition")}
         >
           <div className="grid grid-cols-3 gap-2">
             {[
-              { label: "People",  value: loading ? "—" : clusters.length,        icon: Users     },
-              { label: "Faces",   value: loading ? "—" : totalFaces,             icon: Eye       },
-              { label: "Photos",  value: loading ? "—" : storedPhotos.length,    icon: ImageIcon },
+              { label: msg("People"),  value: loading ? "—" : clusters.length,        icon: Users     },
+              { label: msg("Faces"),   value: loading ? "—" : totalFaces,             icon: Eye       },
+              { label: msg("Photos"),  value: loading ? "—" : storedPhotos.length,    icon: ImageIcon },
             ].map(({ label, value, icon: Icon }) => (
               <div key={label} className="bg-white/80 border border-white rounded-2xl p-3 text-center backdrop-blur-sm shadow-sm">
                 <Icon size={14} className="text-sky-500 mx-auto mb-1" />
                 <p className="text-xl font-black text-slate-800 leading-none">{value}</p>
-                <p className="text-slate-500 text-[10px] font-semibold mt-0.5">{label}</p>
+                <p className="text-slate-500 text-[10px] font-semibold mt-0.5">{t(label)}</p>
               </div>
             ))}
           </div>
@@ -563,8 +566,8 @@ export default function FacesPage() {
         <Link href="/profile#face-analysis"
           className="flex items-center gap-2 -mt-3 mb-5 text-xs text-slate-500 bg-white/70 border border-white rounded-xl px-3 py-2 hover:bg-white transition-colors">
           <ShieldCheck size={14} className="text-emerald-500 flex-shrink-0" />
-          <span>Face data is private to you and used only to organize your photos.</span>
-          <span className="ml-auto font-bold text-blue-600 whitespace-nowrap">Privacy</span>
+          <span>{t("Face data is private to you and used only to organize your photos.")}</span>
+          <span className="ml-auto font-bold text-blue-600 whitespace-nowrap">{t("Privacy")}</span>
         </Link>
 
         {loading ? <FacesSkeleton /> : storedPhotos.length === 0 ? (
@@ -574,10 +577,10 @@ export default function FacesPage() {
             <div className="w-20 h-20 bg-gradient-to-br from-sky-100 to-blue-100 rounded-3xl flex items-center justify-center mx-auto mb-5 shadow-inner">
               <Users size={32} className="text-blue-300" />
             </div>
-            <p className="font-black text-slate-700 text-lg mb-1">No face photos yet</p>
+            <p className="font-black text-slate-700 text-lg mb-1">{t("No face photos yet")}</p>
             <p className="text-slate-400 text-sm leading-relaxed">
-              Upload photos from the home screen.<br />
-              Photos with detected faces appear here.
+              {t("Upload photos from the home screen.")}<br />
+              {t("Photos with detected faces appear here.")}
             </p>
           </div>
 
@@ -586,8 +589,8 @@ export default function FacesPage() {
             {/* ── Tab switcher ── */}
             <div className="flex gap-1.5 mb-5 bg-white rounded-2xl p-1.5 border border-slate-100 shadow-sm">
               {([
-                { key: "people", label: "By Person", icon: Users,     count: clusters.length },
-                { key: "photos", label: "By Photo",  icon: ImageIcon, count: storedPhotos.length },
+                { key: "people", label: msg("By Person"), icon: Users,     count: clusters.length },
+                { key: "photos", label: msg("By Photo"),  icon: ImageIcon, count: storedPhotos.length },
               ] as const).map(({ key, label, icon: Icon, count }) => (
                 <button key={key} onClick={() => setActiveTab(key)}
                   className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${
@@ -596,7 +599,7 @@ export default function FacesPage() {
                       : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                   }`}>
                   <Icon size={14} />
-                  {label}
+                  {t(label)}
                   <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
                     activeTab === key ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"
                   }`}>{count}</span>
@@ -611,10 +614,10 @@ export default function FacesPage() {
                   <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
                     <div className="flex items-center gap-2 mb-2">
                       <AlertTriangle size={16} className="text-amber-600" />
-                      <p className="font-bold text-amber-800 text-sm">Enhanced model required</p>
+                      <p className="font-bold text-amber-800 text-sm">{t("Enhanced model required")}</p>
                     </div>
                     <p className="text-sm text-amber-700 leading-relaxed mb-3">
-                      SSD + Face Recognition model files are required for person-based clustering.
+                      {t("SSD + Face Recognition model files are required for person-based clustering.")}
                     </p>
                     <div className="bg-slate-900 rounded-xl px-4 py-3 flex items-center gap-2">
                       <Terminal size={14} className="text-emerald-400 flex-shrink-0" />
@@ -624,7 +627,7 @@ export default function FacesPage() {
                 ) : (
                   <>
                     {clusters.length === 0 ? (
-                      <p className="text-center text-slate-400 py-12 text-sm">No faces detected yet. Upload photos with people to see clusters.</p>
+                      <p className="text-center text-slate-400 py-12 text-sm">{t("No faces detected yet. Upload photos with people to see clusters.")}</p>
                     ) : (
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                         {clusters.map((cluster, idx) => {
@@ -678,8 +681,8 @@ export default function FacesPage() {
                               <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full mt-1.5 ${color.bg} ${color.text}`}>
                                 {(() => {
                                   const ids = new Set(cluster.faces.map((f) => f.photo.id));
-                                  const tripCount = trips.filter((t) => t.photos.some((p) => ids.has(p.id))).length;
-                                  return <>{ids.size} photo{ids.size !== 1 ? "s" : ""}{tripCount > 0 && <> · {tripCount} trip{tripCount !== 1 ? "s" : ""}</>}</>;
+                                  const tripCount = trips.filter((tr) => tr.photos.some((p) => ids.has(p.id))).length;
+                                  return <>{tn(ids.size, "{n} photo", "{n} photos")}{tripCount > 0 && <> · {tn(tripCount, "{n} trip", "{n} trips")}</>}</>;
                                 })()}
                               </span>
                               {(() => {
@@ -697,20 +700,20 @@ export default function FacesPage() {
                                       onClick={(e) => { e.stopPropagation(); router.push(albumsUrl()); }}
                                       className={`${chip} text-sky-700 bg-sky-50 hover:bg-sky-100`}
                                     >
-                                      <Images size={12} /> Photos
+                                      <Images size={12} /> {t("Photos")}
                                     </button>
                                     <button
                                       onClick={(e) => { e.stopPropagation(); router.push(albumsUrl("trips")); }}
                                       className={`${chip} text-indigo-600 bg-indigo-50 hover:bg-indigo-100`}
                                     >
-                                      <Plane size={12} /> Trips
+                                      <Plane size={12} /> {t("Trips")}
                                     </button>
                                     <ActionMenu
                                       icon={merging === cluster.id ? <Loader2 size={12} className="animate-spin" /> : <Combine size={12} />}
-                                      label={merging === cluster.id ? "Merging…" : "Merge"}
-                                      title="Same person as…"
+                                      label={merging === cluster.id ? t("Merging…") : t("Merge")}
+                                      title={t("Same person as…")}
                                       disabled={clusters.length < 2 || merging === cluster.id}
-                                      emptyText="No other people yet"
+                                      emptyText={msg("No other people yet")}
                                       options={clusters.filter((c) => c.id !== cluster.id).map((c) => {
                                         const r = c.faces[0];
                                         const b = r?.photo.boxes?.[r.boxIndex];
@@ -729,19 +732,19 @@ export default function FacesPage() {
                                     />
                                     <ActionMenu
                                       icon={linked ? <UserCheck size={12} /> : <UserPlus size={12} />}
-                                      label={linked ? (linked.name || "Linked") : "Account"}
-                                      title="Link to a friend's account"
+                                      label={linked ? (linked.name || t("Linked")) : t("Account")}
+                                      title={t("Link to a friend's account")}
                                       tone={linked ? "emerald" : "slate"}
                                       disabled={friends.length === 0}
-                                      emptyText="Follow someone to link them"
+                                      emptyText={msg("Follow someone to link them")}
                                       options={[
                                         ...friends.map((f) => ({
                                           value: f.id,
-                                          label: f.name || "Traveler",
-                                          leading: <Avatar name={f.name || "Traveler"} url={f.avatar_url} size="sm" />,
+                                          label: f.name || t("Traveler"),
+                                          leading: <Avatar name={f.name || t("Traveler")} url={f.avatar_url} size="sm" />,
                                           selected: f.id === linkedId,
                                         })),
-                                        ...(linked ? [{ value: "", label: "Unlink account", danger: true }] : []),
+                                        ...(linked ? [{ value: "", label: t("Unlink account"), danger: true }] : []),
                                       ]}
                                       onSelect={(id) => { if (id !== linkedId) handleLink(cluster, id || null); }}
                                     />
@@ -845,16 +848,16 @@ export default function FacesPage() {
             <div className="w-14 h-14 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <Trash2 size={26} className="text-red-500" />
             </div>
-            <h3 className="text-lg font-extrabold text-slate-900 mb-1">Delete this photo?</h3>
-            <p className="text-sm text-slate-500 mb-5">This cannot be undone.</p>
+            <h3 className="text-lg font-extrabold text-slate-900 mb-1">{t("Delete this photo?")}</h3>
+            <p className="text-sm text-slate-500 mb-5">{t("This cannot be undone.")}</p>
             <div className="flex gap-3">
               <button onClick={() => setConfirmDeleteId(null)}
                 className="flex-1 py-3 rounded-2xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50 transition-colors">
-                Back
+                {t("Back")}
               </button>
               <button onClick={() => handleDelete(confirmDeleteId)}
                 className="flex-1 py-3 rounded-2xl bg-red-500 hover:bg-red-600 text-white font-bold text-sm transition-colors">
-                Delete
+                {t("Delete")}
               </button>
             </div>
           </div>

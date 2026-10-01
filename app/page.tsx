@@ -13,7 +13,7 @@ import {
   Camera, Upload, MapPin, Users, CalendarDays, Clock,
   FileImage, Ruler, CheckCircle2, Loader2,
   Search, Navigation, X, Check,
-  Coffee, Utensils, Wine, Sparkles, Trash2, ScanFace, Save,
+  Coffee, Utensils, Wine, Sparkles, Trash2, ScanFace, Save, Pencil,
 } from "lucide-react";
 import Link from "next/link";
 import { HomeHero, LatestTripCard, RecentMemories } from "@/components/HomeSections";
@@ -22,6 +22,7 @@ import { summarizeTrip, TripMemory } from "@/lib/tripMemory";
 import { fetchProfile } from "@/lib/socialUtils";
 import BatchUploadPanel, { BatchFile, BatchPhase } from "@/components/BatchUploadPanel";
 import { guessLocationByTime, describeGap, LocatedShot } from "@/lib/locationGuess";
+import { msg, useLang } from "@/lib/i18n";
 import { BACKEND_URL } from "@/lib/backend";
 import { newId } from "@/lib/id";
 import { runFaceDetection, DetectionResult } from "@/lib/faceDetection";
@@ -99,6 +100,7 @@ async function readExifInBrowser(file: File) {
 // ── Main Component ──────────────────────────────
 export default function HomePage() {
   const uploadRequestIdRef = useRef(0);
+  const { t, tn, lang } = useLang();
   // Mirrors customFileName synchronously — handleSave reads this instead of
   // the raw File.name so its DB write always carries whatever name is showing at
   // the moment it actually executes, even if the user renamed while face
@@ -258,7 +260,7 @@ export default function HomePage() {
     // stale result instead of overwriting the preview/analysis panel for the new file.
     if (requestId !== uploadRequestIdRef.current) return;
 
-    const category = detectedFaceCount > 0 ? "Portrait" : "Scenery";
+    const category = detectedFaceCount > 0 ? msg("Portrait") : msg("Scenery");
     setPhotoInfo({
       fileName: file.name, fileType: file.type || "unknown",
       fileSize: formatBytes(file.size), uploadedAt: new Date().toLocaleString(),
@@ -300,7 +302,7 @@ export default function HomePage() {
       if (guess && requestId === uploadRequestIdRef.current) {
         setManualCoords({ lat: guess.lat, lng: guess.lng, name: guess.location ?? `${guess.lat.toFixed(5)}, ${guess.lng.toFixed(5)}` });
         setLocationStatus("done");
-        setLocationNote(`Estimated from ${guess.label}, taken ${describeGap(guess.gapMs)}`);
+        setLocationNote(t("Estimated from {label}, taken {gap}", { label: guess.label, gap: describeGap(guess.gapMs, t) }));
       }
     }
   }
@@ -328,7 +330,7 @@ export default function HomePage() {
       file = await toDisplayableImage(original);
     } catch (err) {
       console.error("Couldn't convert HEIC:", err);
-      setUploadError(`Couldn't open “${original.name}”. Try exporting it as JPG and uploading again.`);
+      setUploadError(t("Couldn't open “{name}”. Try exporting it as JPG and uploading again.", { name: original.name }));
       setLoading(false);
       return;
     }
@@ -440,7 +442,7 @@ export default function HomePage() {
     } catch (err) {
       console.error(err);
       if (requestId === uploadRequestIdRef.current) {
-        setUploadError(`Something went wrong while reading this photo: ${err instanceof Error ? err.message : String(err)}`);
+        setUploadError(t("Something went wrong while reading this photo: {error}", { error: err instanceof Error ? err.message : String(err) }));
       }
     } finally {
       if (requestId === uploadRequestIdRef.current) setLoading(false);
@@ -471,7 +473,7 @@ export default function HomePage() {
   }
 
   function handleCurrentLocation() {
-    if (!navigator.geolocation) { alert("Geolocation is not supported by your browser."); return; }
+    if (!navigator.geolocation) { alert(t("Geolocation is not supported by your browser.")); return; }
     setLocationStatus("searching");
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
@@ -492,7 +494,7 @@ export default function HomePage() {
           });
         }
       },
-      () => { alert("Unable to retrieve your location."); setLocationStatus("error"); }
+      () => { alert(t("Unable to retrieve your location.")); setLocationStatus("error"); }
     );
   }
 
@@ -580,8 +582,8 @@ export default function HomePage() {
           }
         }
         const infoParts: string[] = [];
-        if (faceCount > 0) infoParts.push(`${faceCount} face(s)`);
-        infoParts.push(location ? location.split(",")[0] : "No GPS");
+        if (faceCount > 0) infoParts.push(tn(faceCount, "{n} face", "{n} faces"));
+        infoParts.push(location ? location.split(",")[0] : t("No GPS"));
         items[i] = {
           ...items[i],
           name: file.name,
@@ -600,7 +602,7 @@ export default function HomePage() {
         };
       } catch (err) {
         console.error(`Batch error [${original.name}]:`, err);
-        items[i] = { ...items[i], status: "error", info: "Couldn't read this photo" };
+        items[i] = { ...items[i], status: "error", info: t("Couldn't read this photo") };
       }
       setBatchItems([...items]);
     }
@@ -637,7 +639,7 @@ export default function HomePage() {
         lat: guess.lat, lng: guess.lng,
         location: guess.location ?? `${guess.lat.toFixed(6)}, ${guess.lng.toFixed(6)}`,
         locationSource: "estimated",
-        locationNote: `Estimated from ${guess.label}, taken ${describeGap(guess.gapMs)}`,
+        locationNote: t("Estimated from {label}, taken {gap}", { label: guess.label, gap: describeGap(guess.gapMs, t) }),
       };
     }
   }
@@ -683,7 +685,7 @@ export default function HomePage() {
         items[i] = { ...items[i], status: "done" };
       } catch (err) {
         console.error(`Batch save error [${it.name}]:`, err);
-        items[i] = { ...items[i], status: "error", info: "Couldn't save" };
+        items[i] = { ...items[i], status: "error", info: t("Couldn't save") };
       }
       setBatchItems([...items]);
     }
@@ -775,16 +777,21 @@ export default function HomePage() {
         ...(personIds.some((p) => p !== null) && { personIds }),
       });
       setIsMapSaved(true);
-      const where = ["Albums", ...(lat !== null ? ["Map"] : []), ...(boxes.length > 0 ? ["People"] : [])];
-      setSavedMessage(`Saved to ${where.join(", ").replace(/, ([^,]*)$/, " and $1")}!`);
+      setSavedMessage(t("Saved to {places}!", { places: joinPlaces([msg("Albums"), ...(lat !== null ? [msg("Map")] : []), ...(boxes.length > 0 ? [msg("People")] : [])]) }));
       refreshStats();
       flyPaperPlane();
     } catch (err) {
       console.error("Save failed:", err);
-      setSavedMessage(`Save failed: ${err instanceof Error ? err.message : "Please try again."}`);
+      setSavedMessage(t("Save failed: {error}", { error: err instanceof Error ? err.message : t("Please try again.") }));
     } finally {
       setSaving(false);
     }
+  }
+
+  // "Albums, Map and People" / "앨범, 지도, 인물"
+  function joinPlaces(keys: string[]): string {
+    const names = keys.map((k) => t(k)).join(", ");
+    return lang === "ko" ? names : names.replace(/, ([^,]*)$/, " and $1");
   }
 
   return (
@@ -809,7 +816,7 @@ export default function HomePage() {
                 <div className="w-8 h-8 bg-gradient-to-br from-sky-400 to-blue-500 rounded-xl flex items-center justify-center shadow-md shadow-sky-200">
                   <FileImage size={16} className="text-white" />
                 </div>
-                <div><h2 className="text-lg font-bold text-slate-800 leading-tight">Add photos</h2><p className="text-xs text-slate-400">One or many at once — place, date and faces are read for you</p></div>
+                <div><h2 className="text-lg font-bold text-slate-800 leading-tight">{t("Add photos")}</h2><p className="text-xs text-slate-400">{t("One or many at once — place, date and faces are read for you")}</p></div>
               </div>
             </div>
 
@@ -819,8 +826,8 @@ export default function HomePage() {
                 <Link href="/profile#face-analysis"
                   className="flex items-center gap-2 text-xs font-semibold text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 hover:bg-slate-100 transition-colors">
                   <ScanFace size={14} className="text-slate-400 flex-shrink-0" />
-                  Face analysis is off — photos are saved without detecting faces.
-                  <span className="ml-auto text-blue-600 font-bold whitespace-nowrap">Settings</span>
+                  {t("Face analysis is off — photos are saved without detecting faces.")}
+                  <span className="ml-auto text-blue-600 font-bold whitespace-nowrap">{t("Settings")}</span>
                 </Link>
               )}
 
@@ -843,17 +850,17 @@ export default function HomePage() {
                     <Upload size={28} className="text-sky-500 group-hover:text-sky-600 transition-colors" />
                   </div>
 
-                  <p className="font-bold text-slate-700 group-hover:text-sky-700 transition-colors text-base">Drag & drop or click to upload</p>
-                  <p className="text-xs text-slate-400 mt-1.5">JPG, PNG, HEIC, etc.</p>
+                  <p className="font-bold text-slate-700 group-hover:text-sky-700 transition-colors text-base">{t("Drag & drop or click to upload")}</p>
+                  <p className="text-xs text-slate-400 mt-1.5">{t("JPG, PNG, HEIC, etc.")}</p>
 
                   {!isModelLoaded && (
                     <p className="mt-3 text-xs text-slate-400 flex items-center gap-1">
-                      <Loader2 size={12} className="animate-spin" /> Loading AI engine...
+                      <Loader2 size={12} className="animate-spin" /> {t("Loading AI engine...")}
                     </p>
                   )}
 
                   <p className="absolute bottom-3 text-[11px] text-sky-300/80 italic tracking-wide select-none font-medium">
-                    Upload your photo ♡
+                    {t("Upload your photo ♡")}
                   </p>
                 </label>
               </div>
@@ -862,7 +869,7 @@ export default function HomePage() {
                 <div role="alert" className="flex items-start gap-2 text-sm font-semibold text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5">
                   <X size={16} className="flex-shrink-0 mt-0.5" />
                   <span className="flex-1">{uploadError}</span>
-                  <button onClick={() => setUploadError("")} className="text-red-400 hover:text-red-600 text-xs">Dismiss</button>
+                  <button onClick={() => setUploadError("")} className="text-red-400 hover:text-red-600 text-xs">{t("Dismiss")}</button>
                 </div>
               )}
 
@@ -870,7 +877,7 @@ export default function HomePage() {
               {loading && (
                 <div className="flex items-center justify-center gap-2 text-sky-600 py-2 text-sm font-medium">
                   <Loader2 size={16} className="animate-spin" />
-                  Analyzing...
+                  {t("Analyzing...")}
                 </div>
               )}
 
@@ -879,7 +886,7 @@ export default function HomePage() {
               {photoInfo && photoInfo.lat === null && (
                 <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 space-y-3">
                   <p className="text-sm font-bold text-orange-700 flex items-center gap-2">
-                    <MapPin size={15} /> No GPS data — please enter a location manually
+                    <MapPin size={15} /> {t("No GPS data — please enter a location manually")}
                   </p>
                   <button
                     onClick={handleCurrentLocation}
@@ -887,8 +894,8 @@ export default function HomePage() {
                     className="w-full flex items-center justify-center gap-2 bg-sky-500 hover:bg-sky-600 disabled:bg-sky-300 text-white text-sm font-bold py-2.5 rounded-xl transition-colors"
                   >
                     {locationStatus === "searching"
-                      ? <><Loader2 size={14} className="animate-spin" /> Getting location...</>
-                      : <><Navigation size={14} /> Use Current Location (GPS)</>
+                      ? <><Loader2 size={14} className="animate-spin" /> {t("Getting location...")}</>
+                      : <><Navigation size={14} /> {t("Use Current Location (GPS)")}</>
                     }
                   </button>
                   <div className="flex gap-2">
@@ -896,7 +903,7 @@ export default function HomePage() {
                       value={locationQuery}
                       onChange={(e) => setLocationQuery(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && handleLocationSearch()}
-                      placeholder="Search location (e.g., Eiffel Tower, Paris)"
+                      placeholder={t("Search location (e.g., Eiffel Tower, Paris)")}
                       className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition-all"
                     />
                     <button
@@ -911,13 +918,13 @@ export default function HomePage() {
                     <p className="text-xs text-emerald-600 font-semibold flex items-start gap-1">
                       <CheckCircle2 size={13} className="flex-shrink-0 mt-px" />
                       <span>
-                        Location set: {manualCoords.name.length > 60 ? `${manualCoords.name.slice(0, 60)}...` : manualCoords.name}
-                        {locationNote && <span className="block font-medium text-slate-500">≈ {locationNote}. Search above if it&apos;s wrong.</span>}
+                        {t("Location set:")} {manualCoords.name.length > 60 ? `${manualCoords.name.slice(0, 60)}...` : manualCoords.name}
+                        {locationNote && <span className="block font-medium text-slate-500">≈ {locationNote}. {t("Search above if it's wrong.")}</span>}
                       </span>
                     </p>
                   )}
                   {locationStatus === "error" && (
-                    <p className="text-xs text-red-500 font-medium">Location not found. Try a different search term.</p>
+                    <p className="text-xs text-red-500 font-medium">{t("Location not found. Try a different search term.")}</p>
                   )}
                 </div>
               )}
@@ -925,38 +932,56 @@ export default function HomePage() {
               {/* File chip + save button */}
               {photoInfo && (
                 <div className="space-y-3">
-                  {isEditingName ? (
-                    <div className="flex gap-2">
-                      <input
-                        value={draftFileName}
-                        onChange={(e) => setDraftFileName(e.target.value)}
-                        className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-                      />
-                      <button onClick={saveEditedName}
-                        className="bg-sky-500 text-white px-3 py-2 rounded-xl hover:bg-sky-600 transition-colors">
-                        <Check size={16} />
-                      </button>
-                      <button onClick={() => setIsEditingName(false)}
-                        className="bg-slate-100 text-slate-600 px-3 py-2 rounded-xl hover:bg-slate-200 transition-colors">
-                        <X size={16} />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
-                      <div className="w-9 h-9 bg-sky-50 border border-sky-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <FileImage size={15} className="text-sky-500" />
+                  {/* The name is editable through the Rename button — a tappable plain name went unnoticed. */}
+                  <div>
+                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide mb-1.5 px-1">{t("Photo name")}</p>
+                    {isEditingName ? (
+                      <div className="flex gap-2">
+                        <div className="relative flex-1 min-w-0">
+                          <Pencil size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-500 pointer-events-none" />
+                          <input
+                            autoFocus
+                            value={draftFileName}
+                            onChange={(e) => setDraftFileName(e.target.value)}
+                            onFocus={(e) => e.target.select()}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") saveEditedName();
+                              if (e.key === "Escape") setIsEditingName(false);
+                            }}
+                            placeholder={t("Give this photo a name")}
+                            className="w-full border-2 border-sky-300 bg-white rounded-xl pl-9 pr-3 py-2.5 text-sm font-semibold text-slate-800 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                          />
+                        </div>
+                        <button onClick={saveEditedName} title={t("Save name")}
+                          className="bg-sky-500 text-white px-3 rounded-xl hover:bg-sky-600 transition-colors">
+                          <Check size={16} />
+                        </button>
+                        <button onClick={() => setIsEditingName(false)} title={t("Cancel")}
+                          className="bg-slate-100 text-slate-600 px-3 rounded-xl hover:bg-slate-200 transition-colors">
+                          <X size={16} />
+                        </button>
                       </div>
-                      <div className="flex-1 min-w-0 cursor-pointer" onClick={startEditName}>
-                        <p className="text-sm font-bold text-slate-800 truncate">{customFileName}</p>
-                        <p className="text-xs text-slate-400 mt-0.5">{photoInfo.fileSize}</p>
+                    ) : (
+                      <div className="flex items-center gap-3 bg-slate-50 rounded-xl pl-4 pr-2 py-3 border border-slate-100">
+                        <div className="w-9 h-9 bg-sky-50 border border-sky-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                          <FileImage size={15} className="text-sky-500" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-slate-800 truncate">{customFileName}</p>
+                          <p className="text-xs text-slate-400 mt-0.5">{photoInfo.fileSize}</p>
+                        </div>
+                        <button type="button" onClick={startEditName}
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-sky-700 bg-sky-100 hover:bg-sky-200 transition-colors flex-shrink-0">
+                          <Pencil size={12} /> {t("Rename")}
+                        </button>
+                        <button
+                          onClick={clearSelection} title={t("Remove this photo")}
+                          className="text-slate-400 hover:text-red-500 transition-colors p-1.5 rounded-lg hover:bg-red-50 flex-shrink-0">
+                          <Trash2 size={15} />
+                        </button>
                       </div>
-                      <button
-                        onClick={clearSelection}
-                        className="text-slate-400 hover:text-red-500 transition-colors p-1 rounded-lg hover:bg-red-50">
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
 
                   <button
                     onClick={handleSave}
@@ -966,13 +991,14 @@ export default function HomePage() {
                         ? "bg-emerald-100 text-emerald-700 cursor-not-allowed"
                         : "bg-gradient-to-r from-sky-400 to-blue-500 hover:from-sky-500 hover:to-blue-600 text-white shadow-lg shadow-sky-200 disabled:opacity-70"
                     }`}>
-                    {isMapSaved ? <><CheckCircle2 size={16} /> Saved</>
-                      : saving ? <><Loader2 size={16} className="animate-spin" /> Saving...</>
-                      : <><Save size={16} /> Save<span className="ml-1 opacity-70 text-base leading-none">✦✦</span></>}
+                    {isMapSaved ? <><CheckCircle2 size={16} /> {t("Saved")}</>
+                      : saving ? <><Loader2 size={16} className="animate-spin" /> {t("Saving...")}</>
+                      : <><Save size={16} /> {t("Save")}<span className="ml-1 opacity-70 text-base leading-none">✦✦</span></>}
                   </button>
                   {!isMapSaved && (
                     <p className="text-[11px] text-slate-400 text-center -mt-1">
-                      Adds it to Albums{(photoInfo.lat !== null || manualCoords) ? ", Map" : ""}{selectedFaceIndices.size > 0 ? ` and People (${selectedFaceIndices.size} face${selectedFaceIndices.size === 1 ? "" : "s"})` : ""}
+                      {t("Adds it to {places}", { places: joinPlaces([msg("Albums"), ...((photoInfo.lat !== null || manualCoords) ? [msg("Map")] : []), ...(selectedFaceIndices.size > 0 ? [msg("People")] : [])]) })}
+                      {selectedFaceIndices.size > 0 && ` (${tn(selectedFaceIndices.size, "{n} face", "{n} faces")})`}
                     </p>
                   )}
 
@@ -995,7 +1021,7 @@ export default function HomePage() {
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <span className="text-sky-500 font-bold text-lg leading-none">✦</span>
-                <h2 className="text-lg font-bold text-slate-800">Analysis Result</h2>
+                <h2 className="text-lg font-bold text-slate-800">{t("Analysis Result")}</h2>
               </div>
             </div>
 
@@ -1051,20 +1077,20 @@ export default function HomePage() {
                         <span className="text-white text-xs font-extrabold italic">Ai</span>
                       </div>
                       <div>
-                        <p className="text-xs text-white/70 mb-0.5">AI Classification</p>
-                        <p className="font-extrabold text-lg text-white leading-tight">{photoInfo.category}</p>
+                        <p className="text-xs text-white/70 mb-0.5">{t("AI Classification")}</p>
+                        <p className="font-extrabold text-lg text-white leading-tight">{t(photoInfo.category)}</p>
                       </div>
                     </div>
                     <div className="text-right">
                       <p className="text-3xl font-extrabold text-white">{photoInfo.faceCount}</p>
-                      <p className="text-xs text-white/70">detected</p>
+                      <p className="text-xs text-white/70">{t("detected")}</p>
                     </div>
                   </div>
 
                   {photoInfo.faceBoxes.length > 0 && (
                     <div className={`rounded-xl border border-sky-100 bg-sky-50 p-3 space-y-3 ${isMapSaved ? "opacity-70 pointer-events-none" : ""}`}>
                       <p className="text-xs font-semibold text-slate-700">
-                        Who&apos;s in this photo? ({selectedFaceIndices.size}/{photoInfo.faceBoxes.length} will be saved to People)
+                        {t("Who's in this photo? ({picked}/{total} will be saved to People)", { picked: selectedFaceIndices.size, total: photoInfo.faceBoxes.length })}
                       </p>
 
                       <div className="flex gap-3 overflow-x-auto pb-1">
@@ -1082,7 +1108,7 @@ export default function HomePage() {
                                 }`}>
                                   {faceThumbnails[i] ? (
                                     // eslint-disable-next-line @next/next/no-img-element
-                                    <img src={faceThumbnails[i]} alt={`Person ${i + 1}`} className="h-full w-full object-cover" />
+                                    <img src={faceThumbnails[i]} alt={t("Person {n}", { n: i + 1 })} className="h-full w-full object-cover" />
                                   ) : (
                                     <div className="h-full w-full animate-pulse bg-slate-200" />
                                   )}
@@ -1093,7 +1119,7 @@ export default function HomePage() {
                                   )}
                                 </div>
                                 <span className={`text-[11px] font-semibold ${selected ? "text-emerald-600" : "text-slate-500"}`}>
-                                  Person {i + 1}
+                                  {t("Person {n}", { n: i + 1 })}
                                 </span>
                               </button>
                               {/* Optionally tag this face as an existing Faces-page person instead
@@ -1112,7 +1138,7 @@ export default function HomePage() {
                                   }}
                                   className="w-16 text-[9px] font-semibold text-slate-600 border border-slate-200 rounded-md px-0.5 py-0.5 outline-none"
                                 >
-                                  <option value="">Who?</option>
+                                  <option value="">{t("Who?")}</option>
                                   {people.map((p) => (
                                     <option key={p.id} value={p.id}>{p.name}</option>
                                   ))}
@@ -1123,25 +1149,25 @@ export default function HomePage() {
                         })}
                       </div>
 
-                      <p className="text-[11px] text-slate-400">Tap a face to leave it out. Saved with the Save button.</p>
+                      <p className="text-[11px] text-slate-400">{t("Tap a face to leave it out. Saved with the Save button.")}</p>
                     </div>
                   )}
 
                   {/* Info grid — all sky blue icons */}
                   <div className="grid grid-cols-2 gap-2">
-                    <InfoRow label="File name"    value={customFileName}        icon={FileImage}    />
-                    <InfoRow label="File size"    value={photoInfo.fileSize}    icon={Ruler}        />
-                    <InfoRow label="Capture date" value={photoInfo.captureDate} icon={CalendarDays} />
-                    <InfoRow label="Capture time" value={photoInfo.captureTime} icon={Clock}        />
-                    <InfoRow label="Location"     value={photoInfo.location}    icon={MapPin}       />
+                    <InfoRow label={t("File name")}    value={customFileName}           icon={FileImage}    />
+                    <InfoRow label={t("File size")}    value={photoInfo.fileSize}       icon={Ruler}        />
+                    <InfoRow label={t("Capture date")} value={t(photoInfo.captureDate)} icon={CalendarDays} />
+                    <InfoRow label={t("Capture time")} value={t(photoInfo.captureTime)} icon={Clock}        />
+                    <InfoRow label={t("Location")}     value={t(photoInfo.location)}    icon={MapPin}       />
                     <InfoRow
-                      label="Coordinates"
+                      label={t("Coordinates")}
                       value={
                         photoInfo.lat != null
                           ? `${photoInfo.lat.toFixed(4)}, ${photoInfo.lng?.toFixed(4)}`
                           : manualCoords
-                            ? `${manualCoords.lat.toFixed(4)}, ${manualCoords.lng.toFixed(4)} (manual)`
-                            : "None"
+                            ? `${manualCoords.lat.toFixed(4)}, ${manualCoords.lng.toFixed(4)} ${t("(manual)")}`
+                            : t("None")
                       }
                       icon={Navigation}
                     />
@@ -1151,22 +1177,22 @@ export default function HomePage() {
                   {(placesLoading || placesFetched) && (
                     <div className="space-y-2">
                       <p className="text-xs font-semibold text-slate-500 flex items-center gap-1.5 uppercase tracking-wide">
-                        <MapPin size={11} /> Nearby Places
+                        <MapPin size={11} /> {t("Nearby Places")}
                       </p>
                       {placesLoading && (
                         <div className="flex items-center gap-2 text-slate-400 text-sm py-2">
                           <Loader2 size={14} className="animate-spin" />
-                          Searching nearby places...
+                          {t("Searching nearby places...")}
                         </div>
                       )}
                       {!placesLoading && placesFetched && nearbyPlaces.length === 0 && (
-                        <p className="text-sm text-slate-400 italic py-1">No registered places within 500m.</p>
+                        <p className="text-sm text-slate-400 italic py-1">{t("No registered places within 500m.")}</p>
                       )}
                       {!placesLoading && nearbyPlaces.length > 0 && (
                         <div className="space-y-1.5 max-h-52 overflow-y-auto pr-0.5">
                           {nearbyPlaces.map((place, i) => {
                             const Icon = place.type === "cafe" ? Coffee : place.type === "bar" ? Wine : Utensils;
-                            const typeLabel = place.type === "cafe" ? "Cafe" : place.type === "bar" ? "Bar" : "Restaurant";
+                            const typeLabel = place.type === "cafe" ? t("Cafe") : place.type === "bar" ? t("Bar") : t("Restaurant");
                             const typeColor = place.type === "cafe"
                               ? "bg-amber-50 text-amber-700 border-amber-200"
                               : place.type === "bar"
@@ -1199,15 +1225,15 @@ export default function HomePage() {
                   <div className="w-14 h-14 bg-sky-50 rounded-2xl flex items-center justify-center mb-3">
                     <Camera size={24} className="text-sky-400" />
                   </div>
-                  <p className="text-sm font-semibold text-slate-600">Your photo&apos;s analysis will appear here</p>
-                  <p className="text-xs text-slate-400 mt-1">Upload a photo to get started</p>
+                  <p className="text-sm font-semibold text-slate-600">{t("Your photo's analysis will appear here")}</p>
+                  <p className="text-xs text-slate-400 mt-1">{t("Upload a photo to get started")}</p>
 
                   <div className="flex items-start mt-8 w-full max-w-sm">
                     {[
-                      { icon: Upload,   label: "Upload" },
-                      { icon: MapPin,   label: "Place" },
-                      { icon: Users,    label: "Faces" },
-                      { icon: Sparkles, label: "Trips" },
+                      { icon: Upload,   label: msg("Upload") },
+                      { icon: MapPin,   label: msg("Place") },
+                      { icon: Users,    label: msg("Faces") },
+                      { icon: Sparkles, label: msg("Trips") },
                     ].map(({ icon: Icon, label }, i) => (
                       <Fragment key={label}>
                         {i > 0 && <span className="flex-1 mt-[18px] mx-1 border-t border-dashed border-sky-200" />}
@@ -1215,7 +1241,7 @@ export default function HomePage() {
                           <span className="w-9 h-9 rounded-full bg-white border border-sky-100 text-sky-500 flex items-center justify-center shadow-sm">
                             <Icon size={15} />
                           </span>
-                          <span className="text-[11px] font-semibold text-slate-400">{label}</span>
+                          <span className="text-[11px] font-semibold text-slate-400">{t(label)}</span>
                         </div>
                       </Fragment>
                     ))}

@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import { House, MapPinned, Images, ScanFace, UsersRound, CircleUserRound, LogOut, Aperture } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { msg, useLang } from "@/lib/i18n";
 
 // App navigation: a bottom bar on phones/tablets, a left side rail on desktop (lg+;
 // AuthGuard pads the content for it). People (/faces) is its own tab because face
@@ -13,12 +14,12 @@ import { supabase } from "@/lib/supabase";
 type NavItem = { href: string; icon: React.ElementType; label: string; routes: string[] };
 
 const navItems: NavItem[] = [
-  { href: "/",        icon: House,           label: "Home",    routes: ["/"] },
-  { href: "/map",     icon: MapPinned,       label: "Map",     routes: ["/map"] },
-  { href: "/albums",  icon: Images,          label: "Albums",  routes: ["/albums", "/saved", "/cleanup"] },
-  { href: "/faces",   icon: ScanFace,        label: "People",  routes: ["/faces"] },
-  { href: "/feed",    icon: UsersRound,      label: "Social",  routes: ["/feed", "/collab", "/post", "/u"] },
-  { href: "/profile", icon: CircleUserRound, label: "Profile", routes: ["/profile", "/stats"] },
+  { href: "/",        icon: House,           label: msg("Home"),    routes: ["/"] },
+  { href: "/map",     icon: MapPinned,       label: msg("Map"),     routes: ["/map"] },
+  { href: "/albums",  icon: Images,          label: msg("Albums"),  routes: ["/albums", "/saved", "/cleanup"] },
+  { href: "/faces",   icon: ScanFace,        label: msg("People"),  routes: ["/faces"] },
+  { href: "/feed",    icon: UsersRound,      label: msg("Social"),  routes: ["/feed", "/collab", "/post", "/u"] },
+  { href: "/profile", icon: CircleUserRound, label: msg("Profile"), routes: ["/profile", "/stats"] },
 ];
 
 function isActive(pathname: string, item: NavItem) {
@@ -60,6 +61,7 @@ function TabIcon({ icon: Icon, active, label, bubbleId, size }: {
 export default function BottomNav() {
   const pathname = usePathname();
   const router   = useRouter();
+  const { t } = useLang();
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -81,7 +83,7 @@ export default function BottomNav() {
             return (
               <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined}
                 className="group flex-1 flex flex-col items-center gap-1 py-1">
-                <TabIcon icon={item.icon} active={active} label={item.label} bubbleId="bottom-nav-bubble" size="sm" />
+                <TabIcon icon={item.icon} active={active} label={t(item.label)} bubbleId="bottom-nav-bubble" size="sm" />
               </Link>
             );
           })}
@@ -105,7 +107,7 @@ export default function BottomNav() {
             return (
               <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined}
                 className="group flex flex-col items-center gap-1 py-1">
-                <TabIcon icon={item.icon} active={active} label={item.label} bubbleId="side-nav-bubble" size="md" />
+                <TabIcon icon={item.icon} active={active} label={t(item.label)} bubbleId="side-nav-bubble" size="md" />
               </Link>
             );
           })}
@@ -113,8 +115,8 @@ export default function BottomNav() {
         <motion.button
           whileTap={{ scale: 0.88 }}
           onClick={handleLogout}
-          title="Log out"
-          aria-label="Log out"
+          title={t("Log out")}
+          aria-label={t("Log out")}
           className="w-11 h-11 flex items-center justify-center rounded-2xl text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
         >
           <LogOut size={18} strokeWidth={1.8} />

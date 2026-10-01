@@ -7,9 +7,11 @@ import { getShare, ShareRecord } from "@/lib/shareUtils";
 import { recordShareView } from "@/lib/notificationUtils";
 import { MapPin, CalendarDays, Users } from "lucide-react";
 import AppLogo from "@/components/AppLogo";
+import { useLang } from "@/lib/i18n";
 
 export default function SharePage() {
   const { id } = useParams<{ id: string }>();
+  const { t } = useLang();
   const [share, setShare] = useState<ShareRecord | null | undefined>(undefined);
 
   useEffect(() => {
@@ -23,7 +25,7 @@ export default function SharePage() {
   if (share === undefined) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-slate-400 text-sm animate-pulse">Loading...</div>
+        <div className="text-slate-400 text-sm animate-pulse">{t("Loading...")}</div>
       </div>
     );
   }
@@ -35,11 +37,11 @@ export default function SharePage() {
           <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4 opacity-40">
             <AppLogo size="lg" />
           </div>
-          <p className="font-bold text-slate-700 mb-1">Photo not found</p>
-          <p className="text-slate-400 text-sm mb-4">This link may have expired or been removed.</p>
+          <p className="font-bold text-slate-700 mb-1">{t("Photo not found")}</p>
+          <p className="text-slate-400 text-sm mb-4">{t("This link may have expired or been removed.")}</p>
           <Link href="/"
             className="inline-block px-4 py-2 bg-gradient-to-r from-sky-500 to-blue-600 text-white text-sm font-bold rounded-xl hover:bg-gradient-to-r from-sky-500 to-blue-600 transition-all">
-            Open Travelries
+            {t("Open Travelries")}
           </Link>
         </div>
       </div>
@@ -55,7 +57,7 @@ export default function SharePage() {
             Travel<span className="bg-gradient-to-r from-blue-600 to-indigo-500 bg-clip-text text-transparent">ries</span>
           </span>
           <span className="text-slate-300 mx-1">·</span>
-          <span className="text-xs text-slate-400">Shared photo</span>
+          <span className="text-xs text-slate-400">{t("Shared photo")}</span>
         </div>
 
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
@@ -79,7 +81,7 @@ export default function SharePage() {
             <div className="grid grid-cols-2 gap-2">
               {share.capture_date && share.capture_date !== "Not available" && (
                 <div className="bg-slate-50 rounded-xl px-3 py-2 border border-slate-100">
-                  <p className="text-[10px] text-slate-400 font-medium mb-0.5">Date taken</p>
+                  <p className="text-[10px] text-slate-400 font-medium mb-0.5">{t("Date taken")}</p>
                   <p className="text-xs font-bold text-slate-700 flex items-center gap-1">
                     <CalendarDays size={10} /> {share.capture_date}
                   </p>
@@ -87,7 +89,7 @@ export default function SharePage() {
               )}
               {(share.face_count ?? 0) > 0 && (
                 <div className="bg-slate-50 rounded-xl px-3 py-2 border border-slate-100">
-                  <p className="text-[10px] text-slate-400 font-medium mb-0.5">Faces detected</p>
+                  <p className="text-[10px] text-slate-400 font-medium mb-0.5">{t("Faces detected")}</p>
                   <p className="text-xs font-bold text-slate-700 flex items-center gap-1">
                     <Users size={10} /> {share.face_count} {share.face_count === 1 ? "person" : "people"}
                   </p>
@@ -95,7 +97,7 @@ export default function SharePage() {
               )}
               {share.location && (
                 <div className="col-span-2 bg-slate-50 rounded-xl px-3 py-2 border border-slate-100">
-                  <p className="text-[10px] text-slate-400 font-medium mb-0.5">Location</p>
+                  <p className="text-[10px] text-slate-400 font-medium mb-0.5">{t("Location")}</p>
                   <p className="text-xs font-bold text-slate-700 flex items-center gap-1">
                     <MapPin size={10} /> {share.location}
                   </p>
@@ -104,7 +106,7 @@ export default function SharePage() {
             </div>
             <div className="mt-3 pt-3 border-t border-slate-100 text-center">
               <Link href="/" className="text-xs text-blue-500 font-semibold hover:underline">
-                Open Travelries →
+                {t("Open Travelries")} →
               </Link>
             </div>
           </div>

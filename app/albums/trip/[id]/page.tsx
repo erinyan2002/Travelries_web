@@ -11,11 +11,13 @@ import { fetchMapPhotos, fetchFacePhotos } from "@/lib/photosApi";
 import { fetchPeople, Person } from "@/lib/peopleApi";
 import { detectTrips, Trip } from "@/lib/trips";
 import { FacePhoto } from "@/lib/types";
+import { useLang } from "@/lib/i18n";
 
 // One trip, named in the URL by any of its photos (Albums links the earliest,
 // lib/tripMemory.ts tripAnchorId). Trips aren't stored; they're re-detected here.
 export default function TripPage() {
   const { id } = useParams<{ id: string }>();
+  const { t } = useLang();
   const [uid, setUid] = useState<string | null>(null);
   const [trip, setTrip] = useState<Trip | null>(null);
   const [loading, setLoading] = useState(true);
@@ -52,10 +54,10 @@ export default function TripPage() {
           <TripView trip={trip} facePhotos={facePhotos} people={people} uid={uid} />
         ) : (
           <div className="tv-card p-10 text-center">
-            <p className="font-bold text-slate-700">This trip isn&apos;t available.</p>
-            <p className="text-sm text-slate-400 mt-1">Its photos may have been deleted.</p>
+            <p className="font-bold text-slate-700">{t("This trip isn't available.")}</p>
+            <p className="text-sm text-slate-400 mt-1">{t("Its photos may have been deleted.")}</p>
             <Link href="/albums?view=trips" className="tv-btn-soft text-sm px-4 py-2 mt-4 inline-flex">
-              <ArrowLeft size={14} /> All trips
+              <ArrowLeft size={14} /> {t("All trips")}
             </Link>
           </div>
         )}

@@ -1,3 +1,4 @@
+import { translate, currentLang } from "./i18n";
 // Saving an image from the web app. A web page can't write to the phone's photo
 // library directly, and on iPhone `<a download>` only opens a file preview, so
 // phones get the share sheet with the image file, whose "Save Image" puts it in
@@ -50,6 +51,7 @@ function download(blob: Blob, fileName: string) {
 // the Downloads folder silently (Safari only twitches its toolbar icon), so
 // without this, Save looked like it did nothing.
 let toastEl: HTMLDivElement | null = null;
+const t = (en: string, vars?: Record<string, string>) => translate(currentLang(), en, vars);
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 function toast(text: string, ms = 2600) {
   if (typeof document === "undefined") return;
@@ -72,11 +74,11 @@ function toast(text: string, ms = 2600) {
 /** Saves an image: the share sheet on phones (→ "Save Image"), a download elsewhere. */
 export async function saveImage(source: Blob | string, fileName: string): Promise<void> {
   let blob: Blob;
-  const slow = setTimeout(() => toast("Preparing image…", 0), 300);
+  const slow = setTimeout(() => toast(t("Preparing image…"), 0), 300);
   try {
     blob = typeof source === "string" ? await prefetchImage(source) : source;
   } catch {
-    toast("Couldn't download the image. Check your connection and try again.");
+    toast(t("Couldn't download the image. Check your connection and try again."));
     return;
   } finally {
     clearTimeout(slow);
@@ -96,5 +98,5 @@ export async function saveImage(source: Blob | string, fileName: string): Promis
     }
   }
   download(blob, name);
-  toast(`Saved “${name}” to your Downloads folder`);
+  toast(t("Saved “{name}” to your Downloads folder", { name }));
 }

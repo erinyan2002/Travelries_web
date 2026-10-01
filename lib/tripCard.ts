@@ -1,7 +1,11 @@
 // "Travel Memory" story card (1080×1920) for one trip — drawn into ShareCardModal
 // from the trip page. Same drawing helpers as the Year in Review card.
 import { drawPolaroid, drawRouteDivider, fillTextTracked, loadImage } from "./canvasCard";
-import { TripMemory, formatDistance, formatTripDates } from "./tripMemory";
+import { TripMemory, formatDistance, formatTripDates, tripTitle } from "./tripMemory";
+import { translate, currentLang } from "./i18n";
+
+// Drawn in the UI language at the moment the card is made.
+const t = (en: string, vars?: Record<string, string>) => translate(currentLang(), en, vars);
 import { MapPhoto } from "./types";
 
 const FONT = "system-ui, -apple-system, 'Pretendard Variable', sans-serif";
@@ -41,14 +45,14 @@ export async function drawTripMemoryCard(
   ctx.textAlign = "center";
   ctx.fillStyle = "#bae6fd";
   ctx.font = `700 28px ${FONT}`;
-  fillTextTracked(ctx, "✈ TRAVEL MEMORY", w / 2, 110, 6);
+  fillTextTracked(ctx, `✈ ${t("TRAVEL MEMORY")}`, w / 2, 110, 6);
 
   ctx.fillStyle = "#ffffff";
   ctx.font = `800 88px ${FONT}`;
-  ctx.fillText(fitText(ctx, memory.title, w - margin * 2), w / 2, 215);
+  ctx.fillText(fitText(ctx, tripTitle(memory, t), w - margin * 2), w / 2, 215);
   ctx.font = `600 36px ${FONT}`;
   ctx.fillStyle = "rgba(255,255,255,0.8)";
-  ctx.fillText(formatTripDates(memory.start, memory.end), w / 2, 272);
+  ctx.fillText(formatTripDates(memory.start, memory.end, currentLang()), w / 2, 272);
 
   drawRouteDivider(ctx, 320, w, margin, "rgba(255,255,255,0.3)");
 
@@ -62,12 +66,12 @@ export async function drawTripMemoryCard(
 
   // Stat tiles, 2×2
   const stats = [
-    { value: String(memory.dayCount), label: memory.dayCount === 1 ? "Day" : "Days" },
-    { value: String(memory.photoCount), label: "Photos" },
-    { value: String(memory.places.length), label: memory.places.length === 1 ? "Place" : "Places" },
+    { value: String(memory.dayCount), label: memory.dayCount === 1 ? t("Day") : t("Days") },
+    { value: String(memory.photoCount), label: t("Photos") },
+    { value: String(memory.places.length), label: memory.places.length === 1 ? t("Place") : t("Places") },
     peopleCount > 0
-      ? { value: String(peopleCount), label: peopleCount === 1 ? "Person" : "People" }
-      : { value: formatDistance(memory.distanceKm), label: "Traveled" },
+      ? { value: String(peopleCount), label: peopleCount === 1 ? t("Person") : t("People") }
+      : { value: formatDistance(memory.distanceKm), label: t("Traveled") },
   ];
   const tileW = (w - margin * 2 - 30) / 2, tileH = 170;
   stats.forEach((s, i) => {
@@ -89,7 +93,7 @@ export async function drawTripMemoryCard(
   if (memory.mostVisited) {
     ctx.fillStyle = "rgba(255,255,255,0.65)";
     ctx.font = `600 30px ${FONT}`;
-    ctx.fillText("Most visited place", w / 2, y);
+    ctx.fillText(t("Most visited place"), w / 2, y);
     ctx.fillStyle = "#ffffff";
     ctx.font = `800 48px ${FONT}`;
     ctx.fillText(fitText(ctx, memory.mostVisited.place, w - margin * 2), w / 2, y + 60);
@@ -98,7 +102,7 @@ export async function drawTripMemoryCard(
   if (memory.journey.length > 1) {
     ctx.fillStyle = "rgba(255,255,255,0.65)";
     ctx.font = `600 30px ${FONT}`;
-    ctx.fillText("Your journey", w / 2, y);
+    ctx.fillText(t("Your journey"), w / 2, y);
     ctx.fillStyle = "#e0f2fe";
     ctx.font = `700 36px ${FONT}`;
     // Wrap "A → B → C" onto at most 3 lines.

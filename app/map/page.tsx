@@ -13,7 +13,8 @@ import { fetchMapPhotos } from "@/lib/photosApi";
 import { MapPin, ArrowLeft, X, CalendarDays, ChevronLeft, ChevronRight, Share2, Loader2, Route, Flame, Map as MapIcon, Layers } from "lucide-react";
 import { sharePhoto } from "@/lib/shareUtils";
 import KoreaRegionMap from "@/components/KoreaRegionMap";
-import { matchRegionCode, REGION_LABELS } from "@/lib/koreaGeo";
+import { regionCodeOf, loadProvinceGeo, ProvinceGeoData, regionLabel } from "@/lib/koreaGeo";
+import { useLang } from "@/lib/i18n";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -106,6 +107,7 @@ function InfoChip({ label, value }: { label: string; value: string }) {
 }
 
 function PhotoModal({ cluster, onClose }: { cluster: Cluster; onClose: () => void }) {
+  const { t } = useLang();
   const [idx,          setIdx]          = useState(0);
   const [shareLoading, setShareLoading] = useState(false);
   const [shareUrl,     setShareUrl]     = useState<string | null>(null);
@@ -121,7 +123,7 @@ function PhotoModal({ cluster, onClose }: { cluster: Cluster; onClose: () => voi
       const url = await sharePhoto(photo);
       setShareUrl(url);
     } catch (err) {
-      alert(`Failed to create share link:\n${err instanceof Error ? err.message : String(err)}`);
+      alert(`${t("Failed to create share link:")}\n${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setShareLoading(false);
     }
@@ -140,13 +142,13 @@ function PhotoModal({ cluster, onClose }: { cluster: Cluster; onClose: () => voi
           <div className="min-w-0 flex-1">
             <p className="font-bold text-slate-900 text-sm truncate">{photo.fileName}</p>
             <p className="text-xs text-slate-400 mt-0.5">
-              {photo.location?.split(",")[0] || "Unknown location"} · {photo.captureDate || photo.uploadedAt?.slice(0, 10) || ""}
+              {photo.location?.split(",")[0] || t("Unknown location")} · {t(photo.captureDate || photo.uploadedAt?.slice(0, 10) || "")}
             </p>
           </div>
           <div className="flex items-center gap-2 ml-4 flex-shrink-0">
             {total > 1 && <span className="text-xs text-slate-400 font-semibold">{idx + 1} / {total}</span>}
             <button onClick={handleShare} disabled={shareLoading}
-              className="text-slate-400 hover:text-blue-500 transition-colors p-1" title="Share">
+              className="text-slate-400 hover:text-blue-500 transition-colors p-1" title={t("Share")}>
               {shareLoading ? <Loader2 size={18} className="animate-spin" /> : <Share2 size={18} />}
             </button>
             <button onClick={onClose} className="text-slate-400 hover:text-slate-700 transition-colors p-1"><X size={20} /></button>
@@ -158,7 +160,7 @@ function PhotoModal({ cluster, onClose }: { cluster: Cluster; onClose: () => voi
           <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100">
             <button onClick={() => setIdx((i) => Math.max(0, i - 1))} disabled={idx === 0}
               className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-colors ${idx === 0 ? "bg-slate-100 text-slate-300 cursor-not-allowed" : "bg-slate-900 text-white hover:bg-slate-700"}`}>
-              <ChevronLeft size={16} /> Prev
+              <ChevronLeft size={16} /> {t("Prev")}
             </button>
             <div className="flex gap-1.5 overflow-x-auto max-w-[55%]">
               {cluster.photos.map((p, i) => (
@@ -171,24 +173,24 @@ function PhotoModal({ cluster, onClose }: { cluster: Cluster; onClose: () => voi
             </div>
             <button onClick={() => setIdx((i) => Math.min(total - 1, i + 1))} disabled={idx === total - 1}
               className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-colors ${idx === total - 1 ? "bg-slate-100 text-slate-300 cursor-not-allowed" : "bg-slate-900 text-white hover:bg-slate-700"}`}>
-              Next <ChevronRight size={16} />
+              {t("Next")} <ChevronRight size={16} />
             </button>
           </div>
         )}
         <div className="p-4 grid grid-cols-2 gap-2 border-t border-slate-100">
-          {photo.captureDate && photo.captureDate !== "Not available" && <InfoChip label="Taken" value={photo.captureDate} />}
-          {photo.location && <div className="col-span-2"><InfoChip label="Location" value={photo.location} /></div>}
-          {(photo.faceCount ?? 0) > 0 && <InfoChip label="Faces detected" value={`${photo.faceCount}`} />}
+          {photo.captureDate && photo.captureDate !== "Not available" && <InfoChip label={t("Taken")} value={photo.captureDate} />}
+          {photo.location && <div className="col-span-2"><InfoChip label={t("Location")} value={photo.location} /></div>}
+          {(photo.faceCount ?? 0) > 0 && <InfoChip label={t("Faces detected")} value={`${photo.faceCount}`} />}
         </div>
         {shareUrl && (
           <div className="px-4 py-3 border-t border-emerald-100 bg-emerald-50">
-            <p className="text-xs font-bold text-emerald-700 mb-2">Share link ready!</p>
+            <p className="text-xs font-bold text-emerald-700 mb-2">{t("Share link ready!")}</p>
             <div className="flex gap-2">
               <input readOnly value={shareUrl}
                 className="flex-1 text-xs bg-white border border-emerald-200 rounded-lg px-3 py-2 text-slate-600 truncate outline-none" />
               <button onClick={handleCopy}
                 className="px-3 py-2 bg-emerald-500 text-white text-xs font-bold rounded-lg hover:bg-emerald-600 transition-colors whitespace-nowrap">
-                {copied ? "Copied!" : "Copy"}
+                {copied ? t("Copied!") : t("Copy")}
               </button>
             </div>
           </div>
@@ -199,6 +201,7 @@ function PhotoModal({ cluster, onClose }: { cluster: Cluster; onClose: () => voi
 }
 
 export default function MapPage() {
+  const { t, tn, lang } = useLang();
   const [photos,        setPhotos]        = useState<MapPhoto[]>([]);
   const [activeCluster, setActiveCluster] = useState<Cluster | null>(null);
   const [showRoute,   setShowRoute]   = useState(false);
@@ -248,9 +251,17 @@ export default function MapPage() {
     [photos]
   );
 
+  // Same province lookup as the Regions map, so the list matches the tapped province.
+  const [provinceGeo, setProvinceGeo] = useState<ProvinceGeoData | null>(null);
+  useEffect(() => {
+    if (viewMode === "region" && !provinceGeo) loadProvinceGeo().then(setProvinceGeo).catch(() => {});
+  }, [viewMode, provinceGeo]);
+
   const displayedPhotos = useMemo(
-    () => (viewMode === "region" && selectedRegion ? photos.filter((p) => matchRegionCode(p.location) === selectedRegion) : photos),
-    [photos, viewMode, selectedRegion]
+    () => (viewMode === "region" && selectedRegion && provinceGeo
+      ? photos.filter((p) => regionCodeOf(p, provinceGeo) === selectedRegion)
+      : photos),
+    [photos, viewMode, selectedRegion, provinceGeo]
   );
 
   return (
@@ -259,12 +270,12 @@ export default function MapPage() {
 
         <PageHero
           icon={MapPin}
-          title="Photo Map"
-          subtitle="Click a marker to view photos"
+          title={t("Photo Map")}
+          subtitle={t("Click a marker to view photos")}
           action={
             <div className="flex gap-2">
               <Link href="/" className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-700 transition-colors">
-                <ArrowLeft size={15} /> Back
+                <ArrowLeft size={15} /> {t("Back")}
               </Link>
             </div>
           }
@@ -275,13 +286,13 @@ export default function MapPage() {
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors ${
               viewMode === "pins" ? "bg-slate-900 border-slate-900 text-white" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
             }`}>
-            <MapIcon size={14} /> Pins
+            <MapIcon size={14} /> {t("Pins")}
           </button>
           <button onClick={() => setViewMode("region")}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors ${
               viewMode === "region" ? "bg-slate-900 border-slate-900 text-white" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
             }`}>
-            <Layers size={14} /> Regions
+            <Layers size={14} /> {t("Regions")}
           </button>
           {viewMode === "pins" && photos.length > 1 && (
             <>
@@ -289,20 +300,20 @@ export default function MapPage() {
                 className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors ${
                   showRoute ? "bg-blue-500 border-blue-500 text-white" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
                 }`}>
-                <Route size={14} /> Route
+                <Route size={14} /> {t("Route")}
               </button>
               <button onClick={() => setShowHeatmap((v) => !v)}
                 className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors ${
                   showHeatmap ? "bg-orange-500 border-orange-500 text-white" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
                 }`}>
-                <Flame size={14} /> Heatmap
+                <Flame size={14} /> {t("Heatmap")}
               </button>
             </>
           )}
           {viewMode === "region" && selectedRegion && (
             <button onClick={() => setSelectedRegion(null)}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors">
-              <X size={14} /> {REGION_LABELS[selectedRegion] ?? "Filter"} ×
+              <X size={14} /> {regionLabel(selectedRegion, lang) ?? t("Filter")} ×
             </button>
           )}
         </div>
@@ -329,13 +340,13 @@ export default function MapPage() {
         <section className="tv-card overflow-hidden">
           <div className="flex items-center gap-2 px-5 py-3.5 border-b border-slate-100 bg-slate-50">
             <MapPin size={16} className="text-blue-500" />
-            <h2 className="font-bold text-slate-800">Saved Photos</h2>
-            <span className="text-xs text-slate-400 bg-slate-200 px-2 py-0.5 rounded-full ml-auto">{displayedPhotos.length} photos</span>
+            <h2 className="font-bold text-slate-800">{t("Saved Photos")}</h2>
+            <span className="text-xs text-slate-400 bg-slate-200 px-2 py-0.5 rounded-full ml-auto">{tn(displayedPhotos.length, "{n} photo", "{n} photos")}</span>
           </div>
           {displayedPhotos.length === 0 ? (
             <div className="p-10 text-center">
               <p className="text-slate-400 text-sm">
-                {photos.length === 0 ? "No photos saved yet. Upload photos from the home screen." : "No photos in this region."}
+                {photos.length === 0 ? t("No photos saved yet. Upload photos from the home screen.") : t("No photos in this region.")}
               </p>
             </div>
           ) : (
@@ -351,7 +362,7 @@ export default function MapPage() {
                   <div className="p-2">
                     <p className="font-bold text-slate-800 text-[11px] truncate">{photo.fileName}</p>
                     <p className="text-[9px] text-slate-400 mt-0.5 flex items-center gap-0.5">
-                      <CalendarDays size={8} /> {photo.captureDate || "No date"}
+                      <CalendarDays size={8} /> {photo.captureDate ? t(photo.captureDate) : t("No date")}
                     </p>
                   </div>
                 </div>

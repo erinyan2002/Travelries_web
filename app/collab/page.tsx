@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import SectionTabs from "@/components/SectionTabs";
 import { createAlbum, getMyAlbums, CollabAlbum } from "@/lib/collabUtils";
 import { FolderOpen, Plus, X, LogIn } from "lucide-react";
+import { useLang, localeOf } from "@/lib/i18n";
 
 const ROLE_COLORS: Record<string, string> = {
   owner:       "bg-blue-100 text-blue-700",
@@ -14,6 +15,7 @@ const ROLE_COLORS: Record<string, string> = {
 };
 
 export default function CollabPage() {
+  const { t, lang } = useLang();
   const [albums,     setAlbums]     = useState<CollabAlbum[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -37,7 +39,7 @@ export default function CollabPage() {
       setDesc("");
       router.push(`/collab/${album.id}`);
     } catch (err) {
-      alert(`Album creation failed: ${err instanceof Error ? err.message : String(err)}`);
+      alert(`${t("Album creation failed:")} ${err instanceof Error ? t(err.message) : String(err)}`);
     } finally {
       setCreating(false);
     }
@@ -51,32 +53,32 @@ export default function CollabPage() {
           action={
             <div className="flex gap-1.5">
               <Link href="/collab/join" className="tv-btn-soft text-xs px-3 py-2">
-                <LogIn size={14} /> Join
+                <LogIn size={14} /> {t("Join")}
               </Link>
               <button onClick={() => setShowCreate(true)} className="tv-btn-primary text-xs px-3 py-2">
-                <Plus size={14} /> New
+                <Plus size={14} /> {t("New")}
               </button>
             </div>
           }
         />
 
         {loading ? (
-          <div className="text-center text-slate-400 text-sm py-16 animate-pulse">Loading...</div>
+          <div className="text-center text-slate-400 text-sm py-16 animate-pulse">{t("Loading...")}</div>
         ) : albums.length === 0 ? (
           <div className="bg-white/60 backdrop-blur-sm rounded-3xl border-2 border-dashed border-sky-200 p-16 text-center">
             <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <FolderOpen size={28} className="text-slate-300" />
             </div>
-            <p className="font-bold text-slate-700 mb-1">No albums yet</p>
-            <p className="text-slate-400 text-sm mb-5">Create a new album or join one with an invite code.</p>
+            <p className="font-bold text-slate-700 mb-1">{t("No albums yet")}</p>
+            <p className="text-slate-400 text-sm mb-5">{t("Create a new album or join one with an invite code.")}</p>
             <div className="flex gap-2 justify-center">
               <Link href="/collab/join"
                 className="px-4 py-2 bg-slate-100 text-slate-700 text-sm font-bold rounded-xl hover:bg-slate-200 transition-colors">
-                Join with code
+                {t("Join with code")}
               </Link>
               <button onClick={() => setShowCreate(true)}
                 className="px-4 py-2 bg-gradient-to-r from-sky-500 to-blue-600 text-white text-sm font-bold rounded-xl hover:from-sky-600 hover:to-blue-700 transition-colors">
-                Create album
+                {t("Create album")}
               </button>
             </div>
           </div>
@@ -91,7 +93,7 @@ export default function CollabPage() {
                       <h2 className="font-bold text-slate-900 text-base truncate">{album.name}</h2>
                       {album.role && (
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${ROLE_COLORS[album.role] ?? ""}`}>
-                          {album.role}
+                          {t(album.role)}
                         </span>
                       )}
                     </div>
@@ -100,8 +102,8 @@ export default function CollabPage() {
                     )}
                   </div>
                   <div className="text-xs text-slate-400 flex-shrink-0 text-right">
-                    <p>Code: <code className="font-mono font-bold text-blue-600">{album.invite_code}</code></p>
-                    <p className="mt-0.5">{new Date(album.created_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}</p>
+                    <p>{t("Code:")} <code className="font-mono font-bold text-blue-600">{album.invite_code}</code></p>
+                    <p className="mt-0.5">{new Date(album.created_at).toLocaleDateString(localeOf(lang), { year: "numeric", month: "short", day: "numeric" })}</p>
                   </div>
                 </div>
               </Link>
@@ -116,29 +118,29 @@ export default function CollabPage() {
           <div className="tv-modal p-6 max-w-[440px] w-full"
             onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="font-bold text-slate-900">Create Album</h2>
+              <h2 className="font-bold text-slate-900">{t("Create Album")}</h2>
               <button onClick={() => setShowCreate(false)} className="text-slate-400 hover:text-slate-700 p-1">
                 <X size={18} />
               </button>
             </div>
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-bold text-slate-600 mb-1 block">Album name *</label>
+                <label className="text-xs font-bold text-slate-600 mb-1 block">{t("Album name *")}</label>
                 <input value={name} onChange={(e) => setName(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-                  placeholder="e.g. Summer Trip"
+                  placeholder={t("e.g. Summer Trip")}
                   className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-600 mb-1 block">Description (optional)</label>
+                <label className="text-xs font-bold text-slate-600 mb-1 block">{t("Description (optional)")}</label>
                 <textarea value={desc} onChange={(e) => setDesc(e.target.value)}
-                  placeholder="Album description..."
+                  placeholder={t("Album description...")}
                   rows={2}
                   className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all resize-none" />
               </div>
               <button onClick={handleCreate} disabled={creating || !name.trim()}
                 className="w-full py-3 bg-gradient-to-r from-sky-500 to-blue-600 text-white font-bold rounded-xl hover:from-sky-600 hover:to-blue-700 shadow-md shadow-blue-200/70 transition-all disabled:opacity-50">
-                {creating ? "Creating..." : "Create Album"}
+                {creating ? t("Creating...") : t("Create Album")}
               </button>
             </div>
           </div>

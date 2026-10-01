@@ -11,6 +11,17 @@ const lanHosts = Object.values(networkInterfaces())
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: lanHosts,
+  // Dev only: no persistent webpack cache. In this checkout's path ("4-2 캡디(2)")
+  // webpack can't tell files changed, so a restarted dev server rebuilt from the
+  // stale .next/dev/cache and new Tailwind classes never reached the CSS.
+  webpack: (config, { dev }) => {
+    if (dev) config.cache = false;
+    return config;
+  },
+  // `next build` uses Turbopack, which refuses to run next to a webpack config
+  // unless told this is intended; the webpack hook above only matters for
+  // `next dev --webpack`.
+  turbopack: {},
 };
 
 export default nextConfig;

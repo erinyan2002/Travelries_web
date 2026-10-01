@@ -8,9 +8,11 @@ import { Eye, EyeOff, AlertCircle, UserPlus, CheckCircle2, Mail, RefreshCw } fro
 import { supabase } from "@/lib/supabase";
 import AppLogo from "@/components/AppLogo";
 import AuthBackdrop from "@/components/AuthBackdrop";
+import { msg, useLang } from "@/lib/i18n";
 
 export default function SignUpPage() {
   const router = useRouter();
+  const { t } = useLang();
 
   const [name,            setName]            = useState("");
   const [email,           setEmail]           = useState("");
@@ -28,11 +30,11 @@ export default function SignUpPage() {
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   function validate(): string {
-    if (!name.trim())                               return "Please enter your full name.";
-    if (!email.trim())                              return "Please enter your email address.";
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "Please enter a valid email address.";
-    if (password.length < 6)                        return "Password must be at least 6 characters.";
-    if (password !== confirmPassword)               return "Passwords do not match.";
+    if (!name.trim())                               return msg("Please enter your full name.");
+    if (!email.trim())                              return msg("Please enter your email address.");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return msg("Please enter a valid email address.");
+    if (password.length < 6)                        return msg("Password must be at least 6 characters.");
+    if (password !== confirmPassword)               return msg("Passwords do not match.");
     return "";
   }
 
@@ -98,7 +100,7 @@ export default function SignUpPage() {
   async function handleOtpSubmit(e: React.FormEvent) {
     e.preventDefault();
     const code = otp.join("");
-    if (code.length !== 6) { setError("Please enter all 6 digits of the code."); return; }
+    if (code.length !== 6) { setError(msg("Please enter all 6 digits of the code.")); return; }
 
     setError("");
     setLoading(true);
@@ -110,7 +112,7 @@ export default function SignUpPage() {
     setLoading(false);
 
     if (verifyError) {
-      setError("Invalid or expired code. Please check your email and try again.");
+      setError(msg("Invalid or expired code. Please check your email and try again."));
       return;
     }
 
@@ -156,7 +158,7 @@ export default function SignUpPage() {
             Travel<span className="bg-gradient-to-r from-blue-600 to-indigo-500 bg-clip-text text-transparent">ries</span>
           </h1>
           <p className="text-slate-500 text-sm">
-            {state === "otp" ? "Email verification" : "Create your account"}
+            {state === "otp" ? t("Email verification") : t("Create your account")}
           </p>
         </div>
 
@@ -168,8 +170,8 @@ export default function SignUpPage() {
               <div className="w-14 h-14 bg-emerald-100 rounded-2xl flex items-center justify-center">
                 <CheckCircle2 size={28} className="text-emerald-600" />
               </div>
-              <p className="text-lg font-bold text-slate-800">Account created!</p>
-              <p className="text-sm text-slate-500">Taking you to the app…</p>
+              <p className="text-lg font-bold text-slate-800">{t("Account created!")}</p>
+              <p className="text-sm text-slate-500">{t("Taking you to the app…")}</p>
             </div>
 
           ) : state === "otp" ? (
@@ -178,10 +180,10 @@ export default function SignUpPage() {
                 <div className="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center">
                   <Mail size={28} className="text-blue-600" />
                 </div>
-                <p className="text-lg font-bold text-slate-800">Enter verification code</p>
+                <p className="text-lg font-bold text-slate-800">{t("Enter verification code")}</p>
                 <p className="text-sm text-slate-500">
-                  We sent a 6-digit code to <strong>{email}</strong>.<br />
-                  Check your inbox and enter the code below.
+                  {t("We sent a 6-digit code to")} <strong>{email}</strong>.<br />
+                  {t("Check your inbox and enter the code below.")}
                 </p>
               </div>
 
@@ -205,7 +207,7 @@ export default function SignUpPage() {
               {error && (
                 <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-700 text-sm font-medium">
                   <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
-                  {error}
+                  {t(error)}
                 </div>
               )}
 
@@ -215,7 +217,7 @@ export default function SignUpPage() {
                   loading ? "bg-blue-300 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200 active:scale-[0.98]"
                 }`}
               >
-                {loading ? "Verifying…" : "Verify"}
+                {loading ? t("Verifying…") : t("Verify")}
               </button>
 
               <button
@@ -225,7 +227,7 @@ export default function SignUpPage() {
                 className="w-full flex items-center justify-center gap-2 py-2 text-sm text-slate-500 hover:text-blue-600 transition-colors"
               >
                 <RefreshCw size={14} className={resending ? "animate-spin" : ""} />
-                {resending ? "Resending…" : "Resend code"}
+                {resending ? t("Resending…") : t("Resend code")}
               </button>
             </form>
 
@@ -234,7 +236,7 @@ export default function SignUpPage() {
 
               <div>
                 <label htmlFor="name" className="block text-sm font-semibold text-slate-700 mb-2">
-                  Full Name
+                  {t("Full Name")}
                 </label>
                 <input
                   id="name" type="text" value={name} onChange={(e) => setName(e.target.value)}
@@ -245,7 +247,7 @@ export default function SignUpPage() {
 
               <div>
                 <label htmlFor="email" className="block text-sm font-semibold text-slate-700 mb-2">
-                  Email
+                  {t("Email")}
                 </label>
                 <input
                   id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
@@ -256,7 +258,7 @@ export default function SignUpPage() {
 
               <div>
                 <label htmlFor="password" className="block text-sm font-semibold text-slate-700 mb-2">
-                  Password <span className="text-slate-400 font-normal">(min. 6 characters)</span>
+                  {t("Password")} <span className="text-slate-400 font-normal">{t("(min. 6 characters)")}</span>
                 </label>
                 <div className="relative">
                   <input
@@ -267,7 +269,7 @@ export default function SignUpPage() {
                   />
                   <button type="button" onClick={() => setShowPassword((v) => !v)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors p-1"
-                    aria-label={showPassword ? "Hide password" : "Show password"}>
+                    aria-label={showPassword ? t("Hide password") : t("Show password")}>
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
@@ -275,7 +277,7 @@ export default function SignUpPage() {
 
               <div>
                 <label htmlFor="confirm" className="block text-sm font-semibold text-slate-700 mb-2">
-                  Confirm Password
+                  {t("Confirm Password")}
                 </label>
                 <div className="relative">
                   <input
@@ -286,7 +288,7 @@ export default function SignUpPage() {
                   />
                   <button type="button" onClick={() => setShowConfirm((v) => !v)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors p-1"
-                    aria-label={showConfirm ? "Hide password" : "Show password"}>
+                    aria-label={showConfirm ? t("Hide password") : t("Show password")}>
                     {showConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
@@ -295,7 +297,7 @@ export default function SignUpPage() {
               {error && (
                 <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-700 text-sm font-medium">
                   <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
-                  {error}
+                  {t(error)}
                 </div>
               )}
 
@@ -306,13 +308,13 @@ export default function SignUpPage() {
                 }`}
               >
                 <UserPlus size={16} />
-                {loading ? "Creating account…" : "Create account"}
+                {loading ? t("Creating account…") : t("Create account")}
               </button>
 
               <p className="text-center text-sm text-slate-500">
-                Already have an account?{" "}
+                {t("Already have an account?")}{" "}
                 <Link href="/login" className="font-semibold text-blue-600 hover:text-blue-700 transition-colors">
-                  Sign in
+                  {t("Sign in")}
                 </Link>
               </p>
             </form>
@@ -320,7 +322,7 @@ export default function SignUpPage() {
         </div>
 
         <p className="text-center mt-5 text-xs text-slate-400">
-          Travelries · Photo Map &amp; Face Detection
+          {t("Travelries · Photo Map & Face Detection")}
         </p>
       </motion.div>
     </AuthBackdrop>

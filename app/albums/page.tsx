@@ -7,7 +7,7 @@ import { getSessionUser, supabase } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
 import { saveImage, prefetchImage } from "@/lib/saveImage";
 import { burstConfetti } from "@/lib/confetti";
-import { tripAnchorId, summarizeTrip, cityOf } from "@/lib/tripMemory";
+import { tripAnchorId, summarizeTrip, cityOf, tripTitle } from "@/lib/tripMemory";
 import { matchesQuery, describeQuery, personNamesByPhoto } from "@/lib/photoSearch";
 import { fetchPeople } from "@/lib/peopleApi";
 import { DiaryLang, DIARY_LANGS, diaryCacheKey, loadDiaryLang, storeDiaryLang, requestDiary } from "@/lib/diary";
@@ -22,6 +22,7 @@ import { shareTrip } from "@/lib/tripShareUtils";
 import ShareCardModal from "@/components/ShareCardModal";
 import { loadImage, drawImageCover } from "@/lib/canvasCard";
 import { Trip, tripKeyOf, detectTrips, getPhotoDate } from "@/lib/trips";
+import { msg, useLang, translate, currentLang, localeOf } from "@/lib/i18n";
 
 // Draws a 1080x1920 Instagram-story-style card for a single photo: the photo
 // itself (cropped to a rounded frame), its location/date beneath it, and a
@@ -69,7 +70,7 @@ async function drawPhotoStoryCard(ctx: CanvasRenderingContext2D, w: number, h: n
   if (dateLabel) {
     ctx.fillStyle = "#ffffff";
     ctx.font = "800 52px system-ui, -apple-system, sans-serif";
-    ctx.fillText(dateLabel, margin, y);
+    ctx.fillText(translate(currentLang(), dateLabel), margin, y);
   }
 
   ctx.textAlign = "center";
@@ -117,6 +118,7 @@ function InfoChip({ label, value }: { label: string; value: string }) {
 }
 
 function ShareLinkModal({ url, onClose }: { url: string; onClose: () => void }) {
+  const { t } = useLang();
   const [copied, setCopied] = useState(false);
   async function handleCopy() {
     await navigator.clipboard.writeText(url);
@@ -127,16 +129,16 @@ function ShareLinkModal({ url, onClose }: { url: string; onClose: () => void }) 
     <div className="fixed inset-0 tv-overlay z-[3000] flex items-center justify-center p-4" onClick={onClose}>
       <div className="tv-modal p-5 max-w-[440px] w-full" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-1">
-          <p className="font-bold text-slate-900">Share link ready!</p>
+          <p className="font-bold text-slate-900">{t("Share link ready!")}</p>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1"><X size={18} /></button>
         </div>
-        <p className="text-xs text-slate-400 mb-3">Anyone with this link can view it — no account needed.</p>
+        <p className="text-xs text-slate-400 mb-3">{t("Anyone with this link can view it — no account needed.")}</p>
         <div className="flex gap-2">
           <input readOnly value={url}
             className="flex-1 text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-slate-600 truncate outline-none" />
           <button onClick={handleCopy}
             className="px-4 py-2.5 bg-gradient-to-r from-sky-500 to-blue-600 text-white text-sm font-bold rounded-xl hover:bg-gradient-to-r from-sky-500 to-blue-600 transition-all whitespace-nowrap">
-            {copied ? "Copied!" : "Copy"}
+            {copied ? t("Copied!") : t("Copy")}
           </button>
         </div>
       </div>
@@ -154,6 +156,7 @@ function DiaryModal({
   photos: MapPhoto[]; selected: Set<string>; onToggle: (id: string) => void;
   selectionChanged: boolean; onWriteSelected: () => void;
 }) {
+  const { t, tn } = useLang();
   return (
     <div className="fixed inset-0 tv-overlay z-[3000] flex items-center justify-center p-4" onClick={onClose}>
       <div className="tv-modal p-5 max-w-[440px] w-full" onClick={(e) => e.stopPropagation()}>
@@ -168,7 +171,7 @@ function DiaryModal({
         {photos.length > 1 && (
           <div className="mb-4">
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-              {lang === "ko" ? `일기에 넣을 사진 (${selected.size}/${photos.length})` : `Photos in this diary (${selected.size}/${photos.length})`}
+              {t("Photos in this diary ({picked}/{total})", { picked: selected.size, total: photos.length })}
             </p>
             <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
               {photos.map((p) => {
@@ -191,7 +194,7 @@ function DiaryModal({
             {selectionChanged && (
               <button onClick={onWriteSelected} disabled={loading || selected.size === 0}
                 className="tv-btn-primary text-xs px-3.5 py-2 mt-2">
-                <Sparkles size={13} /> {lang === "ko" ? `선택한 ${selected.size}장으로 쓰기` : `Write with ${selected.size} photo${selected.size === 1 ? "" : "s"}`}
+                <Sparkles size={13} /> {tn(selected.size, "Write with {n} photo", "Write with {n} photos")}
               </button>
             )}
           </div>
@@ -208,19 +211,19 @@ function DiaryModal({
         </div>
         {loading && (
           <div className="flex items-center gap-2 text-slate-400 text-sm py-6 justify-center">
-            <Loader2 size={16} className="animate-spin" /> {lang === "ko" ? "일기를 쓰는 중..." : "Writing your diary..."}
+            <Loader2 size={16} className="animate-spin" /> {t("Writing your diary...")}
           </div>
         )}
         {!loading && error && (
-          <p className="text-sm text-red-500 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5">{error}</p>
+          <p className="text-sm text-red-500 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5">{t(error)}</p>
         )}
         {!loading && diary && (
           <>
             <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{diary}</p>
-            {cached && <p className="text-[11px] text-slate-400 mt-2">{lang === "ko" ? "저장된 일기예요 — AI를 다시 부르지 않았어요." : "Saved earlier — no new API call."}</p>}
+            {cached && <p className="text-[11px] text-slate-400 mt-2">{t("Saved earlier — no new API call.")}</p>}
             <button onClick={onRegenerate}
               className="mt-3 flex items-center gap-1.5 text-xs font-bold text-blue-500 hover:text-blue-700 transition-colors">
-              <Sparkles size={12} /> {lang === "ko" ? "다시 쓰기" : "Re-generate"}
+              <Sparkles size={12} /> {t("Re-generate")}
             </button>
           </>
         )}
@@ -240,6 +243,7 @@ function PhotoModal({
   uid: string | null;
   onLandmarkSaved: (photoId: string, result: { landmarkName: string | null; landmarkConfidence: string | null; landmarkDescription: string | null }) => void;
 }) {
+  const { t } = useLang();
   const alreadyAnalyzed = !!photo.landmarkAnalyzedAt;
   const [landmarkLoading, setLandmarkLoading] = useState(false);
   const [landmarkResult,  setLandmarkResult]  = useState<{ landmark: string | null; description: string | null } | null>(
@@ -261,7 +265,7 @@ function PhotoModal({
       onRenamed(photo.id, name);
       setNameDraft(null);
     } catch (err) {
-      alert(`Couldn't rename the photo:\n${err instanceof Error ? err.message : String(err)}`);
+      alert(`${t("Couldn't rename the photo:")}\n${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setRenaming(false);
     }
@@ -319,7 +323,7 @@ function PhotoModal({
         onLandmarkSaved(photo.id, saved);
       }
     } catch {
-      setLandmarkError("Couldn't reach the server. Check your internet connection and try again.");
+      setLandmarkError(msg("Couldn't reach the server. Check your internet connection and try again."));
     } finally {
       setLandmarkLoading(false);
       setIsReanalyzing(false);
@@ -341,30 +345,30 @@ function PhotoModal({
                   onChange={(e) => setNameDraft(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setNameDraft(null); } }}
                   maxLength={80}
-                  aria-label="Photo name"
+                  aria-label={t("Photo name")}
                   className="min-w-0 flex-1 font-extrabold text-slate-900 bg-slate-50 border border-sky-300 rounded-lg px-2.5 py-1 outline-none focus:ring-2 focus:ring-sky-100"
                 />
-                <button type="submit" disabled={renaming} aria-label="Save name"
+                <button type="submit" disabled={renaming} aria-label={t("Save name")}
                   className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60">
                   {renaming ? <Loader2 size={15} className="animate-spin" /> : <Check size={16} />}
                 </button>
-                <button type="button" onClick={() => setNameDraft(null)} aria-label="Cancel rename"
+                <button type="button" onClick={() => setNameDraft(null)} aria-label={t("Cancel rename")}
                   className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg bg-slate-100 text-slate-500 hover:bg-slate-200">
                   <X size={15} />
                 </button>
               </form>
             ) : (
-              <button type="button" onClick={() => setNameDraft(photo.fileName)} title="Rename"
+              <button type="button" onClick={() => setNameDraft(photo.fileName)} title={t("Rename")}
                 className="group flex items-center gap-1.5 max-w-full text-left">
                 <span className="font-extrabold text-slate-900 truncate">{photo.fileName}</span>
                 <Pencil size={14} className="flex-shrink-0 text-slate-300 group-hover:text-blue-600 transition-colors" />
               </button>
             )}
             <p className="text-xs text-slate-400 mt-0.5 truncate">
-              {photo.location?.split(",")[0] || "Unknown location"} · {photo.captureDate || photo.uploadedAt?.slice(0, 10) || ""}
+              {photo.location?.split(",")[0] || t("Unknown location")} · {t(photo.captureDate || photo.uploadedAt?.slice(0, 10) || "")}
             </p>
           </div>
-          <button onClick={onClose} aria-label="Close"
+          <button onClick={onClose} aria-label={t("Close")}
             className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-800 transition-colors">
             <X size={18} />
           </button>
@@ -376,48 +380,48 @@ function PhotoModal({
         {/* One row of matching actions; Delete is the only red one. */}
         <div className="grid grid-cols-5 gap-1.5 px-4 pt-3">
           {[
-            { label: saved ? "Saved" : "Save", icon: <Star size={18} className={saved ? "fill-amber-400 text-amber-400" : ""} />, onClick: onToggleSaved, cls: saved ? "text-amber-600" : "text-slate-600 hover:text-amber-600" },
-            { label: "Story", icon: <LayoutTemplate size={18} />, onClick: () => setShowStoryCard(true), cls: "text-slate-600 hover:text-blue-600" },
-            { label: "Share", icon: sharing ? <Loader2 size={18} className="animate-spin" /> : <Share2 size={18} />, onClick: () => onShare(photo), cls: "text-slate-600 hover:text-blue-600", disabled: sharing },
-            { label: "Download", icon: <Download size={18} />, onClick: () => onDownload(photo), cls: "text-slate-600 hover:text-blue-600" },
-            { label: "Delete", icon: <Trash2 size={18} />, onClick: () => { onClose(); onDelete(photo.id); }, cls: "text-red-500 hover:bg-red-50" },
+            { label: saved ? msg("Saved") : msg("Save"), icon: <Star size={18} className={saved ? "fill-amber-400 text-amber-400" : ""} />, onClick: onToggleSaved, cls: saved ? "text-amber-600" : "text-slate-600 hover:text-amber-600" },
+            { label: msg("Story"), icon: <LayoutTemplate size={18} />, onClick: () => setShowStoryCard(true), cls: "text-slate-600 hover:text-blue-600" },
+            { label: msg("Share"), icon: sharing ? <Loader2 size={18} className="animate-spin" /> : <Share2 size={18} />, onClick: () => onShare(photo), cls: "text-slate-600 hover:text-blue-600", disabled: sharing },
+            { label: msg("Download"), icon: <Download size={18} />, onClick: () => onDownload(photo), cls: "text-slate-600 hover:text-blue-600" },
+            { label: msg("Delete"), icon: <Trash2 size={18} />, onClick: () => { onClose(); onDelete(photo.id); }, cls: "text-red-500 hover:bg-red-50" },
           ].map(({ label, icon, onClick, cls, disabled }) => (
             <button key={label} onClick={onClick} disabled={disabled}
               className={`flex flex-col items-center gap-1 py-2.5 rounded-2xl bg-slate-50 hover:bg-sky-50 text-[11px] font-bold transition-colors disabled:opacity-60 ${cls}`}>
               {icon}
-              {label}
+              {t(label)}
             </button>
           ))}
         </div>
         <div className="p-4 pb-5 grid grid-cols-2 gap-2">
-          {photo.captureDate && photo.captureDate !== "Not available" && <InfoChip label="Taken" value={photo.captureDate} />}
-          {photo.location && <div className="col-span-2"><InfoChip label="Location" value={photo.location} /></div>}
-          <InfoChip label="AI label" value={(photo.faceCount ?? 0) > 0 ? `With people (${photo.faceCount})` : "Scenery"} />
+          {photo.captureDate && photo.captureDate !== "Not available" && <InfoChip label={t("Taken")} value={photo.captureDate} />}
+          {photo.location && <div className="col-span-2"><InfoChip label={t("Location")} value={photo.location} /></div>}
+          <InfoChip label={t("AI label")} value={(photo.faceCount ?? 0) > 0 ? t("With people ({n})", { n: photo.faceCount ?? 0 }) : t("Scenery")} />
           {!landmarkResult && (
             <button onClick={handleRecognizeLandmark} disabled={landmarkLoading}
               className="flex items-center justify-center gap-1.5 bg-slate-50 hover:bg-blue-50 border border-slate-100 rounded-xl px-3 py-2 text-xs font-bold text-slate-500 hover:text-blue-600 transition-colors disabled:opacity-60">
               {landmarkLoading
-                ? <><Loader2 size={12} className="animate-spin" /> Checking...</>
-                : <><Sparkles size={12} /> {landmarkError ? "Retry" : "Identify Landmark"}</>
+                ? <><Loader2 size={12} className="animate-spin" /> {t("Checking...")}</>
+                : <><Sparkles size={12} /> {landmarkError ? t("Retry") : t("Identify Landmark")}</>
               }
             </button>
           )}
-          {!landmarkResult && landmarkError && <div className="col-span-2"><InfoChip label="Landmark" value={landmarkError} /></div>}
+          {!landmarkResult && landmarkError && <div className="col-span-2"><InfoChip label={t("Landmark")} value={t(landmarkError)} /></div>}
           {landmarkResult && (
             <div className="col-span-2 space-y-1.5">
               <InfoChip
-                label="Landmark"
+                label={t("Landmark")}
                 value={landmarkResult.landmark
                   ? `${landmarkResult.landmark}${landmarkResult.description ? ` — ${landmarkResult.description}` : ""}`
-                  : landmarkResult.description ?? "No landmark recognized"}
+                  : landmarkResult.description ?? t("No landmark recognized")}
               />
               <button
                 onClick={() => { setIsReanalyzing(true); handleRecognizeLandmark(); }}
                 disabled={landmarkLoading}
                 className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-blue-600 transition-colors disabled:opacity-60">
                 {isReanalyzing && landmarkLoading
-                  ? <><Loader2 size={10} className="animate-spin" /> Re-analyzing...</>
-                  : <><Sparkles size={10} /> Re-analyze</>
+                  ? <><Loader2 size={10} className="animate-spin" /> {t("Re-analyzing...")}</>
+                  : <><Sparkles size={10} /> {t("Re-analyze")}</>
                 }
               </button>
             </div>
@@ -426,7 +430,7 @@ function PhotoModal({
       </div>
       {showStoryCard && (
         <ShareCardModal
-          title="Story Card"
+          title={t("Story Card")}
           fileName={`travelries-${photo.id}.png`}
           onClose={() => setShowStoryCard(false)}
           draw={(ctx, w, h) => drawPhotoStoryCard(ctx, w, h, photo)}
@@ -437,22 +441,23 @@ function PhotoModal({
 }
 
 function DeleteConfirmModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
+  const { t } = useLang();
   return (
     <div className="fixed inset-0 tv-overlay z-[4000] flex items-center justify-center p-4" onClick={onCancel}>
       <div className="tv-modal max-w-sm w-full p-6" onClick={(e) => e.stopPropagation()}>
         <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <Trash2 size={22} className="text-red-500" />
         </div>
-        <h2 className="text-lg font-black text-slate-900 text-center mb-1">Delete this photo?</h2>
-        <p className="text-sm text-slate-500 text-center mb-6">This cannot be undone.</p>
+        <h2 className="text-lg font-black text-slate-900 text-center mb-1">{t("Delete this photo?")}</h2>
+        <p className="text-sm text-slate-500 text-center mb-6">{t("This cannot be undone.")}</p>
         <div className="flex gap-3">
           <button onClick={onCancel}
             className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50 transition-colors">
-            Cancel
+            {t("Cancel")}
           </button>
           <button onClick={onConfirm}
             className="flex-1 py-2.5 rounded-xl bg-red-500 text-white font-bold text-sm hover:bg-red-600 transition-colors">
-            Delete
+            {t("Delete")}
           </button>
         </div>
       </div>
@@ -499,6 +504,7 @@ function AlbumsSkeleton() {
 }
 
 export default function AlbumsPage() {
+  const { t, tn, lang } = useLang();
   const [photos,           setPhotos]           = useState<MapPhoto[]>([]);
   const [loading,          setLoading]          = useState(true);
   const [filter,           setFilter]           = useState<Filter>("All");
@@ -646,7 +652,7 @@ export default function AlbumsPage() {
         setPhotos((prev) => prev.filter((p) => p.id !== id));
       } else {
         console.error("Delete failed:", err);
-        alert("Couldn't delete this photo. Please try again.");
+        alert(t("Couldn't delete this photo. Please try again."));
       }
     } finally {
       setConfirmDeleteId(null);
@@ -685,7 +691,7 @@ export default function AlbumsPage() {
     setConfirmBulk(false);
     if (failed > 0) {
       setSelectedIds((prev) => new Set([...prev].filter((id) => !removed.has(id))));
-      alert(`${failed} photo(s) couldn't be deleted. Please try again.`);
+      alert(tn(failed, "{n} photo couldn't be deleted. Please try again.", "{n} photos couldn't be deleted. Please try again."));
     } else {
       exitSelectMode();
     }
@@ -701,7 +707,7 @@ export default function AlbumsPage() {
       const url = await sharePhoto(photo);
       setShareResultUrl(url);
     } catch (err) {
-      alert(`Failed to create share link:\n${err instanceof Error ? err.message : String(err)}`);
+      alert(`${t("Failed to create share link:")}\n${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setSharingId(null);
     }
@@ -720,7 +726,7 @@ export default function AlbumsPage() {
         : null;
       setShareResultUrl(await shareTrip(trip, diary));
     } catch (err) {
-      alert(`Failed to create trip link:\n${err instanceof Error ? err.message : String(err)}\n\nIf this keeps happening, run supabase/migrations/0013_trip_shares.sql.`);
+      alert(`${t("Failed to create trip link:")}\n${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setSharingTripKey(null);
     }
@@ -758,12 +764,12 @@ export default function AlbumsPage() {
     for (const p of photos) { const c = cityOf(p)?.replace(/-(si|gun)$/i, ""); if (c) cities.set(c, (cities.get(c) ?? 0) + 1); }
     const topCity = [...cities.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
     if (topCity) ideas.push(topCity);
-    if (topCity && knownPeople[0]) ideas.push(`${topCity} with ${knownPeople[0].split(" ")[0]}`);
+    if (topCity && knownPeople[0]) ideas.push(lang === "ko" ? `${topCity} ${knownPeople[0].split(" ")[0]}` : `${topCity} with ${knownPeople[0].split(" ")[0]}`);
     else if (knownPeople[0]) ideas.push(knownPeople[0].split(" ")[0]);
     const newest = photos.map(getPhotoDate).filter((d) => d.getTime() > 0).sort((a, b) => b.getTime() - a.getTime())[0];
-    if (newest) ideas.push(`${MONTHS[newest.getMonth()]} ${newest.getFullYear()}`);
+    if (newest) ideas.push(lang === "ko" ? `${newest.getFullYear()}년 ${newest.getMonth() + 1}월` : `${MONTHS[newest.getMonth()]} ${newest.getFullYear()}`);
     return ideas;
-  }, [photos, knownPeople]);
+  }, [photos, knownPeople, lang]);
 
   const trips = useMemo(() => detectTrips(filtered), [filtered]);
 
@@ -771,12 +777,13 @@ export default function AlbumsPage() {
   // (captureTimestamp first; the locale captureDate string only as a fallback),
   // so photos within a month are in real chronological order.
   const grouped = useMemo(() => {
-    const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const locale = localeOf(lang);
     const months = new Map<string, { sort: number; days: Map<string, { date: Date | null; photos: { p: MapPhoto; t: number }[] }> }>();
     for (const photo of filtered) {
       const d = getPhotoDate(photo);
       const valid = d.getTime() > 0 && d.getFullYear() > 1970;
-      const monthKey = valid ? `${MONTHS[d.getMonth()]} ${d.getFullYear()}` : "Unknown date";
+      // "June 2026" / "2026년 6월"
+      const monthKey = valid ? new Date(d.getFullYear(), d.getMonth(), 1).toLocaleDateString(locale, { year: "numeric", month: "long" }) : t("Unknown date");
       const dayKey = valid ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` : "unknown";
       if (!months.has(monthKey)) months.set(monthKey, { sort: valid ? new Date(d.getFullYear(), d.getMonth(), 1).getTime() : 0, days: new Map() });
       const days = months.get(monthKey)!.days;
@@ -791,12 +798,12 @@ export default function AlbumsPage() {
           .map(({ date, photos }) => ({
             key: date ? date.toISOString() : "unknown",
             day: date ? date.getDate() : null,
-            weekday: date ? WEEKDAYS[date.getDay()] : "No date",
+            weekday: date ? date.toLocaleDateString(locale, { weekday: "long" }) : t("No date"),
             photos: photos.sort((x, y) => y.t - x.t).map((x) => x.p),
           }));
         return [monthKey, dayList] as [string, typeof dayList];
       });
-  }, [filtered]);
+  }, [filtered, lang, t]);
 
   const isFiltering = searchQuery.trim() !== "" || filter !== "All";
 
@@ -821,12 +828,12 @@ export default function AlbumsPage() {
             selectMode ? (
               <button onClick={exitSelectMode}
                 className="px-3 py-1.5 rounded-full text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors">
-                Cancel
+                {t("Cancel")}
               </button>
             ) : (
               <button onClick={() => setSelectMode(true)}
                 className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-blue-600 bg-white border border-blue-100 hover:bg-blue-50 transition-colors">
-                <CheckCircle2 size={13} /> Select
+                <CheckCircle2 size={13} /> {t("Select")}
               </button>
             )
           )} />
@@ -837,10 +844,10 @@ export default function AlbumsPage() {
             <Users size={14} className="text-blue-600 flex-shrink-0" />
             <p className="text-sm font-bold text-blue-700 flex-1">
               {viewMode === "trips" ? (
-                <>Trips with <span className="text-blue-900">{personFilterLabel || "this person"}</span>
-                  <span className="font-semibold text-blue-500"> · {trips.length} trip{trips.length !== 1 ? "s" : ""}, {new Set(trips.flatMap((t) => t.locations)).size} place{new Set(trips.flatMap((t) => t.locations)).size !== 1 ? "s" : ""}</span></>
+                <>{t("Trips with")} <span className="text-blue-900">{personFilterLabel || t("this person")}</span>
+                  <span className="font-semibold text-blue-500"> · {tn(trips.length, "{n} trip", "{n} trips")}, {tn(new Set(trips.flatMap((tr) => tr.locations)).size, "{n} place", "{n} places")}</span></>
               ) : (
-                <>Photos of <span className="text-blue-900">{personFilterLabel || "person"}</span></>
+                <>{t("Photos of")} <span className="text-blue-900">{personFilterLabel || t("this person")}</span></>
               )}
             </p>
             <button
@@ -868,7 +875,7 @@ export default function AlbumsPage() {
             onFocus={() => setSearchFocused(true)}
             // Delay so a tap on a suggestion lands before the row disappears.
             onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
-            placeholder="Search places, people, dates…"
+            placeholder={t("Search places, people, dates…")}
             className="w-full pl-10 pr-10 py-2.5 rounded-2xl border border-slate-200 bg-white text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all shadow-sm"
           />
           {searchQuery && (
@@ -883,23 +890,23 @@ export default function AlbumsPage() {
         {(searchQuery.trim() || (searchFocused && searchIdeas.length > 0)) && (
         <div className="flex flex-wrap items-center gap-1.5 -mt-1 mb-3">
           {searchQuery.trim() ? (
-            queryChips.map((t, i) => {
+            queryChips.map((tok, i) => {
               const style = {
                 place:  { icon: "📍", cls: "bg-sky-50 text-sky-700 border-sky-100" },
                 text:   { icon: "🔎", cls: "bg-slate-50 text-slate-600 border-slate-200" },
                 person: { icon: "👤", cls: "bg-amber-50 text-amber-700 border-amber-100" },
                 month:  { icon: "📅", cls: "bg-violet-50 text-violet-700 border-violet-100" },
                 year:   { icon: "📅", cls: "bg-violet-50 text-violet-700 border-violet-100" },
-              }[t.kind];
+              }[tok.kind];
               return (
-                <span key={`${t.raw}-${i}`} className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${style.cls}`}>
-                  {style.icon} {t.raw}
+                <span key={`${tok.raw}-${i}`} className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${style.cls}`}>
+                  {style.icon} {tok.raw}
                 </span>
               );
             })
           ) : searchIdeas.length > 0 && (
             <>
-              <span className="text-[11px] font-semibold text-slate-400 mr-0.5">Try</span>
+              <span className="text-[11px] font-semibold text-slate-400 mr-0.5">{t("Try")}</span>
               {searchIdeas.map((idea) => (
                 <button key={idea} type="button" onClick={() => setSearchQuery(idea)}
                   className="text-[11px] font-bold text-blue-600 bg-white border border-blue-100 hover:bg-blue-50 px-2.5 py-0.5 rounded-full transition-colors">
@@ -919,7 +926,7 @@ export default function AlbumsPage() {
               <button key={f} onClick={() => setFilter(f)}
                 className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-bold transition-colors ${
                   active ? "bg-blue-600 text-white" : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"}`}>
-                {f === "With People" ? "People" : f}
+                {f === "With People" ? t("People") : t(f)}
                 <span className={`ml-1 ${active ? "text-blue-100" : "text-slate-400"}`}>{counts[f]}</span>
               </button>
             );
@@ -927,7 +934,7 @@ export default function AlbumsPage() {
           {isFiltering && (
             <button onClick={clearAllFilters}
               className="flex-shrink-0 flex items-center gap-1 px-2 py-1 text-xs font-bold text-blue-600 hover:text-blue-800">
-              <X size={12} /> Clear
+              <X size={12} /> {t("Clear")}
             </button>
           )}
         </div>
@@ -942,12 +949,12 @@ export default function AlbumsPage() {
               }
             </div>
             <p className="font-bold text-slate-700 mb-1">
-              {isFiltering ? "No results found" : filter === "All" ? "No photos yet" : filter === "With People" ? "No photos with people" : "No scenery photos"}
+              {isFiltering ? t("No results found") : filter === "All" ? t("No photos yet") : filter === "With People" ? t("No photos with people") : t("No scenery photos")}
             </p>
             <p className="text-slate-400 text-sm">
               {isFiltering
-                ? <button onClick={clearAllFilters} className="text-violet-500 font-semibold hover:underline">reset filters</button>
-                : "Upload photos from the home screen."
+                ? <button onClick={clearAllFilters} className="text-violet-500 font-semibold hover:underline">{t("reset filters")}</button>
+                : t("Upload photos from the home screen.")
               }
             </p>
           </div>
@@ -955,8 +962,8 @@ export default function AlbumsPage() {
           trips.length === 0 ? (
             <div className="bg-white/60 backdrop-blur-sm rounded-3xl border-2 border-dashed border-sky-200 p-12 text-center">
               <MapPin size={28} className="text-slate-300 mx-auto mb-3" />
-              <p className="font-bold text-slate-700 mb-1">No trips detected</p>
-              <p className="text-slate-400 text-sm">Photos need date info to be grouped into trips.</p>
+              <p className="font-bold text-slate-700 mb-1">{t("No trips detected")}</p>
+              <p className="text-slate-400 text-sm">{t("Photos need date info to be grouped into trips.")}</p>
             </div>
           ) : (
             // Travel-journal timeline: a date rail on the left, one card per trip.
@@ -965,12 +972,12 @@ export default function AlbumsPage() {
               <div className="space-y-6">
               {trips.map((trip, ti) => {
                 const n = trip.photos.length;
-                const photoWord = n === 1 ? "photo" : "photos";
+                const photoCountLabel = tn(n, "{n} photo", "{n} photos");
                 const withPeople = trip.photos.filter((p) => (p.faceCount ?? 0) > 0).length;
                 const accent = TRIP_ACCENTS[ti % TRIP_ACCENTS.length];
                 // dateRange starts with "YYYY.MM.DD"
                 const [yy, mm, dd] = trip.dateRange.slice(0, 10).split(".");
-                const monthLabel = mm ? MONTHS[Number(mm) - 1]?.slice(0, 3).toUpperCase() : "";
+                const monthLabel = !mm ? "" : lang === "ko" ? `${Number(mm)}월` : MONTHS[Number(mm) - 1]?.slice(0, 3).toUpperCase();
                 const sharing = sharingTripKey === tripKeyOf(trip);
                 return (
                 <div key={trip.id} className="relative flex gap-3 sm:gap-5">
@@ -1006,7 +1013,7 @@ export default function AlbumsPage() {
                             ? "absolute left-1/2 top-1/2 h-[82%] w-auto aspect-[4/5] -translate-x-1/2 -translate-y-1/2 object-cover object-[center_30%] rounded-lg border-4 border-white shadow-xl transition-transform duration-500 group-hover:scale-105"
                             : "absolute inset-0 w-full h-full object-cover object-[center_30%] transition-transform duration-500 group-hover:scale-105"} />
                         <span className="absolute top-2.5 left-2.5 bg-white/85 backdrop-blur-sm text-slate-700 text-[11px] font-bold px-2.5 py-1 rounded-full shadow-sm">
-                          {n} {photoWord}
+                          {photoCountLabel}
                         </span>
                       </Link>
 
@@ -1015,7 +1022,7 @@ export default function AlbumsPage() {
                         <div className="flex items-start gap-2">
                           <MapPin size={17} className={`${accent.text} flex-shrink-0 mt-0.5`} />
                           <Link href={`/albums/trip/${tripAnchorId(trip)}`} className="hover:text-blue-700 transition-colors">
-                            <h2 className="font-extrabold text-slate-800 text-lg leading-snug line-clamp-2">{summarizeTrip(trip).title}</h2>
+                            <h2 className="font-extrabold text-slate-800 text-lg leading-snug line-clamp-2">{tripTitle(summarizeTrip(trip), t)}</h2>
                           </Link>
                         </div>
                         <p className="text-xs font-semibold text-slate-400 mt-1 ml-[25px] flex items-center gap-1">
@@ -1031,24 +1038,24 @@ export default function AlbumsPage() {
                         )}
 
                         <div className="flex items-center gap-3 mt-3 text-xs font-semibold text-slate-500">
-                          <span className="flex items-center gap-1"><Images size={13} className="text-slate-400" /> {n} {photoWord}</span>
+                          <span className="flex items-center gap-1"><Images size={13} className="text-slate-400" /> {photoCountLabel}</span>
                           {withPeople > 0 && (
-                            <span className="flex items-center gap-1"><Users size={13} className="text-slate-400" /> {withPeople} with people</span>
+                            <span className="flex items-center gap-1"><Users size={13} className="text-slate-400" /> {t("{n} with people", { n: withPeople })}</span>
                           )}
                         </div>
 
                         <div className="flex flex-wrap gap-2 mt-auto pt-4">
                           <Link href={`/albums/trip/${tripAnchorId(trip)}`}
                             className="tv-btn-primary text-xs px-3.5 py-2">
-                            <BookOpen size={13} /> Open trip
+                            <BookOpen size={13} /> {t("Open trip")}
                           </Link>
                           <button onClick={() => handleGenerateDiary(trip)}
                             className="tv-btn-soft text-xs px-3.5 py-2">
-                            <Sparkles size={13} /> AI Diary
+                            <Sparkles size={13} /> {t("AI Diary")}
                           </button>
                           <button onClick={() => handleShareTrip(trip)} disabled={sharing}
                             className="inline-flex items-center justify-center gap-1.5 text-xs font-bold px-3.5 py-2 rounded-xl text-slate-600 bg-white border border-slate-200 hover:border-sky-300 hover:text-sky-700 transition-colors disabled:opacity-60">
-                            {sharing ? <Loader2 size={13} className="animate-spin" /> : <Share2 size={13} />} Share
+                            {sharing ? <Loader2 size={13} className="animate-spin" /> : <Share2 size={13} />} {t("Share")}
                           </button>
                         </div>
                       </div>
@@ -1073,7 +1080,7 @@ export default function AlbumsPage() {
                     <CalendarDays size={15} />
                   </span>
                   <h2 className="font-extrabold text-slate-800 text-base flex-1">{groupName}</h2>
-                  <span className="text-xs font-semibold text-slate-500 bg-white border border-slate-200 px-2.5 py-0.5 rounded-full">{total} photo{total === 1 ? "" : "s"}</span>
+                  <span className="text-xs font-semibold text-slate-500 bg-white border border-slate-200 px-2.5 py-0.5 rounded-full">{tn(total, "{n} photo", "{n} photos")}</span>
                 </div>
                 <div className="p-4 sm:p-5 space-y-6">
                   {days.map((day) => (
@@ -1100,7 +1107,7 @@ export default function AlbumsPage() {
                                   className={`w-full h-full object-cover transition-transform duration-500 ${selectMode ? "" : "group-hover:scale-105"} ${picked ? "opacity-70" : ""}`} />
                                 <span className="absolute top-2 left-2 inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/85 backdrop-blur-sm shadow-sm text-slate-600">
                                   {isPortrait ? <Users size={9} className="text-blue-600" /> : <ImageIcon size={9} />}
-                                  {isPortrait ? `${photo.faceCount}` : "Scene"}
+                                  {isPortrait ? `${photo.faceCount}` : t("Scene")}
                                 </span>
                                 {/* Just a save toggle on the tile — share/download/delete live in the photo view. */}
                                 {selectMode ? (
@@ -1109,7 +1116,7 @@ export default function AlbumsPage() {
                                     <Check size={14} strokeWidth={3} />
                                   </span>
                                 ) : (
-                                <button onClick={(e) => handleToggleSaved(e, photo)} title={saved ? "Unsave" : "Save"} aria-label={saved ? "Unsave" : "Save"}
+                                <button onClick={(e) => handleToggleSaved(e, photo)} title={saved ? t("Unsave") : t("Save")} aria-label={saved ? t("Unsave") : t("Save")}
                                   className={`absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center backdrop-blur-sm shadow-sm transition-all ${
                                     saved ? "bg-white/90 text-amber-500" : "bg-black/20 text-white sm:opacity-0 sm:group-hover:opacity-100 hover:bg-black/35"}`}>
                                   <Star size={13} className={saved ? "fill-amber-400" : ""} />
@@ -1121,7 +1128,7 @@ export default function AlbumsPage() {
                                 <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1 truncate">
                                   {photo.captureTime && photo.captureTime !== "Not available" && <><Clock size={10} className="flex-shrink-0" />{photo.captureTime}<span className="mx-0.5">·</span></>}
                                   <MapPin size={10} className="flex-shrink-0" />
-                                  <span className="truncate">{photo.location?.split(",")[0] || "No location"}</span>
+                                  <span className="truncate">{photo.location?.split(",")[0] || t("No location")}</span>
                                 </p>
                               </div>
                             </div>
@@ -1160,18 +1167,18 @@ export default function AlbumsPage() {
       {selectMode && viewMode === "monthly" && (
         <div className="fixed bottom-24 lg:bottom-8 left-0 right-0 lg:pl-[100px] flex justify-center px-4 z-40">
           <div className="tv-card flex items-center gap-2 pl-4 pr-2 py-2 shadow-lg">
-            <span className="text-sm font-bold text-slate-700 mr-1">{selectedIds.size} selected</span>
+            <span className="text-sm font-bold text-slate-700 mr-1">{t("{n} selected", { n: selectedIds.size })}</span>
             <button
               onClick={() => {
                 const allPicked = filtered.every((p) => selectedIds.has(p.id));
                 setSelectedIds(allPicked ? new Set() : new Set(filtered.map((p) => p.id)));
               }}
               className="px-3 py-2 rounded-xl text-xs font-bold text-blue-600 hover:bg-blue-50 transition-colors">
-              {filtered.length > 0 && filtered.every((p) => selectedIds.has(p.id)) ? "Deselect all" : "Select all"}
+              {filtered.length > 0 && filtered.every((p) => selectedIds.has(p.id)) ? t("Deselect all") : t("Select all")}
             </button>
             <button onClick={() => setConfirmBulk(true)} disabled={selectedIds.size === 0}
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold text-sm transition-colors disabled:opacity-40">
-              <Trash2 size={15} /> Delete
+              <Trash2 size={15} /> {t("Delete")}
             </button>
           </div>
         </div>
@@ -1183,17 +1190,17 @@ export default function AlbumsPage() {
               <Trash2 size={22} className="text-red-500" />
             </div>
             <h2 className="text-lg font-black text-slate-900 text-center mb-1">
-              Delete {selectedIds.size} photo{selectedIds.size !== 1 ? "s" : ""}?
+              {tn(selectedIds.size, "Delete {n} photo?", "Delete {n} photos?")}
             </h2>
-            <p className="text-sm text-slate-500 text-center mb-6">They&apos;ll be removed from your map, albums and faces. This can&apos;t be undone.</p>
+            <p className="text-sm text-slate-500 text-center mb-6">{t("They'll be removed from your map, albums and faces. This can't be undone.")}</p>
             <div className="flex gap-3">
               <button onClick={() => setConfirmBulk(false)} disabled={bulkDeleting}
                 className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50 transition-colors disabled:opacity-60">
-                Cancel
+                {t("Cancel")}
               </button>
               <button onClick={handleBulkDelete} disabled={bulkDeleting}
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-500 text-white font-bold text-sm hover:bg-red-600 transition-colors disabled:opacity-60">
-                {bulkDeleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />} Delete
+                {bulkDeleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />} {t("Delete")}
               </button>
             </div>
           </div>

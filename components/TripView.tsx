@@ -14,9 +14,10 @@ import {
 import FaceChip from "@/components/FaceChip";
 import ShareCardModal from "@/components/ShareCardModal";
 import { Person } from "@/lib/peopleApi";
-import { buildPersonGroups, MATCH_THRESHOLD, PersonCluster } from "@/lib/faceClustering";
+import { buildPersonGroups, MATCH_THRESHOLD, PersonCluster, clusterLabel } from "@/lib/faceClustering";
 import { getPhotoDate, Trip } from "@/lib/trips";
-import { summarizeTrip, sortChronologically, formatTripDates, formatDistance, placeLabel } from "@/lib/tripMemory";
+import { summarizeTrip, sortChronologically, formatTripDates, formatDistance, placeLabel, tripTitle } from "@/lib/tripMemory";
+import { msg, useLang, localeOf } from "@/lib/i18n";
 import { drawTripMemoryCard } from "@/lib/tripCard";
 import { shareTrip, createTripShare } from "@/lib/tripShareUtils";
 import { createTripPost } from "@/lib/socialUtils";
@@ -32,21 +33,24 @@ const TripRouteMap = dynamic(() => import("@/components/TripRouteMap"), {
 
 type Tab = "overview" | "map" | "photos" | "people" | "diary";
 const TABS: { key: Tab; label: string; icon: React.ElementType }[] = [
-  { key: "overview", label: "Overview", icon: LayoutDashboard },
-  { key: "map",      label: "Map",      icon: MapIcon },
-  { key: "photos",   label: "Photos",   icon: Images },
-  { key: "people",   label: "People",   icon: ScanFace },
-  { key: "diary",    label: "Diary",    icon: BookOpen },
+  { key: "overview", label: msg("Overview"), icon: LayoutDashboard },
+  { key: "map",      label: msg("Map"),      icon: MapIcon },
+  { key: "photos",   label: msg("Photos"),   icon: Images },
+  { key: "people",   label: msg("People"),   icon: ScanFace },
+  { key: "diary",    label: msg("Diary"),    icon: BookOpen },
 ];
 
-const time = (d: Date) => d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-const dayLabel = (d: Date) => d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+const time = (d: Date, locale: string) => d.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
+const dayLabel = (d: Date, locale: string) => d.toLocaleDateString(locale, { weekday: "short", month: "short", day: "numeric" });
 
 type TripPerson = { cluster: PersonCluster; faces: PersonCluster["faces"] };
 
 export default function TripView({ trip, facePhotos, people, uid }: {
   trip: Trip; facePhotos: FacePhoto[]; people: Person[]; uid: string | null;
 }) {
+  // `lang` below is the diary's language; the UI's is uiLang.
+  const { t, tn, lang: uiLang } = useLang();
+  const locale = localeOf(uiLang);
   const [tab, setTab] = useState<Tab>("overview");
   const [viewing, setViewing] = useState<MapPhoto | null>(null);
   const [showCard, setShowCard] = useState(false);
@@ -127,8 +131,8 @@ export default function TripView({ trip, facePhotos, people, uid }: {
         .filter((p) => !p.imageUrl.startsWith("data:")).slice(0, 3).map((p) => p.imageUrl);
       await createTripPost(uid, {
         shareId,
-        title: memory.title,
-        dates: formatTripDates(memory.start, memory.end),
+        title: tripTitle(memory, t),
+        dates: formatTripDates(memory.start, memory.end, uiLang),
         days: memory.dayCount,
         places: memory.places.length,
         photos: memory.photoCount,
@@ -150,18 +154,18 @@ export default function TripView({ trip, facePhotos, people, uid }: {
     try {
       setShareUrl(await shareTrip(trip, diary));
     } catch (err) {
-      alert(`Failed to create trip link:\n${err instanceof Error ? err.message : String(err)}`);
+      alert(`${t("Failed to create trip link:")}\n${err instanceof Error ? t(err.message) : String(err)}`);
     } finally {
       setSharing(false);
     }
   }
 
   const stats = [
-    { icon: CalendarDays, value: String(memory.dayCount), label: memory.dayCount === 1 ? "Day" : "Days", tint: "from-sky-400 to-blue-500" },
-    { icon: Camera, value: String(memory.photoCount), label: "Photos", tint: "from-cyan-400 to-sky-500" },
-    { icon: MapPin, value: String(memory.places.length), label: memory.places.length === 1 ? "Place" : "Places", tint: "from-teal-400 to-cyan-500" },
-    { icon: Users, value: String(tripPeople.length), label: tripPeople.length === 1 ? "Person" : "People", tint: "from-amber-400 to-orange-500" },
-    { icon: Route, value: formatDistance(memory.distanceKm), label: "Traveled", tint: "from-rose-400 to-pink-500" },
+    { icon: CalendarDays, value: String(memory.dayCount), label: memory.dayCount === 1 ? msg("Day") : msg("Days"), tint: "from-sky-400 to-blue-500" },
+    { icon: Camera, value: String(memory.photoCount), label: msg("Photos"), tint: "from-cyan-400 to-sky-500" },
+    { icon: MapPin, value: String(memory.places.length), label: memory.places.length === 1 ? msg("Place") : msg("Places"), tint: "from-teal-400 to-cyan-500" },
+    { icon: Users, value: String(tripPeople.length), label: tripPeople.length === 1 ? msg("Person") : msg("People"), tint: "from-amber-400 to-orange-500" },
+    { icon: Route, value: formatDistance(memory.distanceKm), label: msg("Traveled"), tint: "from-rose-400 to-pink-500" },
   ];
 
   return (
@@ -178,16 +182,16 @@ export default function TripView({ trip, facePhotos, people, uid }: {
           <div className="absolute inset-0 bg-gradient-to-t from-slate-900/85 via-slate-900/25 to-transparent" />
           <Link href="/albums?view=trips"
             className="absolute top-3 left-3 flex items-center gap-1 bg-white/85 backdrop-blur-sm text-slate-700 text-xs font-bold pl-2 pr-3 py-1.5 rounded-full shadow-sm hover:bg-white transition-colors">
-            <ArrowLeft size={14} /> Trips
+            <ArrowLeft size={14} /> {t("Trips")}
           </Link>
           <div className="absolute inset-x-0 bottom-0 p-5">
-            <p className="text-[11px] font-black tracking-[0.2em] text-sky-200">TRAVEL MEMORY</p>
-            <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight leading-tight mt-0.5">{memory.title}</h1>
+            <p className="text-[11px] font-black tracking-[0.2em] text-sky-200">{t("TRAVEL MEMORY")}</p>
+            <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight leading-tight mt-0.5">{tripTitle(memory, t)}</h1>
             <p className="text-sm font-semibold text-white/80 mt-1 flex items-center gap-1.5">
-              <CalendarDays size={14} /> {formatTripDates(memory.start, memory.end)}
+              <CalendarDays size={14} /> {formatTripDates(memory.start, memory.end, uiLang)}
             </p>
             <p className="text-sm font-bold text-white mt-2">
-              {memory.photoCount} Photos · {memory.places.length} Places · {tripPeople.length} {tripPeople.length === 1 ? "Person" : "People"}
+              {tn(memory.photoCount, "{n} photo", "{n} photos")} · {tn(memory.places.length, "{n} place", "{n} places")} · {tn(tripPeople.length, "{n} person", "{n} people")}
             </p>
           </div>
         </motion.div>
@@ -205,7 +209,7 @@ export default function TripView({ trip, facePhotos, people, uid }: {
                     className="absolute inset-0 rounded-xl bg-gradient-to-br from-sky-400 to-blue-600 shadow-md shadow-blue-300/50" />
                 )}
                 <Icon size={16} strokeWidth={2.2} className="relative" />
-                <span className="relative">{label}</span>
+                <span className="relative">{t(label)}</span>
               </button>
             );
           })}
@@ -226,7 +230,7 @@ export default function TripView({ trip, facePhotos, people, uid }: {
                         <Icon size={14} className="text-white" />
                       </span>
                       <p className="text-[15px] sm:text-lg font-extrabold text-slate-800 leading-tight whitespace-nowrap">{value}</p>
-                      <p className="text-[11px] font-semibold text-slate-400">{label}</p>
+                      <p className="text-[11px] font-semibold text-slate-400">{t(label)}</p>
                     </div>
                   ))}
                 </div>
@@ -239,15 +243,15 @@ export default function TripView({ trip, facePhotos, people, uid }: {
                           <Trophy size={20} className="text-white" />
                         </span>
                         <div className="min-w-0">
-                          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Most visited place</p>
+                          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{t("Most visited place")}</p>
                           <p className="font-extrabold text-slate-800 truncate">{memory.mostVisited.place}</p>
-                          <p className="text-xs text-slate-400">{memory.mostVisited.photos} photos here</p>
+                          <p className="text-xs text-slate-400">{tn(memory.mostVisited.photos, "{n} photo here", "{n} photos here")}</p>
                         </div>
                       </div>
                     )}
                     {tripPeople.length > 0 && (
                       <button type="button" onClick={() => setTab("people")} className="tv-card tv-card-hover p-4 text-left">
-                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">People you traveled with</p>
+                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">{t("People you traveled with")}</p>
                         <div className="flex -space-x-2">
                           {tripPeople.slice(0, 6).map(({ cluster, faces }) => {
                             const f = faces[0];
@@ -269,7 +273,7 @@ export default function TripView({ trip, facePhotos, people, uid }: {
 
                 {/* Day-by-day journey */}
                 <div className="tv-card p-4 sm:p-5">
-                  <p className="tv-section-title mb-4 flex items-center gap-2"><Route size={16} className="text-blue-500" /> Your Journey</p>
+                  <p className="tv-section-title mb-4 flex items-center gap-2"><Route size={16} className="text-blue-500" /> {t("Your Journey")}</p>
                   <div className="relative">
                     <div className="absolute left-[15px] top-2 bottom-2 w-px bg-gradient-to-b from-sky-300 via-cyan-200 to-transparent" />
                     <div className="space-y-5">
@@ -279,7 +283,7 @@ export default function TripView({ trip, facePhotos, people, uid }: {
                             {d.day}
                           </span>
                           <p className="text-sm font-extrabold text-slate-800 leading-[31px]">
-                            Day {d.day} <span className="font-semibold text-slate-400">· {dayLabel(d.date)}</span>
+                            {t("Day {n}", { n: d.day })} <span className="font-semibold text-slate-400">· {dayLabel(d.date, locale)}</span>
                           </p>
                           {d.stops.length > 0 ? (
                             <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2 mt-1.5">
@@ -295,40 +299,40 @@ export default function TripView({ trip, facePhotos, people, uid }: {
                                         <img src={photo.imageUrl} alt="" className="w-6 h-6 rounded-full object-cover" />
                                       )}
                                       <span className="text-xs font-bold text-slate-700">{s.place}</span>
-                                      <span className="text-[10px] font-semibold text-slate-400">{time(s.time)}</span>
+                                      <span className="text-[10px] font-semibold text-slate-400">{time(s.time, locale)}</span>
                                     </button>
                                   </span>
                                 );
                               })}
                             </div>
                           ) : (
-                            <p className="text-xs text-slate-400 mt-1">{d.photos.length} photos (no location)</p>
+                            <p className="text-xs text-slate-400 mt-1">{tn(d.photos.length, "{n} photo (no location)", "{n} photos (no location)")}</p>
                           )}
                         </div>
                       ))}
                     </div>
                   </div>
                   <p className="text-[11px] text-slate-400 mt-4">
-                    Tip: open a photo in Albums and tap <strong>Identify Landmark</strong> to show landmark names here.
+                    {t("Tip: open a photo in Albums and tap Identify Landmark to show landmark names here.")}
                   </p>
                 </div>
 
                 {/* Actions */}
                 <div className="tv-card p-4 sm:p-5 text-center bg-gradient-to-br from-sky-50/90 via-white/90 to-cyan-50/90">
-                  <p className="font-extrabold text-slate-800">Turn this trip into a story</p>
-                  <p className="text-xs text-slate-500 mt-0.5 mb-3">AI reads your photos and writes a travel diary.</p>
+                  <p className="font-extrabold text-slate-800">{t("Turn this trip into a story")}</p>
+                  <p className="text-xs text-slate-500 mt-0.5 mb-3">{t("AI reads your photos and writes a travel diary.")}</p>
                   <div className="flex flex-wrap justify-center gap-2">
                     <button onClick={() => writeStory(false)} className="tv-btn-primary text-sm px-4 py-2.5">
-                      <Sparkles size={15} /> Generate My Travel Story
+                      <Sparkles size={15} /> {t("Generate My Travel Story")}
                     </button>
                     <button onClick={() => { setPostOpen(true); setPosted(false); setPostError(null); }} className="tv-btn-soft text-sm px-4 py-2.5">
-                      <Send size={15} /> Share to Feed
+                      <Send size={15} /> {t("Share to Feed")}
                     </button>
                     <button onClick={() => setShowCard(true)} className="tv-btn-soft text-sm px-4 py-2.5">
-                      <Share2 size={15} /> Memory card
+                      <Share2 size={15} /> {t("Memory card")}
                     </button>
                     <button onClick={handleShareLink} disabled={sharing} className="tv-btn-soft text-sm px-4 py-2.5">
-                      {sharing ? <Loader2 size={15} className="animate-spin" /> : <Link2 size={15} />} Share link
+                      {sharing ? <Loader2 size={15} className="animate-spin" /> : <Link2 size={15} />} {t("Share link")}
                     </button>
                   </div>
                 </div>
@@ -341,12 +345,12 @@ export default function TripView({ trip, facePhotos, people, uid }: {
                 <div className="space-y-3">
                   <div className="tv-card p-2"><TripRouteMap points={memory.route} /></div>
                   <div className="tv-card p-4">
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Route · {formatDistance(memory.distanceKm)}</p>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{t("Route")} · {formatDistance(memory.distanceKm)}</p>
                     <p className="text-sm font-semibold text-slate-700 leading-relaxed">{memory.journey.join("  →  ") || "—"}</p>
                   </div>
                 </div>
               ) : (
-                <div className="tv-card p-10 text-center text-sm text-slate-400">None of these photos have GPS data, so there&apos;s no route to show.</div>
+                <div className="tv-card p-10 text-center text-sm text-slate-400">{t("None of these photos have GPS data, so there's no route to show.")}</div>
               )
             )}
 
@@ -356,7 +360,7 @@ export default function TripView({ trip, facePhotos, people, uid }: {
                 {memory.days.map((d) => (
                   <div key={d.day}>
                     <p className="text-sm font-extrabold text-slate-800 mb-2">
-                      Day {d.day} <span className="font-semibold text-slate-400">· {dayLabel(d.date)} · {d.photos.length}</span>
+                      {t("Day {n}", { n: d.day })} <span className="font-semibold text-slate-400">· {dayLabel(d.date, locale)} · {d.photos.length}</span>
                     </p>
                     <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                       {d.photos.map((p) => (
@@ -365,7 +369,7 @@ export default function TripView({ trip, facePhotos, people, uid }: {
                           <img src={p.imageUrl} alt={p.fileName} loading="lazy"
                             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
                           <span className="absolute bottom-1 left-1 text-[10px] font-bold text-white bg-black/40 rounded-full px-1.5 py-0.5">
-                            {time(getPhotoDate(p))}
+                            {time(getPhotoDate(p), locale)}
                           </span>
                         </button>
                       ))}
@@ -385,17 +389,17 @@ export default function TripView({ trip, facePhotos, people, uid }: {
                     const ids = [...new Set(faces.map((x) => x.photo.id))];
                     return (
                       <Link key={cluster.id}
-                        href={`/albums?photoIds=${ids.join(",")}&personLabel=${encodeURIComponent(cluster.label)}`}
+                        href={`/albums?photoIds=${ids.join(",")}&personLabel=${encodeURIComponent(clusterLabel(cluster, t))}`}
                         className="tv-card tv-card-hover p-3 flex flex-col items-center text-center">
                         {box && <FaceChip imageUrl={f.photo.imageUrl} box={box} size={60} ringClass="ring-sky-300" />}
-                        <p className="text-sm font-extrabold text-slate-800 mt-2 truncate max-w-full">{cluster.label}</p>
-                        <p className="text-[11px] text-slate-400">{ids.length} photo{ids.length === 1 ? "" : "s"}</p>
+                        <p className="text-sm font-extrabold text-slate-800 mt-2 truncate max-w-full">{clusterLabel(cluster, t)}</p>
+                        <p className="text-[11px] text-slate-400">{tn(ids.length, "{n} photo", "{n} photos")}</p>
                       </Link>
                     );
                   })}
                 </div>
               ) : (
-                <div className="tv-card p-10 text-center text-sm text-slate-400">No faces were saved from this trip&apos;s photos.</div>
+                <div className="tv-card p-10 text-center text-sm text-slate-400">{t("No faces were saved from this trip's photos.")}</div>
               )
             )}
 
@@ -403,7 +407,7 @@ export default function TripView({ trip, facePhotos, people, uid }: {
             {tab === "diary" && (
               <div className="tv-card p-5">
                 <div className="flex items-center justify-between gap-2 mb-4">
-                  <p className="font-extrabold text-slate-800 flex items-center gap-2"><Sparkles size={16} className="text-blue-500" /> Travel Story</p>
+                  <p className="font-extrabold text-slate-800 flex items-center gap-2"><Sparkles size={16} className="text-blue-500" /> {t("Travel Story")}</p>
                   <div className="inline-flex p-1 rounded-xl bg-slate-100">
                     {DIARY_LANGS.map(({ value, label }) => (
                       <button key={value} onClick={() => value !== lang && changeLang(value)} disabled={diaryLoading}
@@ -416,26 +420,26 @@ export default function TripView({ trip, facePhotos, people, uid }: {
                 </div>
                 {diaryLoading ? (
                   <div className="flex items-center gap-2 text-slate-400 text-sm py-10 justify-center">
-                    <Loader2 size={16} className="animate-spin" /> {lang === "ko" ? "여행기를 쓰는 중..." : "Writing your travel story..."}
+                    <Loader2 size={16} className="animate-spin" /> {t("Writing your travel story...")}
                   </div>
                 ) : diary ? (
                   <>
                     <p className="text-[15px] text-slate-700 leading-relaxed whitespace-pre-wrap">{diary}</p>
                     <div className="flex items-center justify-between mt-4">
-                      <p className="text-[11px] text-slate-400">{diaryCached ? (lang === "ko" ? "저장된 여행기" : "Saved story") : ""}</p>
+                      <p className="text-[11px] text-slate-400">{diaryCached ? t("Saved story") : ""}</p>
                       <button onClick={() => writeStory(true)} className="flex items-center gap-1.5 text-xs font-bold text-blue-500 hover:text-blue-700">
-                        <Sparkles size={12} /> {lang === "ko" ? "다시 쓰기" : "Re-generate"}
+                        <Sparkles size={12} /> {t("Re-generate")}
                       </button>
                     </div>
                   </>
                 ) : (
                   <div className="text-center py-6">
-                    {diaryError && <p className="text-sm text-red-500 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5 mb-4 text-left">{diaryError}</p>}
+                    {diaryError && <p className="text-sm text-red-500 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5 mb-4 text-left">{t(diaryError)}</p>}
                     <p className="text-sm text-slate-500 mb-3">
-                      {lang === "ko" ? `${memory.photoCount}장의 사진으로 여행기를 써 드려요.` : `AI will write a story from all ${memory.photoCount} photos.`}
+                      {tn(memory.photoCount, "AI will write a story from your {n} photo.", "AI will write a story from all {n} photos.")}
                     </p>
                     <button onClick={() => writeStory(false)} className="tv-btn-primary text-sm px-4 py-2.5">
-                      <Sparkles size={15} /> Generate My Travel Story
+                      <Sparkles size={15} /> {t("Generate My Travel Story")}
                     </button>
                   </div>
                 )}
@@ -456,7 +460,7 @@ export default function TripView({ trip, facePhotos, people, uid }: {
               <div className="p-4 flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="font-bold text-slate-800 truncate">{placeLabel(viewing) ?? viewing.fileName}</p>
-                  <p className="text-xs text-slate-400">{dayLabel(getPhotoDate(viewing))} · {time(getPhotoDate(viewing))}</p>
+                  <p className="text-xs text-slate-400">{dayLabel(getPhotoDate(viewing), locale)} · {time(getPhotoDate(viewing), locale)}</p>
                 </div>
                 <button onClick={() => setViewing(null)} className="text-slate-400 hover:text-slate-700 p-1"><X size={18} /></button>
               </div>
@@ -469,17 +473,17 @@ export default function TripView({ trip, facePhotos, people, uid }: {
       {shareUrl && (
         <div className="fixed inset-0 z-[3000] tv-overlay flex items-center justify-center p-4" onClick={() => setShareUrl(null)}>
           <div className="tv-modal p-5 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
-            <p className="font-extrabold text-slate-800 mb-1">Trip link ready</p>
-            <p className="text-xs text-slate-400 mb-3">Anyone with the link can view this trip — no login needed.</p>
+            <p className="font-extrabold text-slate-800 mb-1">{t("Trip link ready")}</p>
+            <p className="text-xs text-slate-400 mb-3">{t("Anyone with the link can view this trip — no login needed.")}</p>
             <div className="flex gap-2">
               <input readOnly value={shareUrl} className="flex-1 min-w-0 text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-600" />
               <button onClick={async () => {
                 try {
-                  if (navigator.share) await navigator.share({ title: memory.title, url: shareUrl });
+                  if (navigator.share) await navigator.share({ title: tripTitle(memory, t), url: shareUrl });
                   else { await navigator.clipboard.writeText(shareUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); }
                 } catch { /* share sheet dismissed */ }
               }} className="tv-btn-primary text-xs px-3 py-2">
-                {copied ? <><Check size={13} /> Copied</> : <><Share2 size={13} /> Share</>}
+                {copied ? <><Check size={13} /> {t("Copied!")}</> : <><Share2 size={13} /> {t("Share")}</>}
               </button>
             </div>
           </div>
@@ -492,27 +496,27 @@ export default function TripView({ trip, facePhotos, people, uid }: {
           <div className="tv-modal p-5 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
             {posted ? (
               <div className="text-center py-2">
-                <p className="font-extrabold text-slate-800">Your trip is on the feed ✈️</p>
-                <p className="text-xs text-slate-400 mt-1 mb-4">Your followers can see it, like it and comment.</p>
+                <p className="font-extrabold text-slate-800">{t("Your trip is on the feed ✈️")}</p>
+                <p className="text-xs text-slate-400 mt-1 mb-4">{t("Your followers can see it, like it and comment.")}</p>
                 <div className="flex justify-center gap-2">
-                  <Link href="/feed" className="tv-btn-primary text-sm px-4 py-2">Open Feed</Link>
-                  <button onClick={() => setPostOpen(false)} className="tv-btn-soft text-sm px-4 py-2">Close</button>
+                  <Link href="/feed" className="tv-btn-primary text-sm px-4 py-2">{t("Open Feed")}</Link>
+                  <button onClick={() => setPostOpen(false)} className="tv-btn-soft text-sm px-4 py-2">{t("Close")}</button>
                 </div>
               </div>
             ) : (
               <>
-                <p className="font-extrabold text-slate-800">Share {memory.title} to your feed</p>
+                <p className="font-extrabold text-slate-800">{t("Share {title} to your feed", { title: tripTitle(memory, t) })}</p>
                 <p className="text-xs text-slate-400 mt-0.5 mb-3">
-                  {memory.dayCount} days · {memory.places.length} places · {memory.photoCount} photos — followers can open the map, photos and story.
+                  {tn(memory.dayCount, "{n} day", "{n} days")} · {tn(memory.places.length, "{n} place", "{n} places")} · {tn(memory.photoCount, "{n} photo", "{n} photos")} — {t("followers can open the map, photos and story.")}
                 </p>
                 <textarea value={postCaption} onChange={(e) => setPostCaption(e.target.value)} rows={3} maxLength={500}
-                  placeholder="Say something about this trip…"
+                  placeholder={t("Say something about this trip…")}
                   className="w-full text-base sm:text-sm rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 resize-none" />
-                {postError && <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mt-2">{postError}</p>}
+                {postError && <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mt-2">{t(postError)}</p>}
                 <div className="flex justify-end gap-2 mt-3">
-                  <button onClick={() => setPostOpen(false)} disabled={posting} className="text-sm font-bold text-slate-500 px-3 py-2">Cancel</button>
+                  <button onClick={() => setPostOpen(false)} disabled={posting} className="text-sm font-bold text-slate-500 px-3 py-2">{t("Cancel")}</button>
                   <button onClick={handlePostToFeed} disabled={posting || !uid} className="tv-btn-primary text-sm px-4 py-2">
-                    {posting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Post
+                    {posting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} {t("Post")}
                   </button>
                 </div>
               </>
@@ -523,7 +527,7 @@ export default function TripView({ trip, facePhotos, people, uid }: {
 
       {showCard && (
         <ShareCardModal
-          title="Travel Memory card"
+          title={t("Travel Memory card")}
           fileName={`${memory.title.replace(/\s+/g, "-").toLowerCase()}-memory.png`}
           onClose={() => setShowCard(false)}
           draw={(ctx, w, h) => drawTripMemoryCard(ctx, w, h, memory, [cover, ...ordered.filter((p) => p.id !== cover.id)], tripPeople.length)}

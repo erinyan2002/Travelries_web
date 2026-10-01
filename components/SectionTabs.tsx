@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import {
   Images, MapPin, Wand2, Bookmark, Newspaper, FolderHeart, CircleUserRound, ChartColumn, UsersRound,
 } from "lucide-react";
+import { msg, useLang } from "@/lib/i18n";
 
 // Header for the pages grouped under one bottom-nav tab (Albums, Social, Profile):
 // the section's title, then small underline tabs for its pages. It replaces a
@@ -16,26 +17,26 @@ type Tab = { key: string; label: string; icon: React.ElementType; href: string }
 
 export const SECTIONS = {
   albums: {
-    title: "Albums", icon: Images,
+    title: msg("Albums"), icon: Images,
     tabs: [
-      { key: "photos",  label: "Photos",   icon: Images,   href: "/albums" },
-      { key: "trips",   label: "Trips",    icon: MapPin,   href: "/albums?view=trips" },
-      { key: "saved",   label: "Saved",    icon: Bookmark, href: "/saved" },
-      { key: "cleanup", label: "Clean up", icon: Wand2,    href: "/cleanup" },
+      { key: "photos",  label: msg("Photos"),   icon: Images,   href: "/albums" },
+      { key: "trips",   label: msg("Trips"),    icon: MapPin,   href: "/albums?view=trips" },
+      { key: "saved",   label: msg("Saved"),    icon: Bookmark, href: "/saved" },
+      { key: "cleanup", label: msg("Clean up"), icon: Wand2,    href: "/cleanup" },
     ],
   },
   social: {
-    title: "Social", icon: UsersRound,
+    title: msg("Social"), icon: UsersRound,
     tabs: [
-      { key: "feed",   label: "Feed",   icon: Newspaper,   href: "/feed" },
-      { key: "collab", label: "Collab", icon: FolderHeart, href: "/collab" },
+      { key: "feed",   label: msg("Feed"),   icon: Newspaper,   href: "/feed" },
+      { key: "collab", label: msg("Collab"), icon: FolderHeart, href: "/collab" },
     ],
   },
   profile: {
-    title: "Profile", icon: CircleUserRound,
+    title: msg("Profile"), icon: CircleUserRound,
     tabs: [
-      { key: "profile", label: "Profile",    icon: CircleUserRound, href: "/profile" },
-      { key: "stats",   label: "Statistics", icon: ChartColumn,     href: "/stats" },
+      { key: "profile", label: msg("Profile"),    icon: CircleUserRound, href: "/profile" },
+      { key: "stats",   label: msg("Statistics"), icon: ChartColumn,     href: "/stats" },
     ],
   },
 } satisfies Record<string, { title: string; icon: React.ElementType; tabs: Tab[] }>;
@@ -56,6 +57,7 @@ export default function SectionTabs({
   subtitle?: ReactNode;
 }) {
   const { title, icon: SectionIcon, tabs } = SECTIONS[section];
+  const { t } = useLang();
   return (
     <header className="mb-4">
       <div className="flex items-center gap-2.5 min-h-[40px]">
@@ -63,7 +65,7 @@ export default function SectionTabs({
           <SectionIcon size={16} strokeWidth={2.2} className="text-white" />
         </span>
         <div className="flex-1 min-w-0">
-          <h1 className="text-[22px] leading-tight font-extrabold text-slate-800 tracking-tight">{title}</h1>
+          <h1 className="text-[22px] leading-tight font-extrabold text-slate-800 tracking-tight">{t(title)}</h1>
           {subtitle && <p className="text-xs text-slate-500 truncate">{subtitle}</p>}
         </div>
         {action && <div className="flex-shrink-0">{action}</div>}
@@ -78,7 +80,7 @@ export default function SectionTabs({
           const inner = (
             <>
               <Icon size={14} strokeWidth={2.2} />
-              {label}
+              {t(label)}
               {isActive && (
                 <motion.span
                   layoutId={`section-tab-${section}`}

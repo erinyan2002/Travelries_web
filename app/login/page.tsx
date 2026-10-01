@@ -8,9 +8,11 @@ import { Eye, EyeOff, AlertCircle, LogIn } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import AppLogo from "@/components/AppLogo";
 import AuthBackdrop from "@/components/AuthBackdrop";
+import { msg, useLang } from "@/lib/i18n";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { t } = useLang();
   const [email,        setEmail]        = useState("");
   const [password,     setPassword]     = useState("");
   const [error,        setError]        = useState("");
@@ -22,7 +24,7 @@ export default function LoginPage() {
     setError("");
 
     if (!email.trim() || !password.trim()) {
-      setError("Please enter your email and password.");
+      setError(msg("Please enter your email and password."));
       return;
     }
 
@@ -34,9 +36,9 @@ export default function LoginPage() {
 
     if (authError) {
       if (authError.message.toLowerCase().includes("email not confirmed")) {
-        setError("Please confirm your email address before signing in. Check your inbox for the confirmation link.");
+        setError(msg("Please confirm your email address before signing in. Check your inbox for the confirmation link."));
       } else {
-        setError("Incorrect email or password.");
+        setError(msg("Incorrect email or password."));
       }
       setLoading(false);
     } else {
@@ -66,7 +68,7 @@ export default function LoginPage() {
           <h1 className="text-3xl font-black tracking-tight text-slate-900 mb-1">
             Travel<span className="bg-gradient-to-r from-blue-600 to-indigo-500 bg-clip-text text-transparent">ries</span>
           </h1>
-          <p className="text-slate-500 text-sm">Sign in to your account</p>
+          <p className="text-slate-500 text-sm">{t("Sign in to your account")}</p>
         </div>
 
         {/* Card */}
@@ -75,7 +77,7 @@ export default function LoginPage() {
 
             <div>
               <label htmlFor="email" className="block text-sm font-semibold text-slate-700 mb-2">
-                Email
+                {t("Email")}
               </label>
               <input
                 id="email" type="email" value={email}
@@ -88,10 +90,10 @@ export default function LoginPage() {
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label htmlFor="password" className="text-sm font-semibold text-slate-700">
-                  Password
+                  {t("Password")}
                 </label>
                 <Link href="/forgot-password" className="text-sm font-semibold text-blue-600 hover:text-blue-700 transition-colors">
-                  Forgot password?
+                  {t("Forgot password?")}
                 </Link>
               </div>
               <div className="relative">
@@ -105,7 +107,7 @@ export default function LoginPage() {
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors p-1"
-                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-label={showPassword ? t("Hide password") : t("Show password")}
                 >
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
@@ -121,12 +123,12 @@ export default function LoginPage() {
               >
                 <div className="flex items-start gap-3 text-red-700 text-sm font-medium">
                   <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
-                  {error}
+                  {t(error)}
                 </div>
                 <div className="mt-2 pl-7 text-sm text-slate-500">
-                  Forgot your password?{" "}
+                  {t("Forgot your password?")}{" "}
                   <Link href="/forgot-password" className="font-semibold text-blue-600 hover:text-blue-700 underline transition-colors">
-                    Reset it here
+                    {t("Reset it here")}
                   </Link>
                 </div>
               </motion.div>
@@ -141,20 +143,20 @@ export default function LoginPage() {
               }`}
             >
               <LogIn size={16} />
-              {loading ? "Signing in…" : "Sign in"}
+              {loading ? t("Signing in…") : t("Sign in")}
             </motion.button>
 
             <p className="text-center text-sm text-slate-500">
-              Don&apos;t have an account?{" "}
+              {t("Don't have an account?")}{" "}
               <Link href="/signup" className="font-semibold text-blue-600 hover:text-blue-700 transition-colors">
-                Create account
+                {t("Create account")}
               </Link>
             </p>
           </form>
         </div>
 
         <p className="text-center mt-5 text-xs text-slate-400">
-          Travelries · Photo Map &amp; Face Detection
+          {t("Travelries · Photo Map & Face Detection")}
         </p>
       </motion.div>
     </AuthBackdrop>

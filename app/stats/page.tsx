@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import ShareCardModal from "@/components/ShareCardModal";
 import { loadImage, drawPolaroid, fillTextTracked, drawRouteDivider } from "@/lib/canvasCard";
+import { useLang, localeOf, translate, currentLang } from "@/lib/i18n";
 
 // Scattered polaroid layout for the collage, back-to-front draw order (last
 // entry ends up on top, centered and largest) — offsets are relative to the
@@ -35,6 +36,7 @@ const COLLAGE_LAYOUT = [
 // Dashed dividers echo the app's own map route line; the hero number gets a
 // blue-to-violet gradient to match.
 async function drawYearReviewCard(ctx: CanvasRenderingContext2D, w: number, h: number, stats: Stats, year: number) {
+  const t = (en: string) => translate(currentLang(), en);
   const margin = 90;
   const dividerColor = "rgba(255,255,255,0.18)";
 
@@ -52,7 +54,7 @@ async function drawYearReviewCard(ctx: CanvasRenderingContext2D, w: number, h: n
   ctx.fillText(String(year), w / 2, 195);
   ctx.font = "700 34px system-ui, -apple-system, sans-serif";
   ctx.fillStyle = "rgba(255,255,255,0.75)";
-  ctx.fillText("Year in Review", w / 2, 242);
+  ctx.fillText(t("Year in Review"), w / 2, 242);
 
   drawRouteDivider(ctx, 290, w, margin, dividerColor);
 
@@ -81,14 +83,14 @@ async function drawYearReviewCard(ctx: CanvasRenderingContext2D, w: number, h: n
   ctx.fillText(countText, w / 2, 1060);
   ctx.font = "600 38px system-ui, -apple-system, sans-serif";
   ctx.fillStyle = "rgba(255,255,255,0.7)";
-  ctx.fillText("photos captured", w / 2, 1120);
+  ctx.fillText(t("photos captured"), w / 2, 1120);
 
   drawRouteDivider(ctx, 1170, w, margin, dividerColor);
 
   const rows: { label: string; value: string }[] = [
-    { label: "Places visited", value: String(stats.totalLocations) },
-    { label: "Faces detected", value: String(stats.totalFacesDetected) },
-    { label: "Top destination", value: stats.topLocations[0]?.name ?? "—" },
+    { label: t("Places visited"), value: String(stats.totalLocations) },
+    { label: t("Faces detected"), value: String(stats.totalFacesDetected) },
+    { label: t("Top destination"), value: stats.topLocations[0]?.name ?? "—" },
   ];
   const rowHeight = 130;
   const panelTop = 1200;
@@ -148,7 +150,8 @@ type Stats = {
   recentPhotos: MapPhoto[];
   mostFacesPhoto: MapPhoto | null;
   totalFacesDetected: number;
-  monthlyUploads: { label: string; count: number }[];
+  /** key "YYYY-MM" — the month label is drawn in the UI language. */
+  monthlyUploads: { key: string; count: number }[];
 };
 
 function StatCard({
@@ -180,11 +183,14 @@ function StatCard({
   );
 }
 
-function MonthlyBarChart({ data }: { data: { label: string; count: number }[] }) {
+function MonthlyBarChart({ data }: { data: { key: string; count: number }[] }) {
+  const { lang } = useLang();
   const max = Math.max(...data.map(d => d.count), 1);
   return (
     <div className="flex items-end gap-1 mt-3" style={{ height: "100px" }}>
-      {data.map(({ label, count }, i) => {
+      {data.map(({ key, count }, i) => {
+        const [y, m] = key.split("-").map(Number);
+        const label = new Date(y, m - 1, 1).toLocaleDateString(localeOf(lang), { month: "short" });
         const h = count > 0 ? Math.max(Math.round((count / max) * 72), 6) : 2;
         return (
           <div key={label} className="flex-1 flex flex-col items-center justify-end gap-0.5 h-full min-w-0">
@@ -206,7 +212,8 @@ function MonthlyBarChart({ data }: { data: { label: string; count: number }[] })
 }
 
 function DonutChart({ portrait, scenery, total }: { portrait: number; scenery: number; total: number }) {
-  if (total === 0) return <p className="text-slate-400 text-sm text-center py-8">No photos yet</p>;
+  const { t } = useLang();
+  if (total === 0) return <p className="text-slate-400 text-sm text-center py-8">{t("No photos yet")}</p>;
   const r = 32;
   const circ = 2 * Math.PI * r;
   const arc = (portrait / total) * circ;
@@ -232,19 +239,19 @@ function DonutChart({ portrait, scenery, total }: { portrait: number; scenery: n
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className="text-base font-extrabold text-slate-800 leading-none">{total}</span>
-          <span className="text-[9px] text-slate-400">total</span>
+          <span className="text-[9px] text-slate-400">{t("total")}</span>
         </div>
       </div>
       <div className="space-y-3 flex-1">
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full bg-blue-500 flex-shrink-0" />
-          <span className="text-sm text-slate-600 flex-1">With People</span>
+          <span className="text-sm text-slate-600 flex-1">{t("With People")}</span>
           <span className="text-sm font-extrabold text-slate-900">{portrait}</span>
           <span className="text-xs text-slate-400 w-9 text-right">{Math.round(portrait/total*100)}%</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full bg-slate-200 flex-shrink-0" />
-          <span className="text-sm text-slate-600 flex-1">Scenery</span>
+          <span className="text-sm text-slate-600 flex-1">{t("Scenery")}</span>
           <span className="text-sm font-extrabold text-slate-900">{scenery}</span>
           <span className="text-xs text-slate-400 w-9 text-right">{Math.round(scenery/total*100)}%</span>
         </div>
@@ -255,6 +262,7 @@ function DonutChart({ portrait, scenery, total }: { portrait: number; scenery: n
 
 
 export default function StatsPage() {
+  const { t } = useLang();
   const [stats, setStats] = useState<Stats | null>(null);
   const [showYearCard, setShowYearCard] = useState(false);
 
@@ -297,12 +305,11 @@ export default function StatsPage() {
 
       // Monthly uploads — last 12 months
       const now = new Date();
-      const monthlyData: { key: string; label: string; count: number }[] = [];
+      const monthlyData: { key: string; count: number }[] = [];
       for (let i = 11; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
         monthlyData.push({
           key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
-          label: d.toLocaleDateString("en-US", { month: "short" }),
           count: 0,
         });
       }
@@ -320,7 +327,7 @@ export default function StatsPage() {
         const slot = monthlyData.find(s => s.key === key);
         if (slot) slot.count++;
       });
-      const monthlyUploads = monthlyData.map(({ label, count }) => ({ label, count }));
+      const monthlyUploads = monthlyData;
 
       setStats({
         totalPhotos: mapPhotos.length,
@@ -364,7 +371,7 @@ export default function StatsPage() {
         <SectionTabs section="profile" active="stats"
           action={
             <button onClick={() => setShowYearCard(true)} className="tv-btn-primary text-xs px-3 py-2">
-              <LayoutTemplate size={14} /> Year in Review
+              <LayoutTemplate size={14} /> {t("Year in Review")}
             </button>
           }
         />
@@ -376,10 +383,10 @@ export default function StatsPage() {
           animate="show"
           className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6"
         >
-          <StatCard icon={Camera} label="Photos"         value={stats.totalPhotos}     gradient="from-blue-500 to-blue-600"     glow="bg-blue-400"    sub="saved to map" />
-          <StatCard icon={Users}  label="Face Photos"    value={stats.totalFacePhotos} gradient="from-violet-500 to-violet-600" glow="bg-violet-400"  sub={`${stats.totalFacesDetected} detected`} />
-          <StatCard icon={MapPin} label="Places Visited" value={stats.totalLocations}  gradient="from-emerald-500 to-emerald-600" glow="bg-emerald-400" sub="unique locations" />
-          <StatCard icon={Star}   label="Favorites"      value={stats.totalSaved}      gradient="from-amber-500 to-amber-600"   glow="bg-amber-400"   sub="saved photos" />
+          <StatCard icon={Camera} label={t("Photos")}         value={stats.totalPhotos}     gradient="from-blue-500 to-blue-600"     glow="bg-blue-400"    sub={t("saved to map")} />
+          <StatCard icon={Users}  label={t("Face Photos")}    value={stats.totalFacePhotos} gradient="from-violet-500 to-violet-600" glow="bg-violet-400"  sub={t("{n} detected", { n: stats.totalFacesDetected })} />
+          <StatCard icon={MapPin} label={t("Places Visited")} value={stats.totalLocations}  gradient="from-emerald-500 to-emerald-600" glow="bg-emerald-400" sub={t("unique locations")} />
+          <StatCard icon={Star}   label={t("Favorites")}      value={stats.totalSaved}      gradient="from-amber-500 to-amber-600"   glow="bg-amber-400"   sub={t("saved photos")} />
         </motion.div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
@@ -396,12 +403,12 @@ export default function StatsPage() {
               <div className="w-7 h-7 rounded-lg bg-indigo-50 flex items-center justify-center">
                 <TrendingUp size={15} className="text-indigo-500" />
               </div>
-              <h2 className="font-bold text-slate-800">Photo Types</h2>
+              <h2 className="font-bold text-slate-800">{t("Photo Types")}</h2>
             </div>
             <DonutChart portrait={stats.portraitCount} scenery={stats.generalCount} total={stats.totalPhotos} />
             {stats.mostFacesPhoto && stats.totalPhotos > 0 && (
               <p className="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-100 text-right">
-                Max faces in one photo: <strong className="text-slate-600">{stats.mostFacesPhoto.faceCount}</strong>
+                {t("Max faces in one photo:")} <strong className="text-slate-600">{stats.mostFacesPhoto.faceCount}</strong>
               </p>
             )}
           </motion.section>
@@ -418,10 +425,10 @@ export default function StatsPage() {
               <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center">
                 <MapPin size={15} className="text-emerald-500" />
               </div>
-              <h2 className="font-bold text-slate-800">Top 5 Locations</h2>
+              <h2 className="font-bold text-slate-800">{t("Top 5 Locations")}</h2>
             </div>
             {stats.topLocations.length === 0 ? (
-              <p className="text-slate-400 text-sm text-center py-6">No photos with location data</p>
+              <p className="text-slate-400 text-sm text-center py-6">{t("No photos with location data")}</p>
             ) : (
               <div className="space-y-3">
                 {stats.topLocations.map((loc, i) => (
@@ -464,8 +471,8 @@ export default function StatsPage() {
             <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center">
               <TrendingUp size={15} className="text-blue-500" />
             </div>
-            <h2 className="font-bold text-slate-800">Monthly Uploads</h2>
-            <span className="text-xs text-slate-400 ml-auto">Last 12 months</span>
+            <h2 className="font-bold text-slate-800">{t("Monthly Uploads")}</h2>
+            <span className="text-xs text-slate-400 ml-auto">{t("Last 12 months")}</span>
           </div>
           <MonthlyBarChart data={stats.monthlyUploads} />
         </motion.section>
@@ -480,9 +487,9 @@ export default function StatsPage() {
         >
           <div className="flex items-center gap-2 px-5 py-3.5 border-b border-slate-100 bg-slate-50">
             <Clock size={16} className="text-slate-400" />
-            <h2 className="font-bold text-slate-800">Recent Uploads</h2>
+            <h2 className="font-bold text-slate-800">{t("Recent Uploads")}</h2>
             <span className="text-xs text-slate-400 bg-slate-200 px-2 py-0.5 rounded-full ml-auto">
-              Last {stats.recentPhotos.length}
+              {t("Last {n}", { n: stats.recentPhotos.length })}
             </span>
           </div>
           {stats.recentPhotos.length === 0 ? (
@@ -490,7 +497,7 @@ export default function StatsPage() {
               <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
                 <ImageIcon size={24} className="text-slate-300" />
               </div>
-              <p className="text-slate-400 text-sm">No photos yet</p>
+              <p className="text-slate-400 text-sm">{t("No photos yet")}</p>
             </div>
           ) : (
             <motion.div
@@ -513,7 +520,7 @@ export default function StatsPage() {
                     <p className="text-[9px] font-bold text-slate-700 truncate">{photo.fileName}</p>
                     <p className="text-[9px] text-slate-400 flex items-center gap-0.5 mt-0.5">
                       <CalendarDays size={7} />
-                      {photo.captureDate ?? photo.uploadedAt?.slice(0, 10) ?? ""}
+                      {t(photo.captureDate ?? photo.uploadedAt?.slice(0, 10) ?? "")}
                     </p>
                     {(photo.faceCount ?? 0) > 0 && (
                       <span className="inline-flex items-center gap-0.5 text-[8px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full mt-1">
@@ -530,7 +537,7 @@ export default function StatsPage() {
       </div>
       {showYearCard && (
         <ShareCardModal
-          title="Year in Review"
+          title={t("Year in Review")}
           fileName="travelries-year-in-review.png"
           onClose={() => setShowYearCard(false)}
           draw={(ctx, w, h) => drawYearReviewCard(ctx, w, h, stats, new Date().getFullYear())}

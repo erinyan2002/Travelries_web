@@ -8,6 +8,14 @@ export type FaceEntry = { photo: FacePhoto; boxIndex: number };
 // table) rather than pure descriptor-distance clustering — see buildPersonGroups().
 export type PersonCluster = { id: string; label: string; faces: FaceEntry[]; centroid: number[]; personId?: string };
 
+/** A cluster's name for display: auto clusters' "Person N" / "Unnamed" in the UI language (useLang().t). */
+export function clusterLabel(cluster: PersonCluster, t: (en: string, vars?: Record<string, string | number>) => string): string {
+  const auto = !cluster.personId && cluster.label.match(/^Person (\d+)$/);
+  if (auto) return t("Person {n}", { n: Number(auto[1]) });
+  if (cluster.label === "Unnamed") return t("Unnamed");
+  return cluster.label;
+}
+
 export function euclidean(a: number[], b: number[]): number {
   if (a.length !== b.length) return Infinity;
   let s = 0;

@@ -4,6 +4,7 @@ import { ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check } from "lucide-react";
+import { msg, useLang } from "@/lib/i18n";
 
 export type ActionMenuOption = {
   value: string;
@@ -21,7 +22,7 @@ export type ActionMenuOption = {
 // popover would be painted over by the next card. Opens upward when there isn't
 // room below (e.g. above the floating BottomNav).
 export default function ActionMenu({
-  icon, label, title, options, onSelect, disabled = false, tone = "slate", emptyText = "Nothing to show",
+  icon, label, title, options, onSelect, disabled = false, tone = "slate", emptyText = msg("Nothing to show"),
 }: {
   icon: ReactNode;
   label: ReactNode;
@@ -33,6 +34,7 @@ export default function ActionMenu({
   emptyText?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const { t } = useLang();
   const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number; upward: boolean } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -107,7 +109,7 @@ export default function ActionMenu({
           >
             <p className="px-2.5 pt-1.5 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">{title}</p>
             <div className="max-h-56 overflow-y-auto">
-              {options.length === 0 && <p className="px-2.5 py-2 text-xs text-slate-400">{emptyText}</p>}
+              {options.length === 0 && <p className="px-2.5 py-2 text-xs text-slate-400">{t(emptyText)}</p>}
               {options.map((o) => (
                 <button
                   key={o.value}

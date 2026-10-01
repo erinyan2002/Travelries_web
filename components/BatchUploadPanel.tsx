@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { cropFaceThumbnails, forwardGeocode, reverseGeocode } from "@/lib/uploadHelpers";
 import type { Person } from "@/lib/peopleApi";
+import { msg, useLang } from "@/lib/i18n";
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -57,6 +58,7 @@ export default function BatchUploadPanel({ items, phase, people, onItemsChange, 
   onClose: () => void;
 }) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const { t, tn } = useLang();
 
   const total     = items.length;
   const analyzed  = items.filter((b) => b.status !== "pending" && b.status !== "processing").length;
@@ -82,19 +84,19 @@ export default function BatchUploadPanel({ items, phase, people, onItemsChange, 
             <Upload size={16} className="text-white" />
           </div>
           <div>
-            <h2 className="font-bold text-slate-800">Batch Upload</h2>
+            <h2 className="font-bold text-slate-800">{t("Batch Upload")}</h2>
             <p className="text-xs text-slate-400">
-              {phase === "analyzing" && `Analyzing ${analyzed} / ${total}`}
-              {phase === "review"    && `${reviewable.length} photo${reviewable.length !== 1 ? "s" : ""} analyzed · not saved yet`}
-              {phase === "saving"    && "Saving..."}
-              {phase === "done"      && `${saved} saved`}
+              {phase === "analyzing" && t("Analyzing {done} / {total}", { done: analyzed, total })}
+              {phase === "review"    && tn(reviewable.length, "{n} photo analyzed · not saved yet", "{n} photos analyzed · not saved yet")}
+              {phase === "saving"    && t("Saving...")}
+              {phase === "done"      && t("{n} saved", { n: saved })}
             </p>
           </div>
         </div>
         {(phase === "review" || phase === "done") && (
           <button onClick={onClose}
             className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-sm font-bold hover:bg-slate-200 transition-colors">
-            <X size={14} /> {phase === "review" ? "Cancel" : "Close"}
+            <X size={14} /> {phase === "review" ? t("Cancel") : t("Close")}
           </button>
         )}
       </div>
@@ -119,7 +121,7 @@ export default function BatchUploadPanel({ items, phase, people, onItemsChange, 
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-slate-800 truncate">{item.name}</p>
                 <p className={`text-xs mt-0.5 ${item.status === "error" ? "text-red-400" : "text-slate-400"}`}>
-                  {item.info || (item.status === "pending" ? "Waiting..." : "Analyzing...")}
+                  {item.info || (item.status === "pending" ? t("Waiting...") : t("Analyzing..."))}
                 </p>
               </div>
             </div>
@@ -133,7 +135,7 @@ export default function BatchUploadPanel({ items, phase, people, onItemsChange, 
             <div className="bg-sky-50 border border-sky-200 rounded-xl px-4 py-3 flex items-center gap-3 mb-4">
               <Users size={18} className="text-sky-500 flex-shrink-0" />
               <p className="text-sm font-semibold text-sky-800">
-                Tap a photo to see its analysis, pick which faces to keep and who they are. Nothing is saved until you press Save.
+                {t("Tap a photo to see its analysis, pick which faces to keep and who they are. Nothing is saved until you press Save.")}
               </p>
             </div>
           )}
@@ -141,8 +143,8 @@ export default function BatchUploadPanel({ items, phase, people, onItemsChange, 
             <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-center gap-3 mb-4">
               <CheckCircle2 size={18} className="text-emerald-500 flex-shrink-0" />
               <p className="text-sm font-bold text-emerald-700">
-                {saved} photo{saved !== 1 ? "s" : ""} saved!
-                {failed > 0 && <span className="font-semibold text-red-500"> · {failed} failed</span>}
+                {tn(saved, "{n} photo saved!", "{n} photos saved!")}
+                {failed > 0 && <span className="font-semibold text-red-500"> · {t("{n} failed", { n: failed })}</span>}
               </p>
             </div>
           )}
@@ -165,7 +167,7 @@ export default function BatchUploadPanel({ items, phase, people, onItemsChange, 
                       <div className="w-full h-full flex items-center justify-center"><AlertTriangle size={22} className="text-red-300" /></div>
                     )}
                     <span className="absolute top-2 left-2 inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/90 shadow-sm text-slate-600">
-                      {faces > 0 ? <><Users size={9} className="text-blue-600" /> {picked === faces ? faces : `${picked}/${faces}`}</> : <><FileImage size={9} /> Scene</>}
+                      {faces > 0 ? <><Users size={9} className="text-blue-600" /> {picked === faces ? faces : `${picked}/${faces}`}</> : <><FileImage size={9} /> {t("Scene")}</>}
                     </span>
                     {item.status === "saving" && (
                       <span className="absolute inset-0 bg-white/50 flex items-center justify-center"><Loader2 size={22} className="text-blue-500 animate-spin" /></span>
@@ -175,15 +177,15 @@ export default function BatchUploadPanel({ items, phase, people, onItemsChange, 
                     )}
                     {item.skip && (
                       <span className="absolute inset-0 flex items-center justify-center">
-                        <span className="text-[11px] font-bold text-white bg-slate-700/80 px-2 py-0.5 rounded-full">Won&apos;t be saved</span>
+                        <span className="text-[11px] font-bold text-white bg-slate-700/80 px-2 py-0.5 rounded-full">{t("Won't be saved")}</span>
                       </span>
                     )}
                   </div>
                   <div className="px-3 py-2">
                     <p className="text-xs font-bold text-slate-800 truncate">{item.editName ?? item.name}</p>
                     <p className={`text-[10px] truncate mt-0.5 ${item.status === "error" ? "text-red-400" : "text-slate-400"}`}>
-                      {item.status === "error" ? item.info || "Failed"
-                        : item.lat === undefined ? <span className="text-orange-500 font-semibold">No location · tap to set</span>
+                      {item.status === "error" ? item.info || t("Failed")
+                        : item.lat === undefined ? <span className="text-orange-500 font-semibold">{t("No location · tap to set")}</span>
                         : `${item.locationSource === "estimated" ? "≈ " : ""}${item.location?.split(",")[0] ?? ""}`}
                     </p>
                   </div>
@@ -195,7 +197,7 @@ export default function BatchUploadPanel({ items, phase, people, onItemsChange, 
           {phase === "review" && (
             <button onClick={onSave} disabled={toSave === 0}
               className="mt-4 w-full flex items-center justify-center gap-2 py-3.5 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-sky-400 to-blue-500 hover:from-sky-500 hover:to-blue-600 shadow-lg shadow-sky-200 transition-all disabled:opacity-40 disabled:shadow-none">
-              <Save size={16} /> Save {toSave} photo{toSave !== 1 ? "s" : ""}
+              <Save size={16} /> {tn(toSave, "Save {n} photo", "Save {n} photos")}
             </button>
           )}
         </div>
@@ -241,6 +243,7 @@ function ReviewModal({ item, people, otherPlaces, toSave, onSaveAll, onChange, o
   count: number;
 }) {
   const [thumbs, setThumbs] = useState<string[]>([]);
+  const { t, tn } = useLang();
   const [placeQuery, setPlaceQuery] = useState("");
   const [placeStatus, setPlaceStatus] = useState<"idle" | "searching" | "error">("idle");
 
@@ -289,11 +292,11 @@ function ReviewModal({ item, people, otherPlaces, toSave, onSaveAll, onChange, o
   }
 
   const info: [string, string | undefined, React.ElementType][] = [
-    ["Capture date", item.captureDate, CalendarDays],
-    ["Capture time", item.captureTime, Clock],
-    ["Location",     item.location,    MapPin],
-    ["Coordinates",  item.lat !== undefined && item.lng !== undefined ? `${item.lat.toFixed(4)}, ${item.lng.toFixed(4)}` : undefined, Navigation],
-    ["File size",    item.fileSize,    Ruler],
+    [msg("Capture date"), item.captureDate, CalendarDays],
+    [msg("Capture time"), item.captureTime, Clock],
+    [msg("Location"),     item.location,    MapPin],
+    [msg("Coordinates"),  item.lat !== undefined && item.lng !== undefined ? `${item.lat.toFixed(4)}, ${item.lng.toFixed(4)}` : undefined, Navigation],
+    [msg("File size"),    item.fileSize,    Ruler],
   ];
 
   // Portaled to <body>: the panel is a tv-card, whose backdrop-filter makes it the
@@ -303,7 +306,7 @@ function ReviewModal({ item, people, otherPlaces, toSave, onSaveAll, onChange, o
       <div className="tv-modal max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 px-5 py-3 border-b border-slate-100">
           <span className="text-sky-500 font-bold text-lg leading-none">✦</span>
-          <h2 className="font-bold text-slate-800 flex-1">Analysis Result</h2>
+          <h2 className="font-bold text-slate-800 flex-1">{t("Analysis Result")}</h2>
           <span className="text-xs font-semibold text-slate-400">{position} / {count}</span>
           <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"><X size={16} /></button>
         </div>
@@ -312,7 +315,7 @@ function ReviewModal({ item, people, otherPlaces, toSave, onSaveAll, onChange, o
           <div className="relative">
             <Pencil size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400 pointer-events-none" />
             <input value={item.editName ?? item.name} onChange={(e) => onChange({ editName: e.target.value })}
-              placeholder="Photo name"
+              placeholder={t("Photo name")}
               className="w-full text-sm font-semibold text-slate-700 bg-blue-50/60 border border-blue-200 rounded-xl pl-8 pr-3 py-2 outline-none focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100" />
           </div>
 
@@ -337,19 +340,19 @@ function ReviewModal({ item, people, otherPlaces, toSave, onSaveAll, onChange, o
           <div className={`flex items-center justify-between rounded-xl px-4 py-3 ${
             boxes.length > 0 ? "bg-gradient-to-r from-sky-400 to-blue-500" : "bg-gradient-to-r from-slate-400 to-slate-500"}`}>
             <div>
-              <p className="text-xs text-white/70">AI Classification</p>
-              <p className="font-extrabold text-white">{boxes.length > 0 ? "Portrait" : "Scenery"}</p>
+              <p className="text-xs text-white/70">{t("AI Classification")}</p>
+              <p className="font-extrabold text-white">{boxes.length > 0 ? t("Portrait") : t("Scenery")}</p>
             </div>
             <div className="text-right">
               <p className="text-2xl font-extrabold text-white">{boxes.length}</p>
-              <p className="text-xs text-white/70">detected</p>
+              <p className="text-xs text-white/70">{t("detected")}</p>
             </div>
           </div>
 
           {boxes.length > 0 && (
             <div className="rounded-xl border border-sky-100 bg-sky-50 p-3 space-y-2">
               <p className="text-xs font-semibold text-slate-700">
-                Faces to save to People ({selected.size}/{boxes.length})
+                {t("Faces to save to People ({picked}/{total})", { picked: selected.size, total: boxes.length })}
               </p>
               <div className="flex gap-3 overflow-x-auto pb-1">
                 {boxes.map((_, i) => {
@@ -360,7 +363,7 @@ function ReviewModal({ item, people, otherPlaces, toSave, onSaveAll, onChange, o
                         <div className={`relative h-16 w-16 overflow-hidden rounded-full border-2 ${on ? "border-emerald-500 ring-2 ring-emerald-200" : "border-slate-200 opacity-60"}`}>
                           {thumbs[i]
                             // eslint-disable-next-line @next/next/no-img-element
-                            ? <img src={thumbs[i]} alt={`Person ${i + 1}`} className="h-full w-full object-cover" />
+                            ? <img src={thumbs[i]} alt={t("Person {n}", { n: i + 1 })} className="h-full w-full object-cover" />
                             : <div className="h-full w-full animate-pulse bg-slate-200" />}
                           {on && (
                             <div className="absolute inset-0 flex items-center justify-center bg-emerald-500/30">
@@ -373,7 +376,7 @@ function ReviewModal({ item, people, otherPlaces, toSave, onSaveAll, onChange, o
                       {on && people.length > 0 && (
                         <select value={item.personIds[i] ?? ""} onChange={(e) => assign(i, e.target.value)}
                           className="w-20 text-[10px] font-semibold text-slate-600 border border-slate-200 rounded-md px-0.5 py-0.5 outline-none bg-white">
-                          <option value="">Who?</option>
+                          <option value="">{t("Who?")}</option>
                           {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
                       )}
@@ -381,7 +384,7 @@ function ReviewModal({ item, people, otherPlaces, toSave, onSaveAll, onChange, o
                   );
                 })}
               </div>
-              <p className="text-[11px] text-slate-400">Tap a face (or its box) to keep or leave it out.</p>
+              <p className="text-[11px] text-slate-400">{t("Tap a face (or its box) to keep or leave it out.")}</p>
             </div>
           )}
 
@@ -390,8 +393,8 @@ function ReviewModal({ item, people, otherPlaces, toSave, onSaveAll, onChange, o
               <div key={label} className={`flex items-start gap-2 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 ${label === "Location" ? "col-span-2" : ""}`}>
                 <Icon size={13} className="text-sky-500 mt-0.5 flex-shrink-0" />
                 <div className="min-w-0">
-                  <p className="text-[10px] text-slate-400">{label}</p>
-                  <p className="text-xs font-semibold text-slate-700 break-words">{value || "Not available"}</p>
+                  <p className="text-[10px] text-slate-400">{t(label)}</p>
+                  <p className="text-xs font-semibold text-slate-700 break-words">{value ? t(value) : t("Not available")}</p>
                 </div>
               </div>
             ))}
@@ -400,15 +403,15 @@ function ReviewModal({ item, people, otherPlaces, toSave, onSaveAll, onChange, o
             <div className={`rounded-xl border p-3 space-y-2 ${item.lat === undefined ? "bg-orange-50 border-orange-200" : "bg-sky-50 border-sky-100"}`}>
               <p className={`text-xs font-bold flex items-center gap-1.5 ${item.lat === undefined ? "text-orange-700" : "text-sky-700"}`}>
                 <MapPin size={13} />
-                {item.lat === undefined ? "No GPS data — set a place so it shows on the map"
-                  : item.locationSource === "estimated" ? item.locationNote : "Place set by you"}
+                {item.lat === undefined ? t("No GPS data — set a place so it shows on the map")
+                  : item.locationSource === "estimated" ? item.locationNote : t("Place set by you")}
               </p>
               {otherPlaces.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {otherPlaces.map((p) => (
                     <button key={p.location} type="button" onClick={() => setPlace(p.lat, p.lng, p.location)}
                       className="text-[11px] font-semibold text-slate-600 bg-white border border-slate-200 hover:border-sky-300 px-2 py-1 rounded-lg truncate max-w-full">
-                      Same as: {p.location.split(",").slice(0, 2).join(",")}
+                      {t("Same as:")} {p.location.split(",").slice(0, 2).join(",")}
                     </button>
                   ))}
                 </div>
@@ -416,18 +419,18 @@ function ReviewModal({ item, people, otherPlaces, toSave, onSaveAll, onChange, o
               <div className="flex gap-1.5">
                 <input value={placeQuery} onChange={(e) => setPlaceQuery(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && searchPlace()}
-                  placeholder="Search a place (e.g. Seongsu, Seoul)"
+                  placeholder={t("Search a place (e.g. Seongsu, Seoul)")}
                   className="flex-1 min-w-0 text-xs border border-slate-200 rounded-lg px-2.5 py-2 outline-none bg-white focus:border-sky-400" />
-                <button type="button" onClick={searchPlace} disabled={placeStatus === "searching"} title="Search"
+                <button type="button" onClick={searchPlace} disabled={placeStatus === "searching"} title={t("Search")}
                   className="px-2.5 rounded-lg bg-slate-800 text-white disabled:opacity-50">
                   {placeStatus === "searching" ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
                 </button>
-                <button type="button" onClick={useCurrentLocation} disabled={placeStatus === "searching"} title="Use current location"
+                <button type="button" onClick={useCurrentLocation} disabled={placeStatus === "searching"} title={t("Use current location")}
                   className="px-2.5 rounded-lg bg-sky-500 text-white disabled:opacity-50">
                   <LocateFixed size={14} />
                 </button>
               </div>
-              {placeStatus === "error" && <p className="text-[11px] text-red-500">Couldn&apos;t find that place. Try another search.</p>}
+              {placeStatus === "error" && <p className="text-[11px] text-red-500">{t("Couldn't find that place. Try another search.")}</p>}
             </div>
           )}
         </div>
@@ -438,19 +441,19 @@ function ReviewModal({ item, people, otherPlaces, toSave, onSaveAll, onChange, o
           <button onClick={() => onChange({ skip: !item.skip })}
             className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-colors ${
               item.skip ? "bg-slate-700 text-white border-slate-700" : "text-slate-600 border-slate-200 hover:bg-slate-50"}`}>
-            <EyeOff size={13} /> {item.skip ? "Skipped" : "Don't save"}
+            <EyeOff size={13} /> {item.skip ? t("Skipped") : t("Don't save")}
           </button>
           <span className="flex-1" />
           {/* Next until the last photo, then Save — "Done" used to only close, which read as saved. */}
           {position < count ? (
             <button onClick={() => onStep(1)}
               className="flex items-center gap-1 px-4 py-2 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-sky-500 to-blue-600">
-              Next <ChevronRight size={15} />
+              {t("Next")} <ChevronRight size={15} />
             </button>
           ) : (
             <button onClick={onSaveAll} disabled={toSave === 0}
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-sky-500 to-blue-600 disabled:opacity-40">
-              <Save size={15} /> Save {toSave} photo{toSave !== 1 ? "s" : ""}
+              <Save size={15} /> {tn(toSave, "Save {n} photo", "Save {n} photos")}
             </button>
           )}
         </div>

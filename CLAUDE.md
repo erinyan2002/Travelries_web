@@ -8,8 +8,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Frontend (Next.js)
 npm run dev        # start dev server at localhost:3000 (runs `next dev --webpack`, not Turbopack)
                    # NOTE: in this checkout's path ("4-2 캡디(2) travelries_final") the dev
-                   # server does NOT hot-reload — edits only show after restarting it
-                   # (kill, rm -rf .next, npm run dev). An ASCII path without parentheses works.
+                   # server does NOT hot-reload — edits only show after restarting it.
+                   # next.config.ts turns the dev webpack cache off, because a restart
+                   # otherwise rebuilt from the stale .next/dev/cache (new Tailwind classes
+                   # missing from the CSS). An ASCII path without parentheses works.
 npm run build      # production build
 npm start          # serve production build
 npm run lint       # ESLint check
@@ -57,6 +59,22 @@ ALLOWED_ORIGINS=...   # optional, comma-separated extra CORS origins (e.g. the V
 **Travelries** is a travel photo app: upload photos (one or many) → extract GPS + EXIF → run client-side face detection → save to map/albums. It is a PWA (`app/manifest.ts`, `/pwa-icon-192` and `/pwa-icon-512` routes).
 
 The backend URL comes from `lib/backend.ts` (`NEXT_PUBLIC_BACKEND_URL`; without it, `http://<the page's hostname>:8000`, so a phone opening the dev server by LAN IP finds a backend started with `--host 0.0.0.0`). For that phone setup, `next.config.ts` sets `allowedDevOrigins` to this machine's LAN IPs, the backend CORS allows private-network origins by regex, and ids come from `lib/id.ts` `newId()` rather than `crypto.randomUUID`, which only exists in secure contexts (https or localhost). The localhost default only works when the browser and the backend are on the same machine, so the deployed Vercel site stays in browser mode unless a deployed backend URL is set there and added to the backend's `ALLOWED_ORIGINS`. Map and People open with the shared `components/PageHero.tsx` banner (Home has its own `HomeHero`); the grouped section pages use `SectionTabs` (see Navigation). Shared visual primitives live in `app/globals.css` (`tv-card`, `tv-modal`, `tv-overlay`, `tv-btn-primary`/`tv-btn-soft`, and the fixed pastel `body` background; the Pretendard font is a `<link>` in `app/layout.tsx`, deliberately kept out of the CSS pipeline). `components/IntroSplash.tsx` is a brand intro shown once per browser session. It is server-rendered visible, and an inline `<head>` script sets `<html data-intro-seen>` before paint on later loads or with reduced motion, so CSS hides it without a flash; `?intro` in the URL forces a replay. `lib/paperPlane.ts` `flyPaperPlane()` (a paper plane swooping across the screen with a dashed trail and clouds) celebrates a saved photo or batch; `lib/confetti.ts` `burstConfetti()` is still used for a freshly generated diary and trip sharing. Both are throwaway canvases, skipped with reduced motion. For a picker inside a card, use `components/ActionMenu.tsx` (a chip button plus a popover portaled to `<body>`) rather than a native `<select>`. Every `tv-card` has `backdrop-filter`, which creates a stacking context, so an in-card popover would be painted under the next card. Pages leave `<main>` transparent, so reuse these classes instead of re-spelling card, modal or button styles. **Brand colours:** an `@theme` block at the top of `globals.css` remaps Tailwind's palettes. `blue-*` is the stock sky scale (primary), `sky-*` is the stock cyan scale (aqua accent), and `indigo-*` is a deeper sky. So a `bg-blue-600` class actually renders sky blue. This moved the UI off the Facebook-like royal blue in one place. Primary actions (buttons, active tabs, badges) are always this blue, usually `tv-btn-primary`'s `from-sky-500 to-blue-600` gradient. The collab pages and the notification bell used violet and looked like another app. Violet stays only as one accent among several (a stats card, face-chip colours). Keep writing blue/sky/indigo classes, change the colour there, and use literal sky hexes (e.g. `#0284c7`) where raw colours are needed (Leaflet paths, OG/PWA icons, `viewport.themeColor`).
+
+### Languages (English / Korean)
+
+The whole UI is in English or Korean, switched by `components/LanguageToggle.tsx`, which is fixed at the top right. When signed in it is a pill left of the notification bell below xl. On xl it is a round button right above the bell, and `NotificationBell` moves down (`xl:top-[68px]`); a pill there covered the page's own top-right buttons. `lib/i18n.tsx` is a small home-grown i18n: **the English text is the key**.
+- `const { t, tn, lang } = useLang()`; `t("Save")`, `t("Saved to {places}!", { places })`, and `tn(n, "{n} photo", "{n} photos")` for plurals.
+- Korean comes from `lib/i18n-ko.ts` (`KO`), falling back to the English.
+- Strings kept in constants or state are wrapped in `msg("…")`, which returns its argument unchanged, and passed through `t()` when shown. That way an error stored in state still follows a language switch.
+- Code outside React (canvas cards, `saveImage`'s toast, trip-share snapshots) uses `translate(currentLang(), …)`. `currentLang()` reads `<html lang>`.
+- Dates use `localeOf(lang)`.
+
+**`lib/i18n.test.ts` fails when a `t("…")`, `tn(…)` or `msg("…")` literal has no Korean entry**, or when the `{placeholders}` differ, so add the Korean line with every new UI string. The choice is the `lang` cookie (default: the browser's Accept-Language), read by `app/layout.tsx` on the server so the first paint is in the right language. Its name lives in `lib/langCookie.ts`, because a value imported into a server component from the `"use client"` `i18n.tsx` is a client reference, not the string.
+
+Some data stays as saved:
+- trip titles are stored in English ("Sokcho Trip") and shown through `tripTitle()`
+- auto-cluster names "Person N" go through `clusterLabel()`
+- user names, places and AI diaries are not translated; the diary has its own language toggle, which defaults to the UI language
 
 ### Data storage split
 
@@ -247,7 +265,7 @@ To install InsightFace tier: `pip install insightface onnxruntime` (already in `
 
 Uses `react-leaflet` with OpenStreetMap tiles (free, no API key). Leaflet default icons overridden with `L.divIcon` showing a circular photo thumbnail + count badge for clustered markers. Loaded client-side only (Leaflet requires `window`). Only photos with `lat` and `lng` defined are shown.
 
-A **Pins / Regions** toggle (`viewMode`) switches between the Leaflet map and `components/KoreaRegionMap.tsx`, an SVG choropleth of South Korea's 17 provinces. It uses no Leaflet: `lib/koreaGeo.ts` projects `public/data/skorea-provinces.geo.json` itself and maps each photo's reverse-geocoded `location` string to a province via `matchRegionCode`. Clicking a province filters the photo list below.
+A **Pins / Regions** toggle (`viewMode`) switches between the Leaflet map and `components/KoreaRegionMap.tsx`, an SVG choropleth of South Korea's 17 provinces. It uses no Leaflet: `lib/koreaGeo.ts` projects `public/data/skorea-provinces.geo.json` itself and finds each photo's province with `regionCodeOf`: point-in-polygon on its coordinates, snapping within ~15 km to the nearest province for photos just off the simplified coastline, then the `location` text (`matchRegionCode`) for photos without coordinates. Text alone missed most photos, because the browser's reverse geocode has no province ("road, neighbourhood, district, city"). A province's photo fill and label come from `provinceLayout` (only its main land masses, so island-heavy Incheon isn't a sliver on far islands), with `LABEL_LNG_LAT` overrides for Gyeonggi and Incheon, whose labels otherwise land on Seoul's. Clicking a province filters the photo list below.
 
 In Pins view there are two optional overlay toggles, mutually exclusive with the marker view when heatmap is on:
 - **Route**: a `RouteLayer` component draws photos as a Polyline in chronological order (sorted by `captureTimestamp`, see above) — a white casing line for contrast against any tile color, an animated flowing dashed line on top (`route-flow-line` keyframe in `app/globals.css`), and a rotated arrow `Marker` at each segment midpoint (bearing computed via `bearingDeg()`) showing travel direction.
