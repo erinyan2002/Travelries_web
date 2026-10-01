@@ -19,12 +19,12 @@ describe("getPhotoDate", () => {
 });
 
 describe("detectTrips", () => {
-  it("splits trips on a gap of more than 4 days", () => {
+  it("keeps consecutive days together and splits after a day with no photos", () => {
     const trips = detectTrips([
-      p("a", "2026-01-01T00:00:00Z"), p("b", "2026-01-03T00:00:00Z"),
-      p("c", "2026-02-01T00:00:00Z"),
+      p("sep29", "2026-09-29T09:00:00Z"), p("sep30", "2026-09-30T09:00:00Z"), p("oct1", "2026-10-01T03:00:00Z"),
+      p("oct3", "2026-10-03T03:00:00Z"),
     ]);
-    expect(trips.map((t) => t.photos.map((x) => x.id))).toEqual([["c"], ["a", "b"]]);
+    expect(trips.map((t) => t.photos.map((x) => x.id))).toEqual([["oct3"], ["sep29", "sep30", "oct1"]]);
   });
 
   it("splits one date range into separate trips by location", () => {
@@ -33,6 +33,21 @@ describe("detectTrips", () => {
       p("busan", "2026-01-02T00:00:00Z", { lat: 35.1, lng: 129.0, location: "Busan" }),
     ]);
     expect(trips).toHaveLength(2);
+  });
+
+  it("keeps photos from different spots in the same city as one trip", () => {
+    // Same day in Sokcho: the beach and the town, ~3 km apart.
+    const sokcho = detectTrips([
+      p("beach", "2026-06-03T03:00:00Z", { lat: 38.1906, lng: 128.6017, location: "Sokcho" }),
+      p("town", "2026-06-03T06:00:00Z", { lat: 38.2070, lng: 128.5918, location: "Sokcho" }),
+    ]);
+    expect(sokcho).toHaveLength(1);
+    // Two days across Seoul, ~11 km apart.
+    const seoul = detectTrips([
+      p("hongdae", "2026-09-29T10:00:00Z", { lat: 37.5563, lng: 126.9220 }),
+      p("konkuk", "2026-09-30T10:00:00Z", { lat: 37.5404, lng: 127.0692 }),
+    ]);
+    expect(seoul).toHaveLength(1);
   });
 
   it("treats a 0 latitude/longitude as a real coordinate", () => {

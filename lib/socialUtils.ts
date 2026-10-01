@@ -159,6 +159,16 @@ export async function createPost(
   return data.id as string;
 }
 
+// The cropped image a post shows (see components/ImageCropper.tsx). Stored next to
+// the user's photos under a fresh name, like avatars, so it only needs the same
+// insert-your-own-path Storage permission photo uploads use.
+export async function uploadPostImage(uid: string, blob: Blob): Promise<string> {
+  const path = `${uid}/post-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+  const { error } = await supabase.storage.from("user-photos").upload(path, blob, { contentType: "image/jpeg" });
+  if (error) throw new Error(error.message);
+  return supabase.storage.from("user-photos").getPublicUrl(path).data.publicUrl;
+}
+
 export async function createTripPost(uid: string, trip: TripPostInfo, caption?: string): Promise<string> {
   const { data, error } = await supabase.from("posts").insert({
     user_id: uid,

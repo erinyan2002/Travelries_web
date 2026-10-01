@@ -1,5 +1,5 @@
-// Trip detection for the Albums "Trips" view: photos are split into trips by
-// date gaps, then each trip is split again by GPS location clusters.
+// Trip detection for the Albums "Trips" view: photos are split into trips where a
+// calendar day has no photos, then each trip is split again by region.
 import { MapPhoto } from "./types";
 
 // Stable cache key for a trip's diary — the trip grouping itself is recomputed
@@ -76,7 +76,26 @@ export function clusterByGps(photos: MapPhoto[], radiusKm = 1.5): { centLat: num
   return clusters.sort((a, b) => b.photos.length - a.photos.length);
 }
 
-export function detectTrips(photos: MapPhoto[], gapDays = 4): Trip[] {
+// How far apart photos taken in the same days can be and still be one trip. It
+// was the 1.5 km default of clusterByGps, which is place-sized: two photos from
+// the same day in Sokcho (a beach and the town) came out as two "Sokcho Trip"
+// cards. 40 km keeps one city, or a city and its day trips, together and still
+// splits Seoul from Busan or Sokcho in the same week. Places within a trip are
+// listed on the trip page (lib/tripMemory.ts).
+export const TRIP_RADIUS_KM = 40;
+
+// Calendar days between two dates in local time (Sep 29 23:00 → Sep 30 01:00 is 1).
+function calendarDayGap(a: Date, b: Date): number {
+  const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  return Math.round((day(b) - day(a)) / 86400000);
+}
+
+// Photos on consecutive days are one trip (Sep 29, 30, Oct 1); a day with no
+// photos in between starts a new one. It used to be "more than 4 days apart",
+// which also joined a weekend outing to the next week's.
+export const MAX_TRIP_DAY_GAP = 1;
+
+export function detectTrips(photos: MapPhoto[], maxDayGap = MAX_TRIP_DAY_GAP): Trip[] {
   if (photos.length === 0) return [];
   const dated = photos
     .map(p => ({ photo: p, date: getPhotoDate(p) }))
@@ -89,8 +108,7 @@ export function detectTrips(photos: MapPhoto[], gapDays = 4): Trip[] {
   let current: { photo: MapPhoto; date: Date }[] = [];
   for (const item of dated) {
     if (current.length === 0) { current.push(item); continue; }
-    const gap = (item.date.getTime() - current[current.length - 1].date.getTime()) / 86400000;
-    if (gap > gapDays) { dateGroups.push(current); current = [item]; }
+    if (calendarDayGap(current[current.length - 1].date, item.date) > maxDayGap) { dateGroups.push(current); current = [item]; }
     else current.push(item);
   }
   if (current.length > 0) dateGroups.push(current);
@@ -100,14 +118,14 @@ export function detectTrips(photos: MapPhoto[], gapDays = 4): Trip[] {
 
   const trips: Trip[] = [];
 
-  // Step 2: within each date group, split by GPS location clusters
+  // Step 2: within each date group, split by region (TRIP_RADIUS_KM apart)
   for (const group of dateGroups) {
     const ps = group.map(g => g.photo);
     const ds = group.map(g => g.date);
     const start = ds[0], end = ds[ds.length - 1];
     const range = fmt(start) === fmt(end) ? fmt(start) : `${fmt(start)} – ${fmt(end)}`;
 
-    const locClusters = clusterByGps(ps);
+    const locClusters = clusterByGps(ps, TRIP_RADIUS_KM);
 
     for (const lc of locClusters) {
       const clusterDates = lc.photos.map(p => getPhotoDate(p)).filter(d => d.getTime() > 0).sort((a, b) => a.getTime() - b.getTime());

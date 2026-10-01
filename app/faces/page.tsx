@@ -18,7 +18,7 @@ import { nestedDuplicateIndices } from "@/lib/faceMatching";
 import { useRouter } from "next/navigation";
 import {
   Users, ImageIcon, Images, MapPin, CalendarDays, Trash2, X,
-  Terminal, AlertTriangle, Eye, Scan, Pencil, Check, Plane, Combine, UserPlus, UserCheck, Loader2, ShieldCheck,
+  Terminal, AlertTriangle, Eye, Scan, Pencil, Check, Plane, Combine, UserPlus, UserCheck, Loader2, ShieldCheck, UserRoundX,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -201,9 +201,17 @@ function PhotoModal({ photo, onClose, onDelete, onRemoveFace }: {
   );
 }
 
-function PersonModal({ cluster, onClose, colorIdx, onRemoveFace }: {
+// Value of the "move this face" menu option that makes a new person.
+const NEW_PERSON = "__new__";
+
+function PersonModal({ cluster, onClose, colorIdx, onRemoveFace, moveTargets, onMoveFace, movingKey }: {
   cluster: PersonCluster; onClose: () => void; colorIdx: number;
   onRemoveFace: (photoId: string, boxIndex: number) => void;
+  /** The other people a wrongly grouped face can be moved to. */
+  moveTargets: { id: string; label: string; leading?: React.ReactNode }[];
+  onMoveFace: (face: FaceEntry, target: string) => void;
+  /** `${photoId}_${boxIndex}` of the face being moved, for its spinner. */
+  movingKey: string | null;
 }) {
   const { t, tn } = useLang();
   const color = PALETTE[colorIdx % PALETTE.length];
@@ -266,6 +274,21 @@ function PersonModal({ cluster, onClose, colorIdx, onRemoveFace }: {
                       <p className="text-[10px] text-slate-400 mt-0.5">{face.photo.uploadedAt.slice(0, 10)}</p>
                     </div>
                   </div>
+                  {/* A face grouped with the wrong person: take it out, into a new
+                      person or another existing one. */}
+                  <div className="px-2.5 pb-2.5">
+                    <ActionMenu
+                      icon={movingKey === `${face.photo.id}_${face.boxIndex}` ? <Loader2 size={12} className="animate-spin" /> : <UserRoundX size={12} />}
+                      label={t("Not {name}? Move", { name: cluster.label })}
+                      title={t("Who is this face?")}
+                      disabled={movingKey !== null}
+                      options={[
+                        { value: NEW_PERSON, label: t("+ New person"), leading: <span className="w-[26px] h-[26px] rounded-full bg-sky-100 text-sky-600 flex items-center justify-center flex-shrink-0"><UserPlus size={13} /></span> },
+                        ...moveTargets.map((m) => ({ value: m.id, label: m.label, leading: m.leading })),
+                      ]}
+                      onSelect={(target) => onMoveFace(face, target)}
+                    />
+                  </div>
                 </div>
               );
             })}
@@ -318,6 +341,7 @@ export default function FacesPage() {
   const [uid,             setUid]             = useState<string | null>(null);
   const [people,          setPeople]          = useState<Person[]>([]);
   const [merging,         setMerging]         = useState<string | null>(null);
+  const [movingFace,      setMovingFace]      = useState<string | null>(null);
   const [friends,         setFriends]         = useState<Profile[]>([]);
   // All trips, to show "N trips" per person (a trip counts if the person is in any of its photos).
   const [trips,           setTrips]           = useState<Trip[]>([]);
@@ -504,6 +528,54 @@ export default function FacesPage() {
       alert(t("Couldn't merge these people. Please try again."));
     } finally {
       setMerging(null);
+    }
+  }
+
+  // Takes one face out of the person it was grouped with, into a new person
+  // (named in a prompt) or another existing one. The face gets that person_id,
+  // and a tagged face is never pulled back into a group by descriptor matching,
+  // so the fix sticks. Moving into an unnamed auto-group first makes it a person,
+  // as a merge does.
+  async function handleMoveFace(face: FaceEntry, target: string) {
+    if (!uid) return;
+    const key = `${face.photo.id}_${face.boxIndex}`;
+    let personId: string;
+    let created: Person | null = null;
+    try {
+      if (target === NEW_PERSON) {
+        const name = window.prompt(t("Name for this person"), t("Person {n}", { n: clusters.length + 1 }))?.trim();
+        if (!name) return;
+        setMovingFace(key);
+        created = await createPerson(uid, name);
+        personId = created.id;
+      } else {
+        const dest = clusters.find((c) => c.id === target);
+        if (!dest) return;
+        setMovingFace(key);
+        if (dest.personId) {
+          personId = dest.personId;
+        } else {
+          created = await createPerson(uid, labelOf(dest));
+          personId = created.id;
+          await assignPersonToFaces(uid, dest.faces, personId);
+        }
+      }
+      // The modal holds a snapshot of the photo from when it opened; use the
+      // current row so another face on it moved a moment ago keeps its new tag.
+      const photo = storedPhotos.find((p) => p.id === face.photo.id) ?? face.photo;
+      await assignPersonToFaces(uid, [{ ...face, photo }], personId);
+      if (created) setPeople((prev) => [...prev, created!]);
+      setStoredPhotos(await fetchFacePhotos(uid));
+      setSelectedCluster((prev) => {
+        if (!prev) return prev;
+        const faces = prev.cluster.faces.filter((f) => !(f.photo.id === face.photo.id && f.boxIndex === face.boxIndex));
+        return faces.length === 0 ? null : { ...prev, cluster: { ...prev.cluster, faces } };
+      });
+    } catch (err) {
+      console.error("Move face failed:", err);
+      alert(t("Couldn't move this face. Please try again."));
+    } finally {
+      setMovingFace(null);
     }
   }
 
@@ -836,6 +908,19 @@ export default function FacesPage() {
             colorIdx={selectedCluster.idx}
             onClose={() => setSelectedCluster(null)}
             onRemoveFace={handleRemoveFace}
+            movingKey={movingFace}
+            onMoveFace={handleMoveFace}
+            moveTargets={clusters.filter((c) => c.id !== selectedCluster.cluster.id).map((c) => {
+              const r = c.faces[0];
+              const b = r?.photo.boxes?.[r.boxIndex];
+              return {
+                id: c.id,
+                label: labelOf(c),
+                leading: r && b
+                  ? <FaceChip imageUrl={r.photo.imageUrl} box={b} index={r.boxIndex} size={26} ringClass="ring-slate-200" />
+                  : <span className="w-[26px] h-[26px] rounded-full bg-slate-100 flex-shrink-0" />,
+              };
+            })}
           />
         )}
       </div>

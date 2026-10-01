@@ -89,7 +89,7 @@ export default function PostDetailPage() {
 
   return (
     <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-24 lg:pb-10">
-      <div className="max-w-2xl mx-auto space-y-5">
+      <div className="tv-feed-column space-y-5">
         <button onClick={() => router.back()} className="flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700 transition-colors">
           <ArrowLeft size={16} /> {t("Back")}
         </button>
@@ -112,7 +112,7 @@ export default function PostDetailPage() {
           ) : (
             <>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={post.imageUrl} alt="" className="w-full max-h-[480px] object-cover" />
+              <img src={post.imageUrl} alt="" className="w-full aspect-[4/5] object-cover bg-slate-100" />
             </>
           )}
           <div className="px-4 py-3 space-y-1.5">

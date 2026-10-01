@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { boxIoU, descriptorDistance, pickCropMatch, dedupeFaces, containment, nestedDuplicateIndices } from "./faceMatching";
+import { boxIoU, descriptorDistance, pickCropMatch, dedupeFaces, containment, nestedDuplicateIndices, pickSsdAgreement, ssdOnlyFaces } from "./faceMatching";
 
 const box = (x: number, y: number, w = 100, h = 100) => ({ x, y, width: w, height: h });
 
@@ -78,5 +78,29 @@ describe("nested duplicate boxes (one face, two boxes)", () => {
     expect(nestedDuplicateIndices([full, partial, box(0, 0, 100, 100)])).toEqual([1]);
     expect(nestedDuplicateIndices([full, partial], [null, "alice"])).toEqual([]);
     expect(nestedDuplicateIndices([full, { x: 0, y: 0, width: 0, height: 0 }])).toEqual([]);
+  });
+});
+
+describe("SSD second opinion", () => {
+  const face = (b: ReturnType<typeof box>, score: number) => ({ box: b, score, descriptor: [] as number[] });
+  // Boxes from a real 6-person group photo (908x680 copy).
+  const ssd = [
+    face(box(0, 268, 121, 224), 0.67),  // selfie face cut off at the left edge
+    face(box(875, 287, 28, 65), 0.47),  // face turned to the side, right edge
+    face(box(264, 298, 64, 74), 0.35),  // too weak to count on its own
+  ];
+
+  it("backs an unconfirmed MediaPipe box when SSD found the same face", () => {
+    expect(pickSsdAgreement(ssd, box(0, 318, 161, 161))?.score).toBe(0.67);
+  });
+
+  it("does not back a MediaPipe box SSD didn't see, or only weakly", () => {
+    expect(pickSsdAgreement(ssd, box(400, 500, 80, 80))).toBeNull();      // e.g. food on the table
+    expect(pickSsdAgreement(ssd, box(274, 313, 51, 51))).toBeNull();      // SSD 0.35 < 0.45
+  });
+
+  it("adds strong-enough SSD faces nothing kept covers", () => {
+    const kept = [face(box(0, 268, 121, 224), 0.67)];
+    expect(ssdOnlyFaces(ssd, kept).map((f) => f.score)).toEqual([0.47]);
   });
 });

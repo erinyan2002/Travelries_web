@@ -107,6 +107,21 @@ body {
    One definition per recurring pattern so every page's cards, modals, pickers
    and buttons read as the same app. */
 @layer components {
+  /* Feed / post page column: a 4:5 post (name row, photo, likes, caption) fits on
+     one screen. The width follows the screen height: room left after the page's
+     top padding, the post's header and footer and the phone nav bar, times 4/5.
+     Never wider than 36rem, never narrower than 300px. */
+  .tv-feed-column {
+    width: 100%;
+    max-width: min(36rem, max(300px, calc((100dvh - 330px) * 0.8)));
+    margin-left: auto;
+    margin-right: auto;
+  }
+  /* Desktop: no bottom nav bar, so a bit more of the height goes to the photo. */
+  @media (min-width: 1024px) {
+    .tv-feed-column { max-width: min(36rem, max(300px, calc((100dvh - 250px) * 0.8))); }
+  }
+
   /* Frosted white card on the pastel background */
   .tv-card {
     @apply bg-white/85 backdrop-blur-sm rounded-2xl border border-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_-12px_rgba(3,105,161,0.18)];

@@ -3,7 +3,7 @@
 // fallbacks. See the "Face detection" section of CLAUDE.md.
 import * as faceapi from "face-api.js";
 import { detectFacesMediaPipe } from "./mediapipeDetector";
-import { boxIoU, pickCropMatch, dedupeFaces } from "./faceMatching";
+import { boxIoU, pickCropMatch, dedupeFaces, pickSsdAgreement, ssdOnlyFaces } from "./faceMatching";
 
 export type DetectionResult = {
   count:       number;
@@ -47,6 +47,20 @@ export async function runFaceDetection(
       expression?: string;
     };
     const confirmed: Confirmed[] = [];
+
+    // Second opinion: face-api's SSD over the whole photo (loaded in the
+    // background after MediaPipe; skipped until it's ready). See pickSsdAgreement /
+    // ssdOnlyFaces in faceMatching.ts for how it's used.
+    const ssdFaces: Confirmed[] = faceapi.nets.ssdMobilenetv1.isLoaded
+      ? (await faceapi.detectAllFaces(imgEl, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 }))
+          .withFaceLandmarks().withFaceDescriptors())
+          .filter((r) => r.detection.box.width >= MIN_PX && r.detection.box.height >= MIN_PX)
+          .map((r) => ({
+            box: { x: r.detection.box.x, y: r.detection.box.y, width: r.detection.box.width, height: r.detection.box.height },
+            score: r.detection.score,
+            descriptor: Array.from(r.descriptor),
+          }))
+      : [];
 
     for (const box of rawBoxes) {
       // Pad the MediaPipe box ~30% on each side, clamped to image bounds, so
@@ -112,6 +126,8 @@ export async function runFaceDetection(
       const match = pickCropMatch(await detectInCrop(tinyOpts), box)
         ?? (box.score >= RETRY_MIN_MP_SCORE ? pickCropMatch(await detectInCrop(retryOpts), box) : null);
       if (!match) {
+        const agreed = pickSsdAgreement(ssdFaces, box);
+        if (agreed) { confirmed.push(agreed); continue; }
         // face-api found no face matching this box even on the permissive retry —
         // treat that as MediaPipe having localized non-face content (its own
         // documented failure mode: "lock onto a random small patch"), not a
@@ -128,6 +144,7 @@ export async function runFaceDetection(
     // real face (overlapping crops). One person can't appear twice in one photo,
     // so drop any face that overlaps or is a near-identical descriptor match of a
     // higher-scoring one already kept.
+    confirmed.push(...ssdOnlyFaces(ssdFaces, confirmed));
     const kept = dedupeFaces(confirmed);
     kept.sort((a, b) => a.box.x - b.box.x); // stable left-to-right numbering
 

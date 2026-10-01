@@ -7,7 +7,7 @@ import { getSessionUser, supabase } from "@/lib/supabase";
 import { MapPhoto } from "@/lib/types";
 import { saveImage, prefetchImage } from "@/lib/saveImage";
 import { burstConfetti } from "@/lib/confetti";
-import { tripAnchorId, summarizeTrip, cityOf, tripTitle } from "@/lib/tripMemory";
+import { tripAnchorId, summarizeTrip, cityOf, tripTitle, formatTripDates } from "@/lib/tripMemory";
 import { matchesQuery, describeQuery, personNamesByPhoto } from "@/lib/photoSearch";
 import { fetchPeople } from "@/lib/peopleApi";
 import { DiaryLang, DIARY_LANGS, diaryCacheKey, loadDiaryLang, storeDiaryLang, requestDiary } from "@/lib/diary";
@@ -978,6 +978,9 @@ export default function AlbumsPage() {
                 // dateRange starts with "YYYY.MM.DD"
                 const [yy, mm, dd] = trip.dateRange.slice(0, 10).split(".");
                 const monthLabel = !mm ? "" : lang === "ko" ? `${Number(mm)}월` : MONTHS[Number(mm) - 1]?.slice(0, 3).toUpperCase();
+                const memory = summarizeTrip(trip);
+                // A trip over several days also shows its last day on the rail ("~ 10/1").
+                const multiDay = memory.start.toDateString() !== memory.end.toDateString();
                 const sharing = sharingTripKey === tripKeyOf(trip);
                 return (
                 <div key={trip.id} className="relative flex gap-3 sm:gap-5">
@@ -987,6 +990,11 @@ export default function AlbumsPage() {
                       <p className={`text-[10px] font-black tracking-widest ${accent.text}`}>{monthLabel}</p>
                       <p className="text-xl sm:text-2xl font-black text-slate-800 leading-none">{dd ? Number(dd) : "–"}</p>
                       <p className="text-[10px] font-semibold text-slate-400 mt-0.5">{yy}</p>
+                      {multiDay && (
+                        <p className={`text-[10px] font-extrabold mt-1 pt-1 border-t border-slate-100 mx-2 ${accent.text}`}>
+                          ~ {memory.end.getMonth() + 1}/{memory.end.getDate()}
+                        </p>
+                      )}
                     </div>
                     <span className={`mt-2 w-3 h-3 rounded-full bg-gradient-to-br ${accent.dot} ring-4 ring-white shadow`} />
                   </div>
@@ -1022,11 +1030,12 @@ export default function AlbumsPage() {
                         <div className="flex items-start gap-2">
                           <MapPin size={17} className={`${accent.text} flex-shrink-0 mt-0.5`} />
                           <Link href={`/albums/trip/${tripAnchorId(trip)}`} className="hover:text-blue-700 transition-colors">
-                            <h2 className="font-extrabold text-slate-800 text-lg leading-snug line-clamp-2">{tripTitle(summarizeTrip(trip), t)}</h2>
+                            <h2 className="font-extrabold text-slate-800 text-lg leading-snug line-clamp-2">{tripTitle(memory, t)}</h2>
                           </Link>
                         </div>
                         <p className="text-xs font-semibold text-slate-400 mt-1 ml-[25px] flex items-center gap-1">
-                          <CalendarDays size={11} /> {trip.dateRange}
+                          <CalendarDays size={11} /> {formatTripDates(memory.start, memory.end, lang)}
+                          {multiDay && <span className="ml-1 text-slate-300">· {tn(memory.dayCount, "{n} day", "{n} days")}</span>}
                         </p>
 
                         {trip.locations.length > 1 && (

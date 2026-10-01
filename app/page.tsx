@@ -8,7 +8,7 @@ import { flyPaperPlane } from "@/lib/paperPlane";
 import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto, FacePhoto } from "@/lib/types";
 import { fetchAllPhotos, fetchMapPhotos, upsertPhoto, renamePhoto, uploadToUserPhotos, migrateInlineImages, pruneOrphanPeople } from "@/lib/photosApi";
-import { fetchPeople, Person } from "@/lib/peopleApi";
+import { fetchPeople, createPerson, Person } from "@/lib/peopleApi";
 import {
   Camera, Upload, MapPin, Users, CalendarDays, Clock,
   FileImage, Ruler, CheckCircle2, Loader2,
@@ -22,7 +22,8 @@ import { summarizeTrip, TripMemory } from "@/lib/tripMemory";
 import { fetchProfile } from "@/lib/socialUtils";
 import BatchUploadPanel, { BatchFile, BatchPhase } from "@/components/BatchUploadPanel";
 import { guessLocationByTime, describeGap, LocatedShot } from "@/lib/locationGuess";
-import { msg, useLang } from "@/lib/i18n";
+import { msg, useLang, localeOf } from "@/lib/i18n";
+import { captureFromDateInput, toDateInputValue } from "@/lib/manualDate";
 import { BACKEND_URL } from "@/lib/backend";
 import { newId } from "@/lib/id";
 import { runFaceDetection, DetectionResult } from "@/lib/faceDetection";
@@ -97,6 +98,9 @@ async function readExifInBrowser(file: File) {
   };
 }
 
+// Who? menu value that names a new person (see createPersonByName).
+const NEW_PERSON = "__new__";
+
 // ── Main Component ──────────────────────────────
 export default function HomePage() {
   const uploadRequestIdRef = useRef(0);
@@ -149,6 +153,8 @@ export default function HomePage() {
   const [selectedFaceIndices, setSelectedFaceIndices] = useState<Set<number>>(new Set());
   const [saving,              setSaving]              = useState(false);
   const [locationNote,        setLocationNote]        = useState<string | null>(null);
+  // "YYYY-MM-DD" picked for a photo with no EXIF date (see lib/manualDate.ts).
+  const [manualDate,          setManualDate]          = useState("");
   const [faceThumbnails,      setFaceThumbnails]      = useState<string[]>([]);
   const [people,              setPeople]              = useState<Person[]>([]);
   const [faceAssignments,     setFaceAssignments]     = useState<Record<number, string>>({});
@@ -223,6 +229,9 @@ export default function HomePage() {
       setModelType("mediapipe");
       setIsModelLoaded(true);
       loadExtras();
+      // SSD: runFaceDetection's second opinion for faces MediaPipe loses (cut off
+      // at the frame edge, turned to the side). Optional — used once loaded.
+      faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL).catch(() => {});
     }).catch(() => {
       loadSsdFallback();
     });
@@ -347,6 +356,7 @@ export default function HomePage() {
     setRawFaces(null);
     setSelectedFaceIndices(new Set());
     setLocationNote(null);
+    setManualDate("");
     setFaceThumbnails([]);
     setFaceAssignments({});
     setSelectedFile(file);
@@ -717,6 +727,7 @@ export default function HomePage() {
     setRawFaces(null);
     setSelectedFaceIndices(new Set());
     setLocationNote(null);
+    setManualDate("");
     setFaceThumbnails([]);
     setFaceAssignments({});
   }
@@ -765,9 +776,17 @@ export default function HomePage() {
         imageUrl,
         ...(lat !== null && lng !== null && { lat, lng }),
         ...(location && { location }),
-        captureDate: photoInfo.captureDate !== "Not available" ? photoInfo.captureDate : null,
-        captureTime: photoInfo.captureTime !== "Not available" ? photoInfo.captureTime : null,
-        captureTimestamp: photoInfo.captureTimestamp,
+        ...(() => {
+          // No EXIF date: the day picked in the date box, else (as before) none,
+          // and the photo falls back to its upload time.
+          const picked = !photoInfo.captureTimestamp ? captureFromDateInput(manualDate, localeOf(lang)) : null;
+          if (picked) return { captureDate: picked.captureDate, captureTime: null, captureTimestamp: picked.captureTimestamp };
+          return {
+            captureDate: photoInfo.captureDate !== "Not available" ? photoInfo.captureDate : null,
+            captureTime: photoInfo.captureTime !== "Not available" ? photoInfo.captureTime : null,
+            captureTimestamp: photoInfo.captureTimestamp,
+          };
+        })(),
         faceCount: boxes.length,
         isMapPhoto: true,
         isFacePhoto: boxes.length > 0,
@@ -788,6 +807,28 @@ export default function HomePage() {
     }
   }
 
+  // "+ New person" in a face's Who? menu: name someone the People page hasn't
+  // met yet, right at upload, so the face is saved straight into them instead of
+  // being left to automatic grouping (which can put it with the wrong person).
+  // A person whose photo then isn't saved is cleaned up by pruneOrphanPeople.
+  async function createPersonByName(): Promise<Person | null> {
+    const name = window.prompt(t("Name for this person"))?.trim();
+    if (!name) return null;
+    const existing = people.find((p) => p.name.trim().toLowerCase() === name.toLowerCase());
+    if (existing) return existing;
+    const { data: { user } } = await getSessionUser();
+    if (!user) return null;
+    try {
+      const created = await createPerson(user.id, name);
+      setPeople((prev) => [...prev, created]);
+      return created;
+    } catch (err) {
+      console.error("Create person failed:", err);
+      alert(t("Couldn't add this person. Please try again."));
+      return null;
+    }
+  }
+
   // "Albums, Map and People" / "앨범, 지도, 인물"
   function joinPlaces(keys: string[]): string {
     const names = keys.map((k) => t(k)).join(", ");
@@ -802,7 +843,7 @@ export default function HomePage() {
 
         {/* ── Batch Upload UI ── */}
         {batchActive && (
-          <BatchUploadPanel items={batchItems} phase={batchPhase} people={people}
+          <BatchUploadPanel items={batchItems} phase={batchPhase} people={people} onCreatePerson={createPersonByName}
             onItemsChange={setBatchItems} onSave={saveBatch} onClose={resetBatch} />
         )}
 
@@ -881,6 +922,29 @@ export default function HomePage() {
                 </div>
               )}
 
+
+              {/* No EXIF date — pick the day it was taken */}
+              {photoInfo && !photoInfo.captureTimestamp && (
+                <div className={`rounded-xl p-4 space-y-2 border ${manualDate ? "bg-sky-50 border-sky-200" : "bg-amber-50 border-amber-200"}`}>
+                  <p className={`text-sm font-bold flex items-center gap-2 ${manualDate ? "text-sky-700" : "text-amber-700"}`}>
+                    <CalendarDays size={15} /> {t("No date in this photo — when was it taken?")}
+                  </p>
+                  <div className="flex gap-2">
+                    <input type="date" value={manualDate} max={toDateInputValue(new Date())}
+                      disabled={isMapSaved}
+                      onChange={(e) => setManualDate(e.target.value)}
+                      className="flex-1 min-w-0 border border-slate-200 bg-white rounded-xl px-3 py-2 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" />
+                    <button type="button" disabled={isMapSaved}
+                      onClick={() => { const d = new Date(); d.setDate(d.getDate() - 1); setManualDate(toDateInputValue(d)); }}
+                      className="px-3 rounded-xl text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 whitespace-nowrap">
+                      {t("Yesterday")}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    {manualDate ? t("Saved with this date, so it lands on the right day in Albums and Trips.") : t("If you skip this, today's upload date is used.")}
+                  </p>
+                </div>
+              )}
 
               {/* GPS missing — manual location input */}
               {photoInfo && photoInfo.lat === null && (
@@ -1124,12 +1188,17 @@ export default function HomePage() {
                               </button>
                               {/* Optionally tag this face as an existing Faces-page person instead
                                   of leaving it to automatic clustering — see faceAssignments. */}
-                              {selected && people.length > 0 && (
+                              {selected && (
                                 <select
                                   value={faceAssignments[i] ?? ""}
                                   onClick={(e) => e.stopPropagation()}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
+                                  onChange={async (e) => {
+                                    let val = e.target.value;
+                                    if (val === NEW_PERSON) {
+                                      const created = await createPersonByName();
+                                      if (!created) return;
+                                      val = created.id;
+                                    }
                                     setFaceAssignments((prev) => {
                                       const next = { ...prev };
                                       if (val) next[i] = val; else delete next[i];
@@ -1142,6 +1211,7 @@ export default function HomePage() {
                                   {people.map((p) => (
                                     <option key={p.id} value={p.id}>{p.name}</option>
                                   ))}
+                                  <option value={NEW_PERSON}>{t("+ New person")}</option>
                                 </select>
                               )}
                             </div>
@@ -1157,7 +1227,9 @@ export default function HomePage() {
                   <div className="grid grid-cols-2 gap-2">
                     <InfoRow label={t("File name")}    value={customFileName}           icon={FileImage}    />
                     <InfoRow label={t("File size")}    value={photoInfo.fileSize}       icon={Ruler}        />
-                    <InfoRow label={t("Capture date")} value={t(photoInfo.captureDate)} icon={CalendarDays} />
+                    <InfoRow label={t("Capture date")}
+                      value={!photoInfo.captureTimestamp && manualDate ? `${captureFromDateInput(manualDate, localeOf(lang))?.captureDate ?? manualDate} ${t("(manual)")}` : t(photoInfo.captureDate)}
+                      icon={CalendarDays} />
                     <InfoRow label={t("Capture time")} value={t(photoInfo.captureTime)} icon={Clock}        />
                     <InfoRow label={t("Location")}     value={t(photoInfo.location)}    icon={MapPin}       />
                     <InfoRow

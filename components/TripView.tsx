@@ -20,7 +20,9 @@ import { summarizeTrip, sortChronologically, formatTripDates, formatDistance, pl
 import { msg, useLang, localeOf } from "@/lib/i18n";
 import { drawTripMemoryCard } from "@/lib/tripCard";
 import { shareTrip, createTripShare } from "@/lib/tripShareUtils";
-import { createTripPost } from "@/lib/socialUtils";
+import { createTripPost, uploadPostImage } from "@/lib/socialUtils";
+import ImageCropper from "@/components/ImageCropper";
+import { cropToBlob, CropRect } from "@/lib/crop";
 import { DiaryLang, DIARY_LANGS, loadDiaryLang, storeDiaryLang, requestDiary, diaryCacheKey, photoSetKey } from "@/lib/diary";
 import { fetchTripDiary } from "@/lib/photosApi";
 import { burstConfetti } from "@/lib/confetti";
@@ -62,6 +64,32 @@ export default function TripView({ trip, facePhotos, people, uid }: {
   const [posting, setPosting] = useState(false);
   const [posted, setPosted] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
+  // The photo the trip post opens with, and the part of it picked in the cropper.
+  const [postCoverId, setPostCoverId] = useState<string | null>(null);
+  const [postCrop, setPostCrop] = useState<CropRect | null>(null);
+  // Crop first, then the caption with a small preview (as in Feed → Post), so
+  // scrolling to the caption never drags the photo.
+  const [postCropped, setPostCropped] = useState<{ blob: Blob; url: string } | null>(null);
+  const [preparingCover, setPreparingCover] = useState(false);
+
+  async function confirmCoverCrop() {
+    const chosen = ordered.find((p) => p.id === postCoverId) ?? cover;
+    if (!postCrop) return;
+    setPreparingCover(true);
+    try {
+      const blob = await cropToBlob(chosen.imageUrl, postCrop);
+      setPostCropped({ blob, url: URL.createObjectURL(blob) });
+    } catch (err) {
+      setPostError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPreparingCover(false);
+    }
+  }
+
+  function recropCover() {
+    if (postCropped) URL.revokeObjectURL(postCropped.url);
+    setPostCropped(null);
+  }
 
   const [lang, setLang] = useState<DiaryLang>(loadDiaryLang);
   const [diary, setDiary] = useState<string | null>(null);
@@ -127,8 +155,10 @@ export default function TripView({ trip, facePhotos, people, uid }: {
     setPostError(null);
     try {
       const shareId = await createTripShare(trip, diary);
-      const covers = [cover, ...ordered.filter((p) => p.id !== cover.id)]
-        .filter((p) => !p.imageUrl.startsWith("data:")).slice(0, 3).map((p) => p.imageUrl);
+      const chosen = ordered.find((p) => p.id === postCoverId) ?? cover;
+      const rest = ordered.filter((p) => p.id !== chosen.id && !p.imageUrl.startsWith("data:")).slice(0, 2).map((p) => p.imageUrl);
+      const coverUrl = postCropped ? await uploadPostImage(uid, postCropped.blob) : chosen.imageUrl;
+      const covers = [coverUrl, ...rest];
       await createTripPost(uid, {
         shareId,
         title: tripTitle(memory, t),
@@ -325,7 +355,7 @@ export default function TripView({ trip, facePhotos, people, uid }: {
                     <button onClick={() => writeStory(false)} className="tv-btn-primary text-sm px-4 py-2.5">
                       <Sparkles size={15} /> {t("Generate My Travel Story")}
                     </button>
-                    <button onClick={() => { setPostOpen(true); setPosted(false); setPostError(null); }} className="tv-btn-soft text-sm px-4 py-2.5">
+                    <button onClick={() => { setPostOpen(true); setPosted(false); setPostError(null); setPostCoverId(cover.id); setPostCrop(null); recropCover(); }} className="tv-btn-soft text-sm px-4 py-2.5">
                       <Send size={15} /> {t("Share to Feed")}
                     </button>
                     <button onClick={() => setShowCard(true)} className="tv-btn-soft text-sm px-4 py-2.5">
@@ -493,7 +523,7 @@ export default function TripView({ trip, facePhotos, people, uid }: {
       {/* Share to Feed */}
       {postOpen && (
         <div className="fixed inset-0 z-[3000] tv-overlay flex items-center justify-center p-4" onClick={() => !posting && setPostOpen(false)}>
-          <div className="tv-modal p-5 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
+          <div className="tv-modal p-5 max-w-sm w-full max-h-[92vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             {posted ? (
               <div className="text-center py-2">
                 <p className="font-extrabold text-slate-800">{t("Your trip is on the feed ✈️")}</p>
@@ -509,16 +539,55 @@ export default function TripView({ trip, facePhotos, people, uid }: {
                 <p className="text-xs text-slate-400 mt-0.5 mb-3">
                   {tn(memory.dayCount, "{n} day", "{n} days")} · {tn(memory.places.length, "{n} place", "{n} places")} · {tn(memory.photoCount, "{n} photo", "{n} photos")} — {t("followers can open the map, photos and story.")}
                 </p>
-                <textarea value={postCaption} onChange={(e) => setPostCaption(e.target.value)} rows={3} maxLength={500}
-                  placeholder={t("Say something about this trip…")}
-                  className="w-full text-base sm:text-sm rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 resize-none" />
+                {!postCropped ? (
+                  <>
+                    {/* Step 1 — cover: pick a photo, then the part of it the post shows. */}
+                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">{t("Cover photo")}</p>
+                    <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-2">
+                      {ordered.filter((p) => !p.imageUrl.startsWith("data:")).slice(0, 12).map((p) => (
+                        <button key={p.id} type="button" onClick={() => { setPostCoverId(p.id); setPostCrop(null); }}
+                          className={`flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden ring-2 transition-all ${
+                            (postCoverId ?? cover.id) === p.id ? "ring-sky-500" : "ring-transparent opacity-60 hover:opacity-100"}`}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={p.imageUrl} alt="" className="w-full h-full object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                    <ImageCropper key={postCoverId ?? cover.id}
+                      src={(ordered.find((p) => p.id === postCoverId) ?? cover).imageUrl}
+                      onChange={setPostCrop} />
+                    <div className="flex justify-end gap-2 mt-3">
+                      <button onClick={() => setPostOpen(false)} disabled={preparingCover} className="text-sm font-bold text-slate-500 px-3 py-2">{t("Cancel")}</button>
+                      <button onClick={confirmCoverCrop} disabled={preparingCover || !postCrop} className="tv-btn-primary text-sm px-4 py-2">
+                        {preparingCover && <Loader2 size={14} className="animate-spin" />} {t("Next")}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* Step 2 — caption, with the cropped cover as a preview. */}
+                    <div className="flex items-start gap-3 mb-3">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={postCropped.url} alt="" className="w-20 aspect-[4/5] object-cover rounded-lg flex-shrink-0 bg-slate-100" />
+                      <div className="flex-1 min-w-0 pt-1">
+                        <p className="text-xs text-slate-500">{t("This is how it shows in the feed.")}</p>
+                        <button onClick={recropCover} disabled={posting} className="mt-1.5 text-xs font-bold text-blue-600 hover:text-blue-700">{t("Crop again")}</button>
+                      </div>
+                    </div>
+                    <textarea value={postCaption} onChange={(e) => setPostCaption(e.target.value)} rows={3} maxLength={500}
+                      placeholder={t("Say something about this trip…")}
+                      className="w-full text-base sm:text-sm rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 resize-none" />
+                  </>
+                )}
                 {postError && <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mt-2">{t(postError)}</p>}
-                <div className="flex justify-end gap-2 mt-3">
-                  <button onClick={() => setPostOpen(false)} disabled={posting} className="text-sm font-bold text-slate-500 px-3 py-2">{t("Cancel")}</button>
-                  <button onClick={handlePostToFeed} disabled={posting || !uid} className="tv-btn-primary text-sm px-4 py-2">
-                    {posting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} {t("Post")}
-                  </button>
-                </div>
+                {postCropped && (
+                  <div className="flex justify-end gap-2 mt-3">
+                    <button onClick={recropCover} disabled={posting} className="text-sm font-bold text-slate-500 px-3 py-2">{t("Back")}</button>
+                    <button onClick={handlePostToFeed} disabled={posting || !uid} className="tv-btn-primary text-sm px-4 py-2">
+                      {posting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} {t("Post")}
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </div>

@@ -15,17 +15,19 @@ export default function TripPostCard({ trip, authorName }: { trip: TripPostInfo;
   const title = city ? t("{city} Trip", { city }) : trip.title;
   return (
     <Link href={`/trip/${trip.shareId}`} className="group block">
-      <div className="flex gap-0.5 h-64 overflow-hidden">
+      {/* The same 4:5 frame as a photo post. The cover is the part picked in the
+          cropper when sharing; the trip's other photos sit on it as small polaroids
+          (a split collage cut every photo, faces included). */}
+      <div className="relative w-full aspect-[4/5] overflow-hidden bg-slate-100">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={a} alt="" className={`h-full object-cover min-w-0 ${b ? "w-2/3" : "w-full"}`} />
-        {b && (
-          <div className="w-1/3 flex flex-col gap-0.5 min-w-0">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={b} alt="" className="w-full flex-1 min-h-0 object-cover" />
-            {c ? (
+        <img src={a} alt="" className="absolute inset-0 w-full h-full object-cover" />
+        {(b || c) && (
+          <div className="absolute bottom-3 right-3 flex">
+            {[b, c].filter(Boolean).map((u, i) => (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={c} alt="" className="w-full flex-1 min-h-0 object-cover" />
-            ) : <div className="flex-1 bg-sky-100" />}
+              <img key={i} src={u} alt=""
+                className={`w-16 h-20 object-cover rounded-md border-[3px] border-white shadow-lg ${i === 0 ? "rotate-[-6deg]" : "-ml-4 rotate-[5deg]"}`} />
+            ))}
           </div>
         )}
       </div>

@@ -633,4 +633,28 @@ export const KO: Record<string, string> = {
   "Every photo, a place to remember": "모든 사진이 기억할 장소가 돼요",
   // Language toggle
   "Language": "언어",
+  // People — move face
+  "Not {name}? Move": "{name} 아님? 옮기기",
+  "Who is this face?": "이 얼굴은 누구인가요?",
+  "+ New person": "+ 새 인물",
+  "Name for this person": "이 사람의 이름",
+  "Couldn't move this face. Please try again.": "얼굴을 옮기지 못했어요. 다시 시도해 주세요.",
+  // Manual date
+  "No date in this photo — when was it taken?": "이 사진에는 날짜 정보가 없어요. 언제 찍었나요?",
+  "Yesterday": "어제",
+  "Saved with this date, so it lands on the right day in Albums and Trips.": "이 날짜로 저장돼서 앨범과 여행에서 맞는 날에 들어가요.",
+  "If you skip this, today's upload date is used.": "고르지 않으면 오늘(올린 날짜)로 저장돼요.",
+  // Manual date
+  "No date · tap to set": "날짜 없음 · 눌러서 설정",
+  // New person at upload
+  "Couldn't add this person. Please try again.": "인물을 추가하지 못했어요. 다시 시도해 주세요.",
+  // Crop
+  "Drag to choose what's shown": "끌어서 보여줄 부분을 골라요",
+  "Zoom": "확대",
+  "Couldn't post this photo. Please try again.": "게시하지 못했어요. 다시 시도해 주세요.",
+  // Crop
+  "Cover photo": "대표 사진",
+  // Crop
+  "This is how it shows in the feed.": "피드에는 이렇게 보여요.",
+  "Crop again": "다시 자르기",
 };

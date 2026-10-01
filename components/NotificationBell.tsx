@@ -9,6 +9,7 @@ import {
   AppNotification,
   getNotifications,
   markAllRead,
+  markRead,
   subscribeToNotifications,
 } from "@/lib/notificationUtils";
 import { profilesByIds } from "@/lib/socialUtils";
@@ -110,6 +111,13 @@ export default function NotificationBell() {
 
   const unread = notes.filter((n) => !n.read).length;
 
+  // Opening a notification (tapping it or one of its links) marks it read.
+  function handleOpen(n: AppNotification) {
+    if (n.read) return;
+    setNotes((prev) => prev.map((x) => (x.id === n.id ? { ...x, read: true } : x)));
+    markRead(n.id).catch(() => setNotes((prev) => prev.map((x) => (x.id === n.id ? { ...x, read: false } : x))));
+  }
+
   async function handleMarkAll() {
     await markAllRead();
     setNotes((prev) => prev.map((n) => ({ ...n, read: true })));
@@ -189,8 +197,8 @@ export default function NotificationBell() {
               </div>
             ) : (
               notes.map((n) => (
-                <div key={n.id}
-                  className={`flex items-start gap-3 px-4 py-3 transition-colors ${n.read ? "bg-white" : "bg-blue-50/60"}`}>
+                <div key={n.id} onClick={() => handleOpen(n)}
+                  className={`flex items-start gap-3 px-4 py-3 transition-colors ${n.read ? "bg-white" : "bg-blue-50/60 cursor-pointer hover:bg-blue-50"}`}>
                   <span className="text-base flex-shrink-0 mt-0.5">
                     {TYPE_ICON[n.type] ?? "🔔"}
                   </span>

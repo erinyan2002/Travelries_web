@@ -12,10 +12,12 @@ import { fetchPeople } from "@/lib/peopleApi";
 import { MapPhoto } from "@/lib/types";
 import CommentThread from "@/components/CommentThread";
 import ShareToModal from "@/components/ShareToModal";
+import ImageCropper from "@/components/ImageCropper";
+import { cropToBlob, CropRect } from "@/lib/crop";
 import {
   ensureProfile, searchProfiles, getFollowCounts, getFollowingIds,
   followUser, unfollowUser, createPost, deletePost, fetchFeed, toggleLike, createRepost,
-  tagUserInPost,
+  tagUserInPost, uploadPostImage,
   fetchFollowingProfiles, fetchFollowerProfiles, profilesByIds,
   Profile, Post,
 } from "@/lib/socialUtils";
@@ -37,6 +39,31 @@ function NewPostModal({
   const [selected, setSelected] = useState<MapPhoto | null>(null);
   const [caption,  setCaption]  = useState("");
   const [posting,  setPosting]  = useState(false);
+  const [crop,     setCrop]     = useState<CropRect | null>(null);
+  // Two steps once a photo is picked: crop (cropped === null), then caption and
+  // tags with the cropped image as a small preview. In one scrolling form, the
+  // photo moved under the finger when scrolling down to the caption.
+  const [cropped,  setCropped]  = useState<{ blob: Blob; url: string } | null>(null);
+  const [preparing, setPreparing] = useState(false);
+
+  async function confirmCrop() {
+    if (!selected || !crop) return;
+    setPreparing(true);
+    try {
+      const blob = await cropToBlob(selected.imageUrl, crop);
+      setCropped({ blob, url: URL.createObjectURL(blob) });
+    } catch (err) {
+      console.error("Crop failed:", err);
+      alert(t("Couldn't post this photo. Please try again."));
+    } finally {
+      setPreparing(false);
+    }
+  }
+
+  function recrop() {
+    if (cropped) URL.revokeObjectURL(cropped.url);
+    setCropped(null);
+  }
 
   const [tagQuery,   setTagQuery]   = useState("");
   const [tagResults, setTagResults] = useState<Profile[]>([]);
@@ -77,11 +104,19 @@ function NewPostModal({
     setTagged((prev) => prev.filter((x) => x.id !== id));
   }
 
+  // Posts the part chosen in the cropper, as its own 4:5 image.
   async function handlePost() {
     if (!selected) return;
     setPosting(true);
-    await onPosted(selected.id, selected.imageUrl, caption, tagged.map((x) => x.id), selected.location, selected.captureDate);
-    setPosting(false);
+    try {
+      const imageUrl = cropped ? await uploadPostImage(uid, cropped.blob) : selected.imageUrl;
+      await onPosted(selected.id, imageUrl, caption, tagged.map((x) => x.id), selected.location, selected.captureDate);
+    } catch (err) {
+      console.error("Post failed:", err);
+      alert(t("Couldn't post this photo. Please try again."));
+    } finally {
+      setPosting(false);
+    }
   }
 
   return (
@@ -103,10 +138,31 @@ function NewPostModal({
                 className="w-full h-24 object-cover rounded-lg cursor-pointer hover:opacity-80 transition-opacity border border-slate-100" />
             ))}
           </div>
+        ) : !cropped ? (
+          <div className="space-y-3">
+            <ImageCropper src={selected.imageUrl} onChange={setCrop} />
+            <div className="flex gap-2">
+              <button onClick={() => setSelected(null)} disabled={preparing}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50 transition-colors disabled:opacity-60">
+                {t("Back")}
+              </button>
+              <button onClick={confirmCrop} disabled={preparing || !crop}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 text-white font-bold text-sm hover:from-sky-600 hover:to-blue-700 shadow-md shadow-blue-200/70 transition-all disabled:opacity-60">
+                {preparing && <Loader2 size={15} className="animate-spin" />} {t("Next")}
+              </button>
+            </div>
+          </div>
         ) : (
           <div className="space-y-3 overflow-y-auto">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={selected.imageUrl} alt={selected.fileName} className="w-full max-h-64 object-contain bg-slate-100 rounded-xl" />
+            <div className="flex items-start gap-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={cropped.url} alt="" className="w-20 aspect-[4/5] object-cover rounded-lg flex-shrink-0 bg-slate-100" />
+              <div className="flex-1 min-w-0 pt-1">
+                <p className="text-xs text-slate-500">{t("This is how it shows in the feed.")}</p>
+                <button onClick={recrop} disabled={posting}
+                  className="mt-1.5 text-xs font-bold text-blue-600 hover:text-blue-700">{t("Crop again")}</button>
+              </div>
+            </div>
             <textarea
               value={caption} onChange={(e) => setCaption(e.target.value)}
               placeholder={t("Write a caption...")}
@@ -157,7 +213,7 @@ function NewPostModal({
             </div>
 
             <div className="flex gap-2">
-              <button onClick={() => setSelected(null)} disabled={posting}
+              <button onClick={recrop} disabled={posting}
                 className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50 transition-colors disabled:opacity-60">
                 {t("Back")}
               </button>
@@ -374,7 +430,7 @@ export default function FeedPage() {
 
   return (
     <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-24 lg:pb-10">
-      <div className="max-w-2xl mx-auto space-y-5">
+      <div className="tv-feed-column space-y-5">
 
         <SectionTabs section="social" active="feed"
           subtitle={
@@ -466,7 +522,7 @@ export default function FeedPage() {
                 ) : (
                   <Link href={`/post/${post.id}`}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={post.imageUrl} alt="" className="w-full max-h-96 object-cover" />
+                    <img src={post.imageUrl} alt="" className="w-full aspect-[4/5] object-cover bg-slate-100" />
                   </Link>
                 )}
                 <div className="px-4 py-3 space-y-1.5">

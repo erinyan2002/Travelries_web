@@ -57,6 +57,34 @@ export function pickCropMatch<T extends { box: Box }>(candidates: T[], mpBox: Bo
   return best;
 }
 
+// face-api's SSD detector, run on the whole photo, is the second opinion for
+// faces MediaPipe + the tiny crop check lose. On a 6-person group photo it found
+// all six, including a selfie face cut off at the frame edge (MediaPipe 0.49, so
+// below RETRY_MIN_MP_SCORE and dropped) and a face turned to the side that
+// MediaPipe never localized.
+export const SSD_AGREE_SCORE = 0.45;
+export const SSD_ONLY_SCORE = 0.45;
+
+function overlaps(a: Box, b: Box): boolean {
+  return boxIoU(a, b) >= CROP_MATCH_IOU || containment(a, b) >= DEDUPE_CONTAIN;
+}
+
+// A MediaPipe box face-api couldn't confirm still counts when SSD independently
+// found a face in the same place: two detectors agreeing. MediaPipe's false boxes
+// (food, a cake, the back of a head) had no such second opinion.
+export function pickSsdAgreement<T extends ScoredFace>(ssd: T[], mpBox: Box): T | null {
+  let best: T | null = null;
+  for (const f of ssd) {
+    if (f.score >= SSD_AGREE_SCORE && overlaps(f.box, mpBox) && (!best || f.score > best.score)) best = f;
+  }
+  return best;
+}
+
+// SSD faces that nothing kept so far covers: faces MediaPipe never localized.
+export function ssdOnlyFaces<T extends ScoredFace>(ssd: T[], kept: { box: Box }[]): T[] {
+  return ssd.filter((f) => f.score >= SSD_ONLY_SCORE && !kept.some((k) => overlaps(f.box, k.box)));
+}
+
 function sameFace(a: ScoredFace, b: ScoredFace): boolean {
   return boxIoU(a.box, b.box) >= DEDUPE_IOU
     || containment(a.box, b.box) >= DEDUPE_CONTAIN

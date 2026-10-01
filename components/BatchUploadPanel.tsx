@@ -9,7 +9,8 @@ import {
 } from "lucide-react";
 import { cropFaceThumbnails, forwardGeocode, reverseGeocode } from "@/lib/uploadHelpers";
 import type { Person } from "@/lib/peopleApi";
-import { msg, useLang } from "@/lib/i18n";
+import { msg, useLang, localeOf } from "@/lib/i18n";
+import { captureFromDateInput, toDateInputValue } from "@/lib/manualDate";
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -29,6 +30,8 @@ export type BatchFile = {
   lng?: number;
   /** gps = from the photo; estimated = from the photo taken closest in time; manual = set in review. */
   locationSource?: "gps" | "estimated" | "manual";
+  /** The capture date was picked by hand (the photo had none). */
+  dateManual?: boolean;
   locationNote?: string;
   boxes: Box[];
   descriptors: number[][];
@@ -49,10 +52,12 @@ export type BatchPhase = "analyzing" | "review" | "saving" | "done";
 // user presses Save: tapping a photo opens its full analysis (face boxes, which
 // faces to keep and who they are, date and place) so a group photo's faces can be
 // picked and tagged per photo, the same as a single upload.
-export default function BatchUploadPanel({ items, phase, people, onItemsChange, onSave, onClose }: {
+export default function BatchUploadPanel({ items, phase, people, onCreatePerson, onItemsChange, onSave, onClose }: {
   items: BatchFile[];
   phase: BatchPhase;
   people: Person[];
+  /** Names a new person from the Who? menu (Home's createPersonByName). */
+  onCreatePerson: () => Promise<Person | null>;
   onItemsChange: (items: BatchFile[]) => void;
   onSave: () => void;
   onClose: () => void;
@@ -183,6 +188,11 @@ export default function BatchUploadPanel({ items, phase, people, onItemsChange, 
                   </div>
                   <div className="px-3 py-2">
                     <p className="text-xs font-bold text-slate-800 truncate">{item.editName ?? item.name}</p>
+                    {item.status !== "error" && (!item.captureTimestamp || item.dateManual) && (
+                      <p className={`text-[10px] truncate mt-0.5 font-semibold ${item.dateManual ? "text-sky-600" : "text-orange-500"}`}>
+                        {item.dateManual ? `📅 ${item.captureDate}` : t("No date · tap to set")}
+                      </p>
+                    )}
                     <p className={`text-[10px] truncate mt-0.5 ${item.status === "error" ? "text-red-400" : "text-slate-400"}`}>
                       {item.status === "error" ? item.info || t("Failed")
                         : item.lat === undefined ? <span className="text-orange-500 font-semibold">{t("No location · tap to set")}</span>
@@ -208,6 +218,7 @@ export default function BatchUploadPanel({ items, phase, people, onItemsChange, 
           key={openIndex} // fresh face thumbnails per photo
           item={items[openIndex]}
           people={people}
+          onCreatePerson={onCreatePerson}
           otherPlaces={items.filter((it, j) => j !== openIndex && it.status === "ready" && it.lat !== undefined && it.location)
             .filter((it, j, arr) => arr.findIndex((o) => o.location === it.location) === j)
             .slice(0, 3)
@@ -230,9 +241,10 @@ export default function BatchUploadPanel({ items, phase, people, onItemsChange, 
   );
 }
 
-function ReviewModal({ item, people, otherPlaces, toSave, onSaveAll, onChange, onClose, onStep, position, count }: {
+function ReviewModal({ item, people, onCreatePerson, otherPlaces, toSave, onSaveAll, onChange, onClose, onStep, position, count }: {
   item: BatchFile;
   people: Person[];
+  onCreatePerson: () => Promise<Person | null>;
   otherPlaces: { lat: number; lng: number; location: string }[];
   toSave: number;
   onSaveAll: () => void;
@@ -243,7 +255,7 @@ function ReviewModal({ item, people, otherPlaces, toSave, onSaveAll, onChange, o
   count: number;
 }) {
   const [thumbs, setThumbs] = useState<string[]>([]);
-  const { t, tn } = useLang();
+  const { t, tn, lang } = useLang();
   const [placeQuery, setPlaceQuery] = useState("");
   const [placeStatus, setPlaceStatus] = useState<"idle" | "searching" | "error">("idle");
 
@@ -373,11 +385,17 @@ function ReviewModal({ item, people, otherPlaces, toSave, onSaveAll, onChange, o
                         </div>
                         <span className={`text-[11px] font-semibold ${on ? "text-emerald-600" : "text-slate-400"}`}>Person {i + 1}</span>
                       </button>
-                      {on && people.length > 0 && (
-                        <select value={item.personIds[i] ?? ""} onChange={(e) => assign(i, e.target.value)}
+                      {on && (
+                        <select value={item.personIds[i] ?? ""}
+                          onChange={async (e) => {
+                            if (e.target.value !== "__new__") { assign(i, e.target.value); return; }
+                            const created = await onCreatePerson();
+                            if (created) assign(i, created.id);
+                          }}
                           className="w-20 text-[10px] font-semibold text-slate-600 border border-slate-200 rounded-md px-0.5 py-0.5 outline-none bg-white">
                           <option value="">{t("Who?")}</option>
                           {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                          <option value="__new__">{t("+ New person")}</option>
                         </select>
                       )}
                     </div>
@@ -399,6 +417,35 @@ function ReviewModal({ item, people, otherPlaces, toSave, onSaveAll, onChange, o
               </div>
             ))}
           </div>
+          {(!item.captureTimestamp || item.dateManual) && (
+            <div className={`rounded-xl border p-3 space-y-2 ${item.dateManual ? "bg-sky-50 border-sky-100" : "bg-amber-50 border-amber-200"}`}>
+              <p className={`text-xs font-bold flex items-center gap-1.5 ${item.dateManual ? "text-sky-700" : "text-amber-700"}`}>
+                <CalendarDays size={13} /> {t("No date in this photo — when was it taken?")}
+              </p>
+              <div className="flex gap-1.5">
+                <input type="date" max={toDateInputValue(new Date())}
+                  value={item.dateManual && item.captureTimestamp ? toDateInputValue(new Date(item.captureTimestamp)) : ""}
+                  onChange={(e) => {
+                    const picked = captureFromDateInput(e.target.value, localeOf(lang));
+                    onChange(picked
+                      ? { ...picked, captureTime: undefined, dateManual: true }
+                      : { captureTimestamp: undefined, captureDate: undefined, dateManual: false });
+                  }}
+                  className="flex-1 min-w-0 text-xs border border-slate-200 rounded-lg px-2.5 py-2 outline-none bg-white focus:border-sky-400" />
+                <button type="button"
+                  onClick={() => {
+                    const d = new Date(); d.setDate(d.getDate() - 1);
+                    const picked = captureFromDateInput(toDateInputValue(d), localeOf(lang));
+                    if (picked) onChange({ ...picked, captureTime: undefined, dateManual: true });
+                  }}
+                  className="px-2.5 rounded-lg text-[11px] font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 whitespace-nowrap">
+                  {t("Yesterday")}
+                </button>
+              </div>
+              {!item.dateManual && <p className="text-[11px] text-slate-500">{t("If you skip this, today's upload date is used.")}</p>}
+            </div>
+          )}
+
           {item.locationSource !== "gps" && (
             <div className={`rounded-xl border p-3 space-y-2 ${item.lat === undefined ? "bg-orange-50 border-orange-200" : "bg-sky-50 border-sky-100"}`}>
               <p className={`text-xs font-bold flex items-center gap-1.5 ${item.lat === undefined ? "text-orange-700" : "text-sky-700"}`}>

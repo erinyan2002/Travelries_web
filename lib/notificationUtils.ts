@@ -31,6 +31,10 @@ export async function markAllRead(): Promise<void> {
     .eq("read", false);
 }
 
+export async function markRead(id: string): Promise<void> {
+  await supabase.from("notifications").update({ read: true }).eq("id", id);
+}
+
 export async function recordShareView(shareId: string): Promise<void> {
   await supabase.rpc("record_share_view", { p_share_id: shareId });
 }
