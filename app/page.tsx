@@ -4,7 +4,7 @@ import { ChangeEvent, Fragment, useState, useEffect, useRef } from "react";
 import * as exifr from "exifr";
 import * as faceapi from "face-api.js";
 import { loadMediaPipeDetector } from "@/lib/mediapipeDetector";
-import { burstConfetti } from "@/lib/confetti";
+import { flyPaperPlane } from "@/lib/paperPlane";
 import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto, FacePhoto } from "@/lib/types";
 import { fetchAllPhotos, fetchMapPhotos, upsertPhoto, renamePhoto, uploadToUserPhotos, migrateInlineImages, pruneOrphanPeople } from "@/lib/photosApi";
@@ -13,7 +13,7 @@ import {
   Camera, Upload, MapPin, Users, CalendarDays, Clock,
   FileImage, Ruler, CheckCircle2, Loader2,
   Search, Navigation, X, Check,
-  Coffee, Utensils, Wine, Sparkles, Trash2, Map, ScanFace,
+  Coffee, Utensils, Wine, Sparkles, Trash2, ScanFace, Save,
 } from "lucide-react";
 import Link from "next/link";
 import { HomeHero, LatestTripCard, RecentMemories } from "@/components/HomeSections";
@@ -99,19 +99,16 @@ async function readExifInBrowser(file: File) {
 // ── Main Component ──────────────────────────────
 export default function HomePage() {
   const uploadRequestIdRef = useRef(0);
-  // Mirrors customFileName synchronously — saveFacesToAlbum reads this instead of
+  // Mirrors customFileName synchronously — handleSave reads this instead of
   // the raw File.name so its DB write always carries whatever name is showing at
   // the moment it actually executes, even if the user renamed while face
   // detection (which can take a couple of seconds) was still running. React state
-  // alone can't do this: saveFacesToAlbum's closure would only see the value of
+  // alone can't do this: handleSave's closure would only see the value of
   // customFileName from when it was called, not any rename typed afterward.
   const customFileNameRef = useRef("");
-  // Similarly a ref, not state — saveFacesToAlbum and handleSaveToMap both need to
-  // reserve/read this id SYNCHRONOUSLY (before their own await), so that whichever
-  // of the two runs second reuses the same row instead of racing to mint its own
-  // id while the other's state update hasn't committed yet (a real race with
-  // useState: two handlers that both start before either's setState has been
-  // applied would both see the old value and each create a separate row).
+  // Similarly a ref, not state — handleSave reserves this id SYNCHRONOUSLY (before
+  // its own await), so a double tap or a rename racing the save reuses the same
+  // row instead of minting a second id (with useState both would see the old value).
   const lastFacePhotoIdRef = useRef<string | null>(null);
   const [selectedFile,   setSelectedFile]   = useState<File | null>(null);
   const [previewUrl,     setPreviewUrl]     = useState("");
@@ -119,7 +116,6 @@ export default function HomePage() {
   const [loading,        setLoading]        = useState(false);
   const [savedMessage,   setSavedMessage]   = useState("");
   const [uploadError,    setUploadError]    = useState("");
-  const [faceMessage,    setFaceMessage]    = useState("");
   const [customFileName, setCustomFileName] = useState("");
   const [draftFileName,  setDraftFileName]  = useState("");
   const [isEditingName,  setIsEditingName]  = useState(false);
@@ -149,8 +145,8 @@ export default function HomePage() {
     ages: number[]; genders: string[]; expressions: string[];
   } | null>(null);
   const [selectedFaceIndices, setSelectedFaceIndices] = useState<Set<number>>(new Set());
-  const [faceSaveStatus,      setFaceSaveStatus]      = useState<"idle" | "needsSelection" | "saving" | "saved" | "failed">("idle");
-  const [savedFaceCount,      setSavedFaceCount]      = useState(0);
+  const [saving,              setSaving]              = useState(false);
+  const [locationNote,        setLocationNote]        = useState<string | null>(null);
   const [faceThumbnails,      setFaceThumbnails]      = useState<string[]>([]);
   const [people,              setPeople]              = useState<Person[]>([]);
   const [faceAssignments,     setFaceAssignments]     = useState<Record<number, string>>({});
@@ -284,107 +280,38 @@ export default function HomePage() {
       ages: faceAges, genders: faceGenders, expressions: faceExpressions,
     };
     setRawFaces(faces);
-    setSavedFaceCount(0);
 
-    if (detectedFaceCount === 0) {
-      setFaceSaveStatus("idle");
-      setSelectedFaceIndices(new Set());
-    } else if (detectedFaceCount === 1) {
-      // Nothing to choose between — save the one face straight away, as before.
-      setSelectedFaceIndices(new Set([0]));
-      await saveFacesToAlbum(file, [0], faces, lat, lng, location);
-    } else {
-      // Multiple people in frame — let the user pick who goes into the Faces album
-      // instead of saving every detected face.
-      setSelectedFaceIndices(new Set());
-      setFaceThumbnails([]);
-      setFaceSaveStatus("needsSelection");
-      setFaceMessage(`${detectedFaceCount} faces detected — pick who to save.`);
+    // Nothing is saved yet: every face starts picked, and the one Save button
+    // (handleSave) writes the photo, its place and the picked faces together.
+    setSelectedFaceIndices(new Set(faceBoxes.map((_, i) => i)));
+    setFaceThumbnails([]);
+    if (detectedFaceCount > 0) {
       cropFaceThumbnails(file, faceBoxes).then(setFaceThumbnails).catch(() => setFaceThumbnails([]));
     }
-  }
 
-  // Saves only the selected face indices (boxes/descriptors/confidences stay index-aligned
-  // with detection output in both browser and backend paths). Age, gender and expression
-  // are not saved: the estimates were often wrong (a 20-something shown as "42yr") and
-  // nothing in the app needs them.
-  async function saveFacesToAlbum(
-    file: File,
-    indices: number[],
-    faces: { boxes: DetectionResult["boxes"]; descriptors: number[][]; confidences: number[]; ages: number[]; genders: string[]; expressions: string[] },
-    lat: number | null,
-    lng: number | null,
-    location: string,
-  ) {
-    const boxes       = indices.map((i) => faces.boxes[i]);
-    const descriptors = indices.map((i) => faces.descriptors[i]).filter((d): d is number[] => !!d);
-    const confidences = indices.map((i) => faces.confidences[i]).filter((c): c is number => c !== undefined);
-    // Index-aligned with `boxes` above (built from the same `indices`), so a face
-    // the user tagged with an existing person at upload time keeps that tag —
-    // see the "Who is this?" picker in the needsSelection UI below.
-    const personIds   = indices.map((i) => faceAssignments[i] ?? null);
-
-    setFaceSaveStatus("saving");
-    try {
+    // No GPS: borrow the place of the saved photo taken closest in time, like batch upload.
+    if (lat === null && captureTimestamp) {
       const { data: { user } } = await getSessionUser();
-      const uid = user?.id ?? "guest";
-      if (uid === "guest") throw new Error("Not signed in");
-      const dataUrl = await createThumbnailDataUrl(file, 1024, 0.90);
-      // Reuse the id of a row this file was already saved under (e.g. Save to Map
-      // clicked first) so this stays one row with both flags, not two rows. Reserved
-      // synchronously, before the upsert below, so a concurrent Save to Map click
-      // (or a rename) during this write's network round-trip sees the same id
-      // instead of racing to mint its own.
-      const photoId = lastFacePhotoIdRef.current ?? newId();
-      lastFacePhotoIdRef.current = photoId;
-      const imageUrl = await uploadToUserPhotos(uid, photoId, dataUrl);
-      await upsertPhoto(uid, {
-        id: photoId,
-        // The live current name, not the File object's original name — so a
-        // rename typed while detection was still running (customFileNameRef
-        // updates synchronously; this whole function's own closure over `file`
-        // wouldn't see it otherwise) actually lands on the row.
-        fileName: customFileNameRef.current || file.name,
-        imageUrl,
-        faceCount: boxes.length,
-        isFacePhoto: true,
-        ...(boxes.length > 0       && { boxes }),
-        ...(descriptors.length > 0 && { descriptors }),
-        ...(confidences.length > 0 && { confidences }),
-        ...(personIds.some((p) => p !== null) && { personIds }),
-        ...(lat !== null               && { lat }),
-        ...(lng !== null               && { lng }),
-        ...(location !== "No GPS data" && { location }),
-      });
-      setSavedFaceCount(boxes.length);
-      setFaceSaveStatus("saved");
-      setFaceMessage(`${boxes.length} ${boxes.length === 1 ? "face" : "faces"} saved to People.`);
-      refreshStats();
-    } catch (saveErr) {
-      console.error("Face photo save failed:", saveErr);
-      setFaceSaveStatus("failed");
-      setFaceMessage("Couldn't save the selected face(s). Please try again.");
+      if (!user) return;
+      const shots: LocatedShot[] = (await fetchMapPhotos(user.id).catch(() => []))
+        .filter((p) => p.lat != null && p.lng != null && p.captureTimestamp)
+        .map((p) => ({ takenAt: p.captureTimestamp!, lat: p.lat!, lng: p.lng!, location: p.location, label: p.fileName }));
+      const guess = guessLocationByTime(captureTimestamp, shots);
+      if (guess && requestId === uploadRequestIdRef.current) {
+        setManualCoords({ lat: guess.lat, lng: guess.lng, name: guess.location ?? `${guess.lat.toFixed(5)}, ${guess.lng.toFixed(5)}` });
+        setLocationStatus("done");
+        setLocationNote(`Estimated from ${guess.label}, taken ${describeGap(guess.gapMs)}`);
+      }
     }
   }
 
   function toggleFaceSelection(index: number) {
+    if (isMapSaved) return;
     setSelectedFaceIndices((prev) => {
       const next = new Set(prev);
       if (next.has(index)) next.delete(index); else next.add(index);
       return next;
     });
-  }
-
-  async function handleSaveSelectedFaces() {
-    if (!selectedFile || !rawFaces || !photoInfo || selectedFaceIndices.size === 0) return;
-    await saveFacesToAlbum(
-      selectedFile,
-      Array.from(selectedFaceIndices).sort((a, b) => a - b),
-      rawFaces,
-      photoInfo.lat,
-      photoInfo.lng,
-      photoInfo.location,
-    );
   }
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -408,7 +335,6 @@ export default function HomePage() {
     if (requestId !== uploadRequestIdRef.current) return;
 
     setSavedMessage("");
-    setFaceMessage("");
     setManualCoords(null);
     setLocationQuery("");
     setLocationStatus("idle");
@@ -418,8 +344,7 @@ export default function HomePage() {
     setIsMapSaved(false);
     setRawFaces(null);
     setSelectedFaceIndices(new Set());
-    setFaceSaveStatus("idle");
-    setSavedFaceCount(0);
+    setLocationNote(null);
     setFaceThumbnails([]);
     setFaceAssignments({});
     setSelectedFile(file);
@@ -528,6 +453,7 @@ export default function HomePage() {
     const result = await forwardGeocode(locationQuery.trim());
     if (result) {
       setManualCoords(result);
+      setLocationNote(null);
       setLocationStatus("done");
       if (backendStatus === "online") {
         setPlacesLoading(true);
@@ -553,6 +479,7 @@ export default function HomePage() {
         const lng = pos.coords.longitude;
         const name = await reverseGeocode(lat, lng);
         setManualCoords({ lat, lng, name: name || `${lat.toFixed(5)}, ${lng.toFixed(5)}` });
+        setLocationNote(null);
         setLocationStatus("done");
         if (backendStatus === "online") {
           setPlacesLoading(true);
@@ -716,7 +643,7 @@ export default function HomePage() {
   }
 
   // Batch step 2: save the reviewed photos — only the faces left selected, with
-  // any "Who?" tags (index-aligned with boxes, like saveFacesToAlbum).
+  // any "Who?" tags (index-aligned with boxes, like handleSave).
   async function saveBatch() {
     setBatchPhase("saving");
     const items = [...batchItems];
@@ -762,7 +689,7 @@ export default function HomePage() {
     }
     setBatchPhase("done");
     refreshStats();
-    if (items.some((it) => it.status === "done")) burstConfetti();
+    if (items.some((it) => it.status === "done")) flyPaperPlane();
   }
 
   function resetBatch() {
@@ -779,7 +706,6 @@ export default function HomePage() {
     customFileNameRef.current = "";
     setDraftFileName("");
     setSavedMessage("");
-    setFaceMessage("");
     setManualCoords(null);
     setLocationStatus("idle");
     lastFacePhotoIdRef.current = null;
@@ -788,8 +714,7 @@ export default function HomePage() {
     setIsMapSaved(false);
     setRawFaces(null);
     setSelectedFaceIndices(new Set());
-    setFaceSaveStatus("idle");
-    setSavedFaceCount(0);
+    setLocationNote(null);
     setFaceThumbnails([]);
     setFaceAssignments({});
   }
@@ -809,51 +734,56 @@ export default function HomePage() {
     setIsEditingName(false);
   }
 
-  async function handleSaveToMap() {
-    if (!selectedFile || !photoInfo) return;
-    const effectiveLat = photoInfo.lat ?? manualCoords?.lat ?? null;
-    const effectiveLng = photoInfo.lng ?? manualCoords?.lng ?? null;
-    if (effectiveLat === null || effectiveLng === null) {
-      alert("No location data. Please search for a place or use your current location below.");
-      return;
-    }
+  // The single Save: the photo (Albums), its place (Map, when it has one) and the
+  // picked faces with their "Who?" tags (People), in one row. Boxes, descriptors,
+  // confidences and person ids stay index-aligned through the same `indices`.
+  // Age, gender and expression are not saved: the estimates were often wrong.
+  async function handleSave() {
+    if (!selectedFile || !photoInfo || !rawFaces || isMapSaved || saving) return;
+    const lat = photoInfo.lat ?? manualCoords?.lat ?? null;
+    const lng = photoInfo.lng ?? manualCoords?.lng ?? null;
+    const indices     = Array.from(selectedFaceIndices).sort((a, b) => a - b);
+    const boxes       = indices.map((i) => rawFaces.boxes[i]);
+    const descriptors = indices.map((i) => rawFaces.descriptors[i]).filter((d): d is number[] => !!d);
+    const confidences = indices.map((i) => rawFaces.confidences[i]).filter((c): c is number => c !== undefined);
+    const personIds   = indices.map((i) => faceAssignments[i] ?? null);
+    const location    = manualCoords?.name ?? (photoInfo.location !== "No GPS data" ? photoInfo.location : undefined);
+
+    const photoId = lastFacePhotoIdRef.current ?? newId();
+    lastFacePhotoIdRef.current = photoId;
+    setSaving(true);
     try {
       const { data: { user } } = await getSessionUser();
-      const uid = user?.id ?? "guest";
-      if (uid === "guest") throw new Error("Not signed in");
-
-      // Reuse the id of the face-detection row this file already got saved under
-      // (if any), so this becomes one row with both is_map_photo and is_face_photo
-      // set, instead of two rows for the same photo. Reserved synchronously (see
-      // the matching comment in saveFacesToAlbum) so a concurrent face-save
-      // in flight for the same file can't race this into minting a second id.
-      const photoId = lastFacePhotoIdRef.current ?? newId();
-      lastFacePhotoIdRef.current = photoId;
-      const dataUrl = await createThumbnailDataUrl(selectedFile, 1024, 0.90);
-
-      const imageUrl = await uploadToUserPhotos(uid, photoId, dataUrl);
-
-      await upsertPhoto(uid, {
+      if (!user) throw new Error("Not signed in");
+      const dataUrl  = await createThumbnailDataUrl(selectedFile, 1024, 0.90);
+      const imageUrl = await uploadToUserPhotos(user.id, photoId, dataUrl);
+      await upsertPhoto(user.id, {
         id: photoId,
-        fileName: customFileName.trim() || selectedFile.name,
+        fileName: customFileNameRef.current.trim() || selectedFile.name,
         imageUrl,
-        lat: effectiveLat,
-        lng: effectiveLng,
-        location: manualCoords?.name ?? photoInfo.location,
+        ...(lat !== null && lng !== null && { lat, lng }),
+        ...(location && { location }),
         captureDate: photoInfo.captureDate !== "Not available" ? photoInfo.captureDate : null,
         captureTime: photoInfo.captureTime !== "Not available" ? photoInfo.captureTime : null,
         captureTimestamp: photoInfo.captureTimestamp,
-        faceCount: savedFaceCount,
+        faceCount: boxes.length,
         isMapPhoto: true,
+        isFacePhoto: boxes.length > 0,
+        ...(boxes.length > 0       && { boxes }),
+        ...(descriptors.length > 0 && { descriptors }),
+        ...(confidences.length > 0 && { confidences }),
+        ...(personIds.some((p) => p !== null) && { personIds }),
       });
-
       setIsMapSaved(true);
-      setSavedMessage("Saved to map and albums!");
+      const where = ["Albums", ...(lat !== null ? ["Map"] : []), ...(boxes.length > 0 ? ["People"] : [])];
+      setSavedMessage(`Saved to ${where.join(", ").replace(/, ([^,]*)$/, " and $1")}!`);
       refreshStats();
-      burstConfetti();
+      flyPaperPlane();
     } catch (err) {
-      console.error("Save to map failed:", err);
+      console.error("Save failed:", err);
       setSavedMessage(`Save failed: ${err instanceof Error ? err.message : "Please try again."}`);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -978,8 +908,12 @@ export default function HomePage() {
                     </button>
                   </div>
                   {locationStatus === "done" && manualCoords && (
-                    <p className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
-                      <CheckCircle2 size={13} /> Location set: {manualCoords.name.slice(0, 60)}...
+                    <p className="text-xs text-emerald-600 font-semibold flex items-start gap-1">
+                      <CheckCircle2 size={13} className="flex-shrink-0 mt-px" />
+                      <span>
+                        Location set: {manualCoords.name.length > 60 ? `${manualCoords.name.slice(0, 60)}...` : manualCoords.name}
+                        {locationNote && <span className="block font-medium text-slate-500">≈ {locationNote}. Search above if it&apos;s wrong.</span>}
+                      </span>
                     </p>
                   )}
                   {locationStatus === "error" && (
@@ -1025,15 +959,22 @@ export default function HomePage() {
                   )}
 
                   <button
-                    onClick={handleSaveToMap}
-                    disabled={isMapSaved}
+                    onClick={handleSave}
+                    disabled={isMapSaved || saving}
                     className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-xl font-bold text-sm transition-all ${
                       isMapSaved
                         ? "bg-emerald-100 text-emerald-700 cursor-not-allowed"
-                        : "bg-gradient-to-r from-sky-400 to-blue-500 hover:from-sky-500 hover:to-blue-600 text-white shadow-lg shadow-sky-200"
+                        : "bg-gradient-to-r from-sky-400 to-blue-500 hover:from-sky-500 hover:to-blue-600 text-white shadow-lg shadow-sky-200 disabled:opacity-70"
                     }`}>
-                    {isMapSaved ? <><CheckCircle2 size={16} /> Already Saved</> : <><Map size={16} /> Save to Map<span className="ml-1 opacity-70 text-base leading-none">✦✦</span></>}
+                    {isMapSaved ? <><CheckCircle2 size={16} /> Saved</>
+                      : saving ? <><Loader2 size={16} className="animate-spin" /> Saving...</>
+                      : <><Save size={16} /> Save<span className="ml-1 opacity-70 text-base leading-none">✦✦</span></>}
                   </button>
+                  {!isMapSaved && (
+                    <p className="text-[11px] text-slate-400 text-center -mt-1">
+                      Adds it to Albums{(photoInfo.lat !== null || manualCoords) ? ", Map" : ""}{selectedFaceIndices.size > 0 ? ` and People (${selectedFaceIndices.size} face${selectedFaceIndices.size === 1 ? "" : "s"})` : ""}
+                    </p>
+                  )}
 
                   {savedMessage && (
                     <div className="flex items-center justify-center gap-2 text-emerald-600 text-sm font-semibold">
@@ -1069,7 +1010,7 @@ export default function HomePage() {
                       className="w-full h-auto block"
                     />
                     {photoInfo.faceBoxes.map((b, i) => {
-                      const selectable = faceSaveStatus === "needsSelection";
+                      const selectable = !isMapSaved;
                       const selected = selectedFaceIndices.has(i);
                       return (
                         <div
@@ -1120,10 +1061,10 @@ export default function HomePage() {
                     </div>
                   </div>
 
-                  {faceSaveStatus === "needsSelection" && (
-                    <div className="rounded-xl border border-sky-100 bg-sky-50 p-3 space-y-3">
+                  {photoInfo.faceBoxes.length > 0 && (
+                    <div className={`rounded-xl border border-sky-100 bg-sky-50 p-3 space-y-3 ${isMapSaved ? "opacity-70 pointer-events-none" : ""}`}>
                       <p className="text-xs font-semibold text-slate-700">
-                        Who do you want to save? ({selectedFaceIndices.size}/{photoInfo.faceBoxes.length} selected)
+                        Who&apos;s in this photo? ({selectedFaceIndices.size}/{photoInfo.faceBoxes.length} will be saved to People)
                       </p>
 
                       <div className="flex gap-3 overflow-x-auto pb-1">
@@ -1182,30 +1123,8 @@ export default function HomePage() {
                         })}
                       </div>
 
-                      <button
-                        onClick={handleSaveSelectedFaces}
-                        disabled={selectedFaceIndices.size === 0}
-                        className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-sm transition-all ${
-                          selectedFaceIndices.size === 0
-                            ? "bg-slate-200 text-slate-400 cursor-not-allowed"
-                            : "bg-gradient-to-r from-emerald-400 to-emerald-500 hover:from-emerald-500 hover:to-emerald-600 text-white shadow-lg shadow-emerald-100"
-                        }`}>
-                        <Users size={16} />
-                        Save {selectedFaceIndices.size || ""} face{selectedFaceIndices.size === 1 ? "" : "s"} to Faces
-                      </button>
+                      <p className="text-[11px] text-slate-400">Tap a face to leave it out. Saved with the Save button.</p>
                     </div>
-                  )}
-
-                  {faceSaveStatus === "saving" && (
-                    <p className="text-xs font-medium px-1 text-slate-500">Saving selected face(s)...</p>
-                  )}
-
-                  {(faceSaveStatus === "saved" || faceSaveStatus === "failed") && faceMessage && (
-                    <p className={`text-xs font-medium px-1 ${
-                      faceSaveStatus === "failed" ? "text-red-500" : "text-emerald-600"
-                    }`}>
-                      {faceMessage}
-                    </p>
                   )}
 
                   {/* Info grid — all sky blue icons */}
