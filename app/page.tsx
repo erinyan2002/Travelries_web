@@ -7,7 +7,7 @@ import { loadMediaPipeDetector } from "@/lib/mediapipeDetector";
 import { burstConfetti } from "@/lib/confetti";
 import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto, FacePhoto } from "@/lib/types";
-import { fetchAllPhotos, upsertPhoto, renamePhoto, uploadToUserPhotos, migrateInlineImages, pruneOrphanPeople } from "@/lib/photosApi";
+import { fetchAllPhotos, fetchMapPhotos, upsertPhoto, renamePhoto, uploadToUserPhotos, migrateInlineImages, pruneOrphanPeople } from "@/lib/photosApi";
 import { fetchPeople, Person } from "@/lib/peopleApi";
 import {
   Camera, Upload, MapPin, Users, CalendarDays, Clock,
@@ -20,7 +20,8 @@ import { HomeHero, LatestTripCard, RecentMemories } from "@/components/HomeSecti
 import { detectTrips, Trip } from "@/lib/trips";
 import { summarizeTrip, TripMemory } from "@/lib/tripMemory";
 import { fetchProfile } from "@/lib/socialUtils";
-import BatchUploadPanel, { BatchFile } from "@/components/BatchUploadPanel";
+import BatchUploadPanel, { BatchFile, BatchPhase } from "@/components/BatchUploadPanel";
+import { guessLocationByTime, describeGap, LocatedShot } from "@/lib/locationGuess";
 import { BACKEND_URL } from "@/lib/backend";
 import { newId } from "@/lib/id";
 import { runFaceDetection, DetectionResult } from "@/lib/faceDetection";
@@ -141,6 +142,7 @@ export default function HomePage() {
   const [hour,             setHour]             = useState<number | null>(null);
   const [batchItems,       setBatchItems]       = useState<BatchFile[]>([]);
   const [batchActive,      setBatchActive]      = useState(false);
+  const [batchPhase,       setBatchPhase]       = useState<BatchPhase>("analyzing");
   const [isMapSaved,       setIsMapSaved]       = useState(false);
   const [rawFaces,           setRawFaces]           = useState<{
     boxes: DetectionResult["boxes"]; descriptors: number[][]; confidences: number[];
@@ -567,13 +569,17 @@ export default function HomePage() {
     );
   }
 
+  // Batch step 1: analyze every file but save nothing — the panel then lets the
+  // user open each photo's analysis, pick and tag faces, and press Save (saveBatch).
   async function processBatch(files: File[]) {
+    batchItems.forEach((it) => it.previewUrl && URL.revokeObjectURL(it.previewUrl));
     setBatchActive(true);
-    const items: BatchFile[] = files.map((f) => ({ name: f.name, status: "pending", info: "" }));
+    setBatchPhase("analyzing");
+    const items: BatchFile[] = files.map((f) => ({
+      name: f.name, status: "pending", info: "",
+      boxes: [], descriptors: [], confidences: [], selectedFaces: [], personIds: {},
+    }));
     setBatchItems([...items]);
-
-    const { data: { user } } = await getSessionUser();
-    const uid = user?.id ?? "guest";
 
     for (let i = 0; i < files.length; i++) {
       const original = files[i];
@@ -646,67 +652,123 @@ export default function HomePage() {
             faceConfs       = r.confidences;
           }
         }
-        const dataUrl = await createThumbnailDataUrl(file, 1024, 0.90);
-        const photoId = newId();
-
-        // A failed upload throws into this file's catch below (marked as an error
-        // in the batch panel) rather than saving the image inline in the DB row.
-        const imageUrl = uid !== "guest" ? await uploadToUserPhotos(uid, photoId, dataUrl) : dataUrl;
-
-        if (uid !== "guest") {
-          await upsertPhoto(uid, {
-            id: photoId,
-            fileName: file.name,
-            imageUrl,
-            lat, lng, location,
-            captureDate, captureTime, captureTimestamp,
-            faceCount,
-            isMapPhoto: true,
-            isFacePhoto: faceCount > 0,
-            ...(faceBoxes.length > 0       && { boxes: faceBoxes }),
-            ...(faceDescriptors.length > 0 && { descriptors: faceDescriptors }),
-            ...(faceConfs.length > 0       && { confidences: faceConfs }),
-          });
-        }
         const infoParts: string[] = [];
         if (faceCount > 0) infoParts.push(`${faceCount} face(s)`);
         infoParts.push(location ? location.split(",")[0] : "No GPS");
         items[i] = {
           ...items[i],
-          status: "done",
+          name: file.name,
+          status: "ready",
           info: infoParts.join(" · "),
-          photoId,
-          imageUrl,
-          faceCount,
+          file,
+          previewUrl: URL.createObjectURL(file),
           fileSize: formatBytes(file.size),
-          location,
-          captureDate,
-          captureTime,
-          lat,
-          lng,
+          location, captureDate, captureTime, captureTimestamp, lat, lng,
+          locationSource: lat !== undefined && lng !== undefined ? "gps" : undefined,
+          boxes: faceBoxes,
+          descriptors: faceDescriptors,
+          confidences: faceConfs,
+          selectedFaces: faceBoxes.map((_, j) => j),
           editName: file.name,
         };
       } catch (err) {
         console.error(`Batch error [${original.name}]:`, err);
-        items[i] = { ...items[i], status: "error", info: "Failed" };
+        items[i] = { ...items[i], status: "error", info: "Couldn't read this photo" };
       }
       setBatchItems([...items]);
     }
+    await guessMissingLocations(items);
+    setBatchItems([...items]);
+    setBatchPhase("review");
+  }
+
+  // Photos without GPS get the place of the located photo taken closest in time —
+  // from this batch first, else from the user's saved map photos — so they still
+  // land on the map. The review modal shows it as an estimate the user can change.
+  async function guessMissingLocations(items: BatchFile[]) {
+    const missing = items.filter((it) => it.status === "ready" && it.lat === undefined);
+    if (missing.length === 0) return;
+    const shots: LocatedShot[] = items
+      .filter((it) => it.status === "ready" && it.locationSource === "gps" && it.captureTimestamp)
+      .map((it) => ({ takenAt: it.captureTimestamp!, lat: it.lat!, lng: it.lng!, location: it.location, label: it.editName ?? it.name }));
+    const { data: { user } } = await getSessionUser();
+    if (user) {
+      try {
+        for (const p of await fetchMapPhotos(user.id)) {
+          if (p.lat != null && p.lng != null && p.captureTimestamp) {
+            shots.push({ takenAt: p.captureTimestamp, lat: p.lat, lng: p.lng, location: p.location, label: p.fileName });
+          }
+        }
+      } catch { /* the batch's own photos are still used */ }
+    }
+    for (const it of missing) {
+      const guess = guessLocationByTime(it.captureTimestamp, shots);
+      if (!guess) continue;
+      const i = items.indexOf(it);
+      items[i] = {
+        ...it,
+        lat: guess.lat, lng: guess.lng,
+        location: guess.location ?? `${guess.lat.toFixed(6)}, ${guess.lng.toFixed(6)}`,
+        locationSource: "estimated",
+        locationNote: `Estimated from ${guess.label}, taken ${describeGap(guess.gapMs)}`,
+      };
+    }
+  }
+
+  // Batch step 2: save the reviewed photos — only the faces left selected, with
+  // any "Who?" tags (index-aligned with boxes, like saveFacesToAlbum).
+  async function saveBatch() {
+    setBatchPhase("saving");
+    const items = [...batchItems];
+    const { data: { user } } = await getSessionUser();
+    const uid = user?.id;
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it.status !== "ready" || it.skip || !it.file) continue;
+      items[i] = { ...it, status: "saving" };
+      setBatchItems([...items]);
+      try {
+        if (!uid) throw new Error("Not signed in");
+        const idx = it.selectedFaces;
+        const boxes       = idx.map((j) => it.boxes[j]);
+        const descriptors = idx.map((j) => it.descriptors[j]).filter((d): d is number[] => !!d);
+        const confidences = idx.map((j) => it.confidences[j]).filter((c): c is number => c !== undefined);
+        const personIds   = idx.map((j) => it.personIds[j] ?? null);
+        // Kept on the item, so a retry after a failed upsert reuses the same row.
+        const photoId = it.photoId ?? newId();
+        items[i] = { ...items[i], photoId };
+        const dataUrl = await createThumbnailDataUrl(it.file, 1024, 0.90);
+        const imageUrl = await uploadToUserPhotos(uid, photoId, dataUrl);
+        await upsertPhoto(uid, {
+          id: photoId,
+          fileName: it.editName?.trim() || it.name,
+          imageUrl,
+          lat: it.lat, lng: it.lng, location: it.location,
+          captureDate: it.captureDate, captureTime: it.captureTime, captureTimestamp: it.captureTimestamp,
+          faceCount: boxes.length,
+          isMapPhoto: true,
+          isFacePhoto: boxes.length > 0,
+          ...(boxes.length > 0       && { boxes }),
+          ...(descriptors.length > 0 && { descriptors }),
+          ...(confidences.length > 0 && { confidences }),
+          ...(personIds.some((p) => p !== null) && { personIds }),
+        });
+        items[i] = { ...items[i], status: "done" };
+      } catch (err) {
+        console.error(`Batch save error [${it.name}]:`, err);
+        items[i] = { ...items[i], status: "error", info: "Couldn't save" };
+      }
+      setBatchItems([...items]);
+    }
+    setBatchPhase("done");
     refreshStats();
     if (items.some((it) => it.status === "done")) burstConfetti();
   }
 
   function resetBatch() {
+    batchItems.forEach((it) => it.previewUrl && URL.revokeObjectURL(it.previewUrl));
     setBatchActive(false);
     setBatchItems([]);
-  }
-
-  async function handleBatchRename(photoId: string, newName: string) {
-    if (!newName.trim() || !photoId) return;
-    const { data: { user } } = await getSessionUser();
-    const uid = user?.id ?? "guest";
-    if (uid === "guest") return;
-    await renamePhoto(uid, photoId, newName.trim());
   }
 
   function clearSelection() {
@@ -803,7 +865,8 @@ export default function HomePage() {
 
         {/* ── Batch Upload UI ── */}
         {batchActive && (
-          <BatchUploadPanel items={batchItems} onItemsChange={setBatchItems} onRename={handleBatchRename} onClose={resetBatch} />
+          <BatchUploadPanel items={batchItems} phase={batchPhase} people={people}
+            onItemsChange={setBatchItems} onSave={saveBatch} onClose={resetBatch} />
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
