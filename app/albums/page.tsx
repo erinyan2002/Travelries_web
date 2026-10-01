@@ -14,7 +14,7 @@ import { DiaryLang, DIARY_LANGS, diaryCacheKey, loadDiaryLang, storeDiaryLang, r
 import { fetchMapPhotos, fetchPhotosByIds, saveLandmarkResult, renamePhoto, fetchTripDiary, fetchFacePhotos } from "@/lib/photosApi";
 import {
   Images, Users, Image as ImageIcon, Star, Download, Trash2,
-  X, CalendarDays, Search, Share2, Loader2, MapPin, Sparkles, LayoutTemplate, Check, Clock, BookOpen, Pencil,
+  X, CalendarDays, Search, Share2, Loader2, MapPin, Sparkles, LayoutTemplate, Check, Clock, BookOpen, Pencil, CheckCircle2,
 } from "lucide-react";
 import Link from "next/link";
 import { sharePhoto } from "@/lib/shareUtils";
@@ -509,6 +509,11 @@ export default function AlbumsPage() {
   const [sharingTripKey,   setSharingTripKey]   = useState<string | null>(null);
   const [shareResultUrl,   setShareResultUrl]   = useState<string | null>(null);
   const [confirmDeleteId,  setConfirmDeleteId]  = useState<string | null>(null);
+  // Select mode: tap tiles to pick several photos, then delete them together.
+  const [selectMode,        setSelectMode]        = useState(false);
+  const [selectedIds,       setSelectedIds]       = useState<Set<string>>(new Set());
+  const [confirmBulk,       setConfirmBulk]       = useState(false);
+  const [bulkDeleting,      setBulkDeleting]      = useState(false);
   const [personFilterNames, setPersonFilterNames] = useState<Set<string> | null>(null); // legacy ?faceNames= links
   const [personFilterIds,   setPersonFilterIds]   = useState<Set<string> | null>(null);
   // Face-only photos pulled in just for the person view (not map photos) — dropped
@@ -648,6 +653,44 @@ export default function AlbumsPage() {
     }
   }
 
+  function exitSelectMode() {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  // Same loop as the Clean up page: one photo at a time, keeping going past failures.
+  async function handleBulkDelete() {
+    setBulkDeleting(true);
+    const removed = new Set<string>();
+    for (const id of selectedIds) {
+      try {
+        await deletePhotoEverywhere(id);
+        removed.add(id);
+      } catch (err) {
+        if (err instanceof Error && err.message === "Photo not found or already deleted") removed.add(id);
+        else console.error("Delete failed:", err);
+      }
+    }
+    setPhotos((prev) => prev.filter((p) => !removed.has(p.id)));
+    const failed = selectedIds.size - removed.size;
+    setBulkDeleting(false);
+    setConfirmBulk(false);
+    if (failed > 0) {
+      setSelectedIds((prev) => new Set([...prev].filter((id) => !removed.has(id))));
+      alert(`${failed} photo(s) couldn't be deleted. Please try again.`);
+    } else {
+      exitSelectMode();
+    }
+  }
+
   function handleDownload(photo: MapPhoto) {
     saveImage(photo.imageUrl, photo.fileName);
   }
@@ -761,6 +804,7 @@ export default function AlbumsPage() {
   // reload or the back button lands on the same view.
   function switchView(mode: "monthly" | "trips") {
     setViewMode(mode);
+    if (mode === "trips") exitSelectMode();
     const url = new URL(window.location.href);
     if (mode === "trips") url.searchParams.set("view", "trips");
     else url.searchParams.delete("view");
@@ -768,11 +812,24 @@ export default function AlbumsPage() {
   }
 
   return (
-    <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-24 lg:pb-10">
+    <main className={`min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 ${selectMode ? "pb-44 lg:pb-28" : "pb-24 lg:pb-10"}`}>
       <div className="max-w-5xl mx-auto">
 
         <SectionTabs section="albums" active={viewMode === "trips" ? "trips" : "photos"}
-          onSelect={{ photos: () => switchView("monthly"), trips: () => switchView("trips") }} />
+          onSelect={{ photos: () => switchView("monthly"), trips: () => switchView("trips") }}
+          action={viewMode === "monthly" && photos.length > 0 && (
+            selectMode ? (
+              <button onClick={exitSelectMode}
+                className="px-3 py-1.5 rounded-full text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors">
+                Cancel
+              </button>
+            ) : (
+              <button onClick={() => setSelectMode(true)}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-blue-600 bg-white border border-blue-100 hover:bg-blue-50 transition-colors">
+                <CheckCircle2 size={13} /> Select
+              </button>
+            )
+          )} />
 
         {/* Person filter banner */}
         {(personFilterIds || personFilterNames) && (
@@ -1032,23 +1089,32 @@ export default function AlbumsPage() {
                         {day.photos.map((photo) => {
                           const isPortrait = (photo.faceCount ?? 0) > 0;
                           const saved = savedIds.has(photo.id);
+                          const picked = selectedIds.has(photo.id);
                           return (
-                            <div key={photo.id} onClick={() => setSelectedPhoto(photo)}
-                              className="photo-card group rounded-2xl overflow-hidden bg-white border border-slate-100 shadow-sm cursor-pointer">
+                            <div key={photo.id} onClick={() => (selectMode ? toggleSelected(photo.id) : setSelectedPhoto(photo))}
+                              className={`photo-card group rounded-2xl overflow-hidden bg-white border shadow-sm cursor-pointer ${
+                                picked ? "border-red-400 ring-2 ring-red-300" : "border-slate-100"}`}>
                               <div className="relative aspect-[4/5] overflow-hidden bg-slate-100">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img src={photo.imageUrl} alt={photo.fileName} loading="lazy"
-                                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                                  className={`w-full h-full object-cover transition-transform duration-500 ${selectMode ? "" : "group-hover:scale-105"} ${picked ? "opacity-70" : ""}`} />
                                 <span className="absolute top-2 left-2 inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/85 backdrop-blur-sm shadow-sm text-slate-600">
                                   {isPortrait ? <Users size={9} className="text-blue-600" /> : <ImageIcon size={9} />}
                                   {isPortrait ? `${photo.faceCount}` : "Scene"}
                                 </span>
                                 {/* Just a save toggle on the tile — share/download/delete live in the photo view. */}
+                                {selectMode ? (
+                                  <span className={`absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center shadow-sm border-2 ${
+                                    picked ? "bg-red-500 border-red-500 text-white" : "bg-black/20 border-white text-transparent"}`}>
+                                    <Check size={14} strokeWidth={3} />
+                                  </span>
+                                ) : (
                                 <button onClick={(e) => handleToggleSaved(e, photo)} title={saved ? "Unsave" : "Save"} aria-label={saved ? "Unsave" : "Save"}
                                   className={`absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center backdrop-blur-sm shadow-sm transition-all ${
                                     saved ? "bg-white/90 text-amber-500" : "bg-black/20 text-white sm:opacity-0 sm:group-hover:opacity-100 hover:bg-black/35"}`}>
                                   <Star size={13} className={saved ? "fill-amber-400" : ""} />
                                 </button>
+                                )}
                               </div>
                               <div className="px-3 py-2.5">
                                 <p className="font-bold text-slate-800 text-sm truncate">{photo.fileName}</p>
@@ -1090,6 +1156,48 @@ export default function AlbumsPage() {
           saved={savedIds.has(selectedPhoto.id)}
           onToggleSaved={(e) => handleToggleSaved(e, selectedPhoto)}
         />
+      )}
+      {selectMode && viewMode === "monthly" && (
+        <div className="fixed bottom-24 lg:bottom-8 left-0 right-0 lg:pl-[100px] flex justify-center px-4 z-40">
+          <div className="tv-card flex items-center gap-2 pl-4 pr-2 py-2 shadow-lg">
+            <span className="text-sm font-bold text-slate-700 mr-1">{selectedIds.size} selected</span>
+            <button
+              onClick={() => {
+                const allPicked = filtered.every((p) => selectedIds.has(p.id));
+                setSelectedIds(allPicked ? new Set() : new Set(filtered.map((p) => p.id)));
+              }}
+              className="px-3 py-2 rounded-xl text-xs font-bold text-blue-600 hover:bg-blue-50 transition-colors">
+              {filtered.length > 0 && filtered.every((p) => selectedIds.has(p.id)) ? "Deselect all" : "Select all"}
+            </button>
+            <button onClick={() => setConfirmBulk(true)} disabled={selectedIds.size === 0}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold text-sm transition-colors disabled:opacity-40">
+              <Trash2 size={15} /> Delete
+            </button>
+          </div>
+        </div>
+      )}
+      {confirmBulk && (
+        <div className="fixed inset-0 tv-overlay z-[4000] flex items-center justify-center p-4" onClick={() => !bulkDeleting && setConfirmBulk(false)}>
+          <div className="tv-modal max-w-sm w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Trash2 size={22} className="text-red-500" />
+            </div>
+            <h2 className="text-lg font-black text-slate-900 text-center mb-1">
+              Delete {selectedIds.size} photo{selectedIds.size !== 1 ? "s" : ""}?
+            </h2>
+            <p className="text-sm text-slate-500 text-center mb-6">They&apos;ll be removed from your map, albums and faces. This can&apos;t be undone.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmBulk(false)} disabled={bulkDeleting}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50 transition-colors disabled:opacity-60">
+                Cancel
+              </button>
+              <button onClick={handleBulkDelete} disabled={bulkDeleting}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-500 text-white font-bold text-sm hover:bg-red-600 transition-colors disabled:opacity-60">
+                {bulkDeleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />} Delete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {confirmDeleteId && (
         <DeleteConfirmModal
