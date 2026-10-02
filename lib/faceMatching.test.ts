@@ -48,6 +48,20 @@ describe("dedupeFaces", () => {
     expect(dedupeFaces([a, b])).toHaveLength(1);
   });
 
+  it("keeps two small faces far apart in a group photo, even with close descriptors", () => {
+    // 4000px-wide group photo, faces ~100px: different people at the two ends of the row.
+    const a = { box: box(400, 1200), score: 0.9, descriptor: d(0.1) };
+    const b = { box: box(2600, 1210), score: 0.8, descriptor: d(0.12) };
+    expect(dedupeFaces([a, b], 4000)).toHaveLength(2);
+  });
+
+  it("still merges one couple repeated in large photo-booth frames", () => {
+    // 1000px-wide strip, faces 200px (20% of the width) in frames far apart.
+    const a = { box: box(100, 100, 200, 240), score: 0.9, descriptor: d(0.1) };
+    const b = { box: box(600, 700, 200, 240), score: 0.8, descriptor: d(0.11) };
+    expect(dedupeFaces([a, b], 1000)).toHaveLength(1);
+  });
+
   it("keeps two different people", () => {
     const a = { box: box(0, 0), score: 0.9, descriptor: d(0.1) };
     const b = { box: box(300, 0), score: 0.8, descriptor: d(0.2) };

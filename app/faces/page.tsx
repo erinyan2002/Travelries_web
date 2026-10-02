@@ -88,17 +88,21 @@ function PhotoWithBoxes({ photo }: { photo: FacePhoto }) {
       // and an expression emoji, which hid the faces and meant nothing to users.
       const unit = Math.max(img.width, img.height) / 100;
       const lineW = Math.max(2, unit * 0.45);
-      const r = Math.max(11, unit * 1.9);
       photo.boxes.forEach((box, i) => {
         if (isFaceRemoved(photo, i)) return;
         const x = box.x * img.width, y = box.y * img.height;
         const w = box.width * img.width, h = box.height * img.height;
+        // In a group photo a full-size badge covered the neighbouring faces: keep it
+        // under ~40% of the face's own width (lib/faceBadge.ts, same idea).
+        const r = Math.min(Math.max(11, unit * 1.9), Math.max(6, w * 0.4));
         const color = BOX_COLORS[i % BOX_COLORS.length];
         ctx.strokeStyle = color; ctx.lineWidth = lineW;
         ctx.shadowColor = "rgba(0,0,0,0.35)"; ctx.shadowBlur = lineW * 2;
         ctx.beginPath(); ctx.roundRect(x, y, w, h, Math.min(w, h) * 0.08); ctx.stroke();
         ctx.shadowBlur = 0;
-        const cx = x + r * 0.9, cy = y + r * 0.9;
+        // Small (group-photo) faces: the badge sits above the box, not on the face.
+        const small = w < 0.07 * img.width;
+        const cx = small ? x + w / 2 : x + r * 0.9, cy = small ? Math.max(r, y - r - lineW) : y + r * 0.9;
         ctx.fillStyle = color;
         ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = "white";

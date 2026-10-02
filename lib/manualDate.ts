@@ -16,3 +16,12 @@ export function captureFromDateInput(value: string, locale?: string): { captureT
   if (isNaN(d.getTime())) return null;
   return { captureTimestamp: d.toISOString(), captureDate: d.toLocaleDateString(locale) };
 }
+
+/** Moves a timestamp to another calendar day, keeping its local time of day
+ *  (editing a saved photo's date shouldn't lose the hour it was taken). */
+export function withDay(iso: string, value: string): string | null {
+  const m = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const t = new Date(iso);
+  if (!m || isNaN(t.getTime())) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), t.getHours(), t.getMinutes(), t.getSeconds()).toISOString();
+}

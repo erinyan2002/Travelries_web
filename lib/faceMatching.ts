@@ -85,20 +85,34 @@ export function ssdOnlyFaces<T extends ScoredFace>(ssd: T[], kept: { box: Box }[
   return ssd.filter((f) => f.score >= SSD_ONLY_SCORE && !kept.some((k) => overlaps(f.box, k.box)));
 }
 
-function sameFace(a: ScoredFace, b: ScoredFace): boolean {
-  return boxIoU(a.box, b.box) >= DEDUPE_IOU
-    || containment(a.box, b.box) >= DEDUPE_CONTAIN
-    || descriptorDistance(a.descriptor, b.descriptor) < DEDUPE_DESC_DIST;
+// A near-identical descriptor alone only merges two boxes that sit close together
+// (centres within 1.5 face widths) or two LARGE faces (each ≥ 12% of the photo's
+// width, e.g. the same couple in four photo-booth frames). Small faces in a group
+// photo have weak descriptors, and two different people far apart in the row
+// could fall under 0.4 and be merged into one, dropping a person.
+export const DEDUPE_NEAR = 1.5;
+export const LARGE_FACE_SHARE = 0.12;
+
+function near(a: Box, b: Box): boolean {
+  const dx = (a.x + a.width / 2) - (b.x + b.width / 2), dy = (a.y + a.height / 2) - (b.y + b.height / 2);
+  return Math.hypot(dx, dy) <= DEDUPE_NEAR * Math.max(a.width, b.width);
+}
+
+function sameFace(a: ScoredFace, b: ScoredFace, imageWidth?: number): boolean {
+  if (boxIoU(a.box, b.box) >= DEDUPE_IOU || containment(a.box, b.box) >= DEDUPE_CONTAIN) return true;
+  const large = imageWidth !== undefined
+    && Math.min(a.box.width, b.box.width) >= LARGE_FACE_SHARE * imageWidth;
+  return (large || near(a.box, b.box)) && descriptorDistance(a.descriptor, b.descriptor) < DEDUPE_DESC_DIST;
 }
 
 // Drops any face that overlaps, sits inside, or is a near-identical descriptor
 // match of a face already kept — one person can't appear twice in a photo.
 // Between a nested pair the LARGER box wins (the smaller is usually a partial
 // face); otherwise the higher score wins.
-export function dedupeFaces<T extends ScoredFace>(faces: T[]): T[] {
+export function dedupeFaces<T extends ScoredFace>(faces: T[], imageWidth?: number): T[] {
   const kept: T[] = [];
   for (const c of [...faces].sort((a, b) => b.score - a.score)) {
-    const i = kept.findIndex((k) => sameFace(c, k));
+    const i = kept.findIndex((k) => sameFace(c, k, imageWidth));
     if (i === -1) kept.push(c);
     else if (containment(c.box, kept[i].box) >= DEDUPE_CONTAIN
              && c.box.width * c.box.height > kept[i].box.width * kept[i].box.height) kept[i] = c;

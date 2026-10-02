@@ -20,6 +20,8 @@ import Link from "next/link";
 import { sharePhoto } from "@/lib/shareUtils";
 import { shareTrip } from "@/lib/tripShareUtils";
 import ShareCardModal from "@/components/ShareCardModal";
+import PhotoDetailsEditor from "@/components/PhotoDetailsEditor";
+import type { PhotoDetailsPatch } from "@/lib/photosApi";
 import { loadImage, drawImageCover } from "@/lib/canvasCard";
 import { Trip, tripKeyOf, detectTrips, getPhotoDate } from "@/lib/trips";
 import { msg, useLang, translate, currentLang, localeOf } from "@/lib/i18n";
@@ -233,9 +235,10 @@ function DiaryModal({
 }
 
 function PhotoModal({
-  photo, onClose, onDelete, onDownload, onShare, sharing, uid, onLandmarkSaved, saved, onToggleSaved, onRenamed,
+  photo, onClose, onDelete, onDownload, onShare, sharing, uid, onLandmarkSaved, saved, onToggleSaved, onRenamed, onDetailsSaved,
 }: {
   onRenamed: (photoId: string, fileName: string) => void;
+  onDetailsSaved: (photoId: string, patch: PhotoDetailsPatch) => void;
   photo: MapPhoto; onClose: () => void;
   saved: boolean; onToggleSaved: (e: React.MouseEvent) => void;
   onDelete: (id: string) => void; onDownload: (photo: MapPhoto) => void;
@@ -245,6 +248,7 @@ function PhotoModal({
 }) {
   const { t } = useLang();
   const alreadyAnalyzed = !!photo.landmarkAnalyzedAt;
+  const [editingDetails, setEditingDetails] = useState(false);
   const [landmarkLoading, setLandmarkLoading] = useState(false);
   const [landmarkResult,  setLandmarkResult]  = useState<{ landmark: string | null; description: string | null } | null>(
     alreadyAnalyzed ? { landmark: photo.landmarkName ?? null, description: photo.landmarkDescription ?? null } : null,
@@ -394,8 +398,20 @@ function PhotoModal({
           ))}
         </div>
         <div className="p-4 pb-5 grid grid-cols-2 gap-2">
-          {photo.captureDate && photo.captureDate !== "Not available" && <InfoChip label={t("Taken")} value={photo.captureDate} />}
-          {photo.location && <div className="col-span-2"><InfoChip label={t("Location")} value={photo.location} /></div>}
+          {editingDetails && uid ? (
+            <PhotoDetailsEditor key={photo.id} photo={photo} uid={uid}
+              onCancel={() => setEditingDetails(false)}
+              onSaved={(patch) => { onDetailsSaved(photo.id, patch); setEditingDetails(false); }} />
+          ) : (
+            <>
+              {photo.captureDate && photo.captureDate !== "Not available" && <InfoChip label={t("Taken")} value={photo.captureDate} />}
+              {photo.location && <div className="col-span-2"><InfoChip label={t("Location")} value={photo.location} /></div>}
+              <button type="button" onClick={() => setEditingDetails(true)}
+                className="col-span-2 flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-200 py-2 text-xs font-bold text-slate-500 hover:text-blue-600 hover:border-sky-300 transition-colors">
+                <Pencil size={12} /> {t("Edit date & place")}
+              </button>
+            </>
+          )}
           <InfoChip label={t("AI label")} value={(photo.faceCount ?? 0) > 0 ? t("With people ({n})", { n: photo.faceCount ?? 0 }) : t("Scenery")} />
           {!landmarkResult && (
             <button onClick={handleRecognizeLandmark} disabled={landmarkLoading}
@@ -1168,6 +1184,18 @@ export default function AlbumsPage() {
           onRenamed={(id, fileName) => {
             setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, fileName } : p)));
             setSelectedPhoto((prev) => (prev && prev.id === id ? { ...prev, fileName } : prev));
+          }}
+          onDetailsSaved={(id, patch) => {
+            // Trips, months and the map are worked out from these fields, so they follow.
+            const apply = (p: MapPhoto): MapPhoto => ({
+              ...p,
+              ...(patch.captureTimestamp !== undefined && { captureTimestamp: patch.captureTimestamp }),
+              ...(patch.captureDate !== undefined && { captureDate: patch.captureDate }),
+              ...(patch.captureTime !== undefined && { captureTime: patch.captureTime ?? undefined }),
+              ...(patch.lat !== undefined && { lat: patch.lat, lng: patch.lng, location: patch.location }),
+            });
+            setPhotos((prev) => prev.map((p) => (p.id === id ? apply(p) : p)));
+            setSelectedPhoto((prev) => (prev && prev.id === id ? apply(prev) : prev));
           }}
           saved={savedIds.has(selectedPhoto.id)}
           onToggleSaved={(e) => handleToggleSaved(e, selectedPhoto)}

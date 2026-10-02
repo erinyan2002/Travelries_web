@@ -11,6 +11,7 @@ import { cropFaceThumbnails, forwardGeocode, reverseGeocode } from "@/lib/upload
 import type { Person } from "@/lib/peopleApi";
 import { msg, useLang, localeOf } from "@/lib/i18n";
 import { captureFromDateInput, toDateInputValue } from "@/lib/manualDate";
+import { faceBoxStyle } from "@/lib/faceBadge";
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -339,10 +340,10 @@ function ReviewModal({ item, people, onCreatePerson, otherPlaces, toSave, onSave
             <img src={item.previewUrl} alt={item.name} className="block max-w-full max-h-[45vh] w-auto h-auto" />
             {boxes.map((b, i) => (
               <div key={i} onClick={() => toggleFace(i)}
-                className={`absolute rounded-sm border-2 cursor-pointer transition-colors ${
+                className={`absolute rounded-sm ${faceBoxStyle(b.width).border} cursor-pointer transition-colors ${
                   selected.has(i) ? "border-emerald-400 bg-emerald-400/10" : "border-slate-300/80 border-dashed"}`}
                 style={{ left: `${b.x * 100}%`, top: `${b.y * 100}%`, width: `${b.width * 100}%`, height: `${b.height * 100}%` }}>
-                <span className={`absolute -top-2.5 -left-2.5 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white ${
+                <span className={`absolute ${faceBoxStyle(b.width).badge} flex items-center justify-center rounded-full font-bold text-white ${
                   selected.has(i) ? "bg-emerald-500" : "bg-slate-400"}`}>{i + 1}</span>
               </div>
             ))}

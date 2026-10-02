@@ -24,6 +24,7 @@ import BatchUploadPanel, { BatchFile, BatchPhase } from "@/components/BatchUploa
 import { guessLocationByTime, describeGap, LocatedShot } from "@/lib/locationGuess";
 import { msg, useLang, localeOf } from "@/lib/i18n";
 import { captureFromDateInput, toDateInputValue } from "@/lib/manualDate";
+import { faceBoxStyle } from "@/lib/faceBadge";
 import { BACKEND_URL } from "@/lib/backend";
 import { newId } from "@/lib/id";
 import { runFaceDetection, DetectionResult } from "@/lib/faceDetection";
@@ -1106,7 +1107,7 @@ export default function HomePage() {
                         <div
                           key={i}
                           onClick={selectable ? () => toggleFaceSelection(i) : undefined}
-                          className={`absolute rounded-sm border-2 transition-colors ${
+                          className={`absolute rounded-sm ${faceBoxStyle(b.width).border} transition-colors ${
                             selectable
                               ? `cursor-pointer ${selected ? "border-emerald-400 bg-emerald-400/10" : "border-sky-400 hover:border-sky-500"}`
                               : "border-sky-400 pointer-events-none"
@@ -1119,7 +1120,7 @@ export default function HomePage() {
                           }}
                         >
                           {selectable && (
-                            <span className={`absolute -top-2.5 -left-2.5 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white ${
+                            <span className={`absolute ${faceBoxStyle(b.width).badge} flex items-center justify-center rounded-full font-bold text-white ${
                               selected ? "bg-emerald-500" : "bg-sky-500"
                             }`}>
                               {i + 1}

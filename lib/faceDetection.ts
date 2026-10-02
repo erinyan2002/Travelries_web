@@ -145,7 +145,7 @@ export async function runFaceDetection(
     // so drop any face that overlaps or is a near-identical descriptor match of a
     // higher-scoring one already kept.
     confirmed.push(...ssdOnlyFaces(ssdFaces, confirmed));
-    const kept = dedupeFaces(confirmed);
+    const kept = dedupeFaces(confirmed, W);
     kept.sort((a, b) => a.box.x - b.box.x); // stable left-to-right numbering
 
     return {

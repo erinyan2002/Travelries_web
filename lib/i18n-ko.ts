@@ -661,4 +661,8 @@ export const KO: Record<string, string> = {
   "started following you": "님이 나를 팔로우하기 시작했어요",
   "Follow back": "맞팔로우",
   "Someone started following you": "누군가 나를 팔로우하기 시작했어요",
+  // Edit photo details
+  "New:": "새 장소:",
+  "Couldn't save. Please try again.": "저장하지 못했어요. 다시 시도해 주세요.",
+  "Edit date & place": "날짜·장소 수정",
 };

@@ -4,6 +4,7 @@
 import { supabase, getSessionUser } from "./supabase";
 import { MapPhoto, FacePhoto, rowToMapPhoto, rowToFacePhoto } from "./types";
 import { base64ToBlob } from "./imageUtils";
+import { selectAllPages } from "./paging";
 
 export async function currentUserId(): Promise<string | null> {
   const { data: { user } } = await getSessionUser();
@@ -27,12 +28,16 @@ async function fetchPhotoRows(
   only?: "map" | "face",
   ids?: string[],
 ): Promise<Record<string, unknown>[]> {
-  let q = supabase.from("photos").select(columns).eq("user_id", uid);
-  // Filter in the database instead of downloading every row and dropping most.
-  if (only === "map") q = q.eq("is_map_photo", true);
-  if (only === "face") q = q.eq("is_face_photo", true);
-  if (ids) q = q.in("id", ids);
-  const { data, error } = await q.order("uploaded_at", { ascending: false });
+  // Paged past Supabase's 1,000-row cap (lib/paging.ts); `id` breaks ties so
+  // no row is skipped or repeated between pages.
+  const { data, error } = await selectAllPages((from, to) => {
+    let q = supabase.from("photos").select(columns).eq("user_id", uid);
+    // Filter in the database instead of downloading every row and dropping most.
+    if (only === "map") q = q.eq("is_map_photo", true);
+    if (only === "face") q = q.eq("is_face_photo", true);
+    if (ids) q = q.in("id", ids);
+    return q.order("uploaded_at", { ascending: false }).order("id").range(from, to);
+  });
   if (error) {
     console.error("fetchPhotoRows failed:", error.message);
     return [];
@@ -71,7 +76,8 @@ export async function fetchAllPhotos(uid: string): Promise<{ mapPhotos: MapPhoto
 }
 
 export async function fetchSavedIds(uid: string): Promise<Set<string>> {
-  const { data, error } = await supabase.from("saved_photos").select("photo_id").eq("user_id", uid);
+  const { data, error } = await selectAllPages((from, to) =>
+    supabase.from("saved_photos").select("photo_id").eq("user_id", uid).order("photo_id").range(from, to));
   if (error) {
     console.error("fetchSavedIds failed:", error);
     return new Set();
@@ -216,6 +222,26 @@ export async function renamePhoto(uid: string, photoId: string, fileName: string
   if (error) throw new Error(error.message);
 }
 
+// Fixes a saved photo's date or place (Albums → photo → Edit date & place). Only
+// the fields passed are written; a new place also makes it a map photo.
+export type PhotoDetailsPatch = {
+  captureTimestamp?: string; captureDate?: string; captureTime?: string | null;
+  lat?: number; lng?: number; location?: string;
+};
+export async function updatePhotoDetails(uid: string, photoId: string, patch: PhotoDetailsPatch): Promise<void> {
+  const row: Record<string, unknown> = {};
+  if (patch.captureTimestamp !== undefined) row.capture_timestamp = patch.captureTimestamp;
+  if (patch.captureDate      !== undefined) row.capture_date = patch.captureDate;
+  if (patch.captureTime      !== undefined) row.capture_time = patch.captureTime;
+  if (patch.lat              !== undefined) row.lat = patch.lat;
+  if (patch.lng              !== undefined) row.lng = patch.lng;
+  if (patch.location         !== undefined) row.location = patch.location;
+  if (Object.keys(row).length === 0) return;
+  const { data, error } = await supabase.from("photos").update(row).eq("id", photoId).eq("user_id", uid).select("id");
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) throw new Error("Photo not found or already deleted");
+}
+
 // Removes ONE detected face from a photo (e.g. a stranger caught in a group
 // shot, or a face saved by mistake) without deleting the photo itself — it
 // stays in Albums/Map exactly as before. The face's array entries can't just
@@ -271,9 +297,11 @@ export async function removeFaceFromPhoto(uid: string, photoId: string, boxIndex
 // their photos (or faces) were deleted, the names used to linger in the upload
 // picker's "Who?" list with no way to remove them.
 export async function pruneOrphanPeople(uid: string): Promise<number> {
+  // Every tagged photo must be read: judged from a partial list, people still in
+  // use looked unused and were deleted.
   const [{ data: people, error: pe }, { data: rows, error: re }] = await Promise.all([
-    supabase.from("people").select("id").eq("user_id", uid),
-    supabase.from("photos").select("person_ids").eq("user_id", uid).not("person_ids", "is", null),
+    selectAllPages((from, to) => supabase.from("people").select("id").eq("user_id", uid).order("id").range(from, to)),
+    selectAllPages((from, to) => supabase.from("photos").select("person_ids").eq("user_id", uid).not("person_ids", "is", null).order("id").range(from, to)),
   ]);
   if (pe || re || !people?.length) return 0;
   const used = new Set<string>();
@@ -312,7 +340,8 @@ export async function deletePhotoEverywhere(uid: string, photoId: string, { prun
 // Storage files are kept, like deletePhotoEverywhere: feed posts and share links
 // still point at them.
 export async function deleteAllPhotos(uid: string): Promise<{ deleted: number; failed: number }> {
-  const { data, error } = await supabase.from("photos").select("id").eq("user_id", uid);
+  const { data, error } = await selectAllPages((from, to) =>
+    supabase.from("photos").select("id").eq("user_id", uid).order("id").range(from, to));
   if (error) throw new Error(error.message);
   let deleted = 0, failed = 0;
   for (const row of data ?? []) {
@@ -339,9 +368,10 @@ export async function countPhotos(uid: string): Promise<number> {
 // to Faces are deleted outright, since they exist only for their faces. Map photos
 // keep the photo and lose every face column. Named people go too.
 export async function deleteAllFaceData(uid: string): Promise<{ photosCleared: number; faceOnlyDeleted: number }> {
-  const { data: faceOnly, error: listError } = await supabase
+  const { data: faceOnly, error: listError } = await selectAllPages((from, to) => supabase
     .from("photos").select("id")
-    .eq("user_id", uid).eq("is_face_photo", true).not("is_map_photo", "is", true);
+    .eq("user_id", uid).eq("is_face_photo", true).not("is_map_photo", "is", true)
+    .order("id").range(from, to));
   if (listError) throw new Error(listError.message);
   for (const row of faceOnly ?? []) await deletePhotoEverywhere(uid, row.id as string, { prune: false });
 
