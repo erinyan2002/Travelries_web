@@ -3,7 +3,7 @@
 // fallbacks. See the "Face detection" section of CLAUDE.md.
 import * as faceapi from "face-api.js";
 import { detectFacesMediaPipe } from "./mediapipeDetector";
-import { boxIoU, pickCropMatch, dedupeFaces, pickSsdAgreement, ssdOnlyFaces } from "./faceMatching";
+import { boxIoU, pickCropMatch, dedupeFaces, pickSsdAgreement, ssdOnlyFaces, ssdSupports } from "./faceMatching";
 
 export type DetectionResult = {
   count:       number;
@@ -19,13 +19,23 @@ const RETRY_MIN_MP_SCORE = 0.65;
 
 export async function runFaceDetection(
   imgEl: HTMLImageElement,
-  modelType: "mediapipe" | "ssd" | "tiny",
+  modelType: "mediapipe" | "ssd" | "tiny" | "mediapipe-only",
   hasExtra: boolean,
 ): Promise<DetectionResult> {
   const MIN_PX = 20;
   const W = imgEl.naturalWidth, H = imgEl.naturalHeight;
   const normBox = (b: { x: number; y: number; width: number; height: number }) =>
     ({ x: b.x / W, y: b.y / H, width: b.width / W, height: b.height / H });
+
+  // Evaluation only (Home's ?detector=mediapipe): MediaPipe's raw boxes, without
+  // the face-api confirmation and SSD steps below, to measure what they add.
+  if (modelType === "mediapipe-only") {
+    const raw = (await detectFacesMediaPipe(imgEl)).filter((b) => b.width >= MIN_PX && b.height >= MIN_PX);
+    return {
+      count: raw.length, boxes: raw.map(normBox), descriptors: [],
+      confidences: raw.map((b) => b.score), ages: [], genders: [], expressions: [],
+    };
+  }
 
   if (modelType === "mediapipe") {
     const mpBoxes = await detectFacesMediaPipe(imgEl);
@@ -51,7 +61,8 @@ export async function runFaceDetection(
     // Second opinion: face-api's SSD over the whole photo (loaded in the
     // background after MediaPipe; skipped until it's ready). See pickSsdAgreement /
     // ssdOnlyFaces in faceMatching.ts for how it's used.
-    const ssdFaces: Confirmed[] = faceapi.nets.ssdMobilenetv1.isLoaded
+    const ssdLoaded = faceapi.nets.ssdMobilenetv1.isLoaded;
+    const ssdFaces: Confirmed[] = ssdLoaded
       ? (await faceapi.detectAllFaces(imgEl, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 }))
           .withFaceLandmarks().withFaceDescriptors())
           .filter((r) => r.detection.box.width >= MIN_PX && r.detection.box.height >= MIN_PX)
@@ -123,8 +134,13 @@ export async function runFaceDetection(
       // had a MediaPipe score <= 0.64, while real faces that only the retry caught
       // (cut off at the frame edge, turned away) scored 0.68-0.89. So the retry
       // only gets to rescue a box MediaPipe itself was sure about.
-      const match = pickCropMatch(await detectInCrop(tinyOpts), box)
-        ?? (box.score >= RETRY_MIN_MP_SCORE ? pickCropMatch(await detectInCrop(retryOpts), box) : null);
+      // A retry-only match also needs SSD to see a face there (ssdSupports), once SSD
+      // has loaded; before that the retry is taken on its own as before.
+      const firstPass = pickCropMatch(await detectInCrop(tinyOpts), box);
+      const retried = !firstPass && box.score >= RETRY_MIN_MP_SCORE
+        ? pickCropMatch(await detectInCrop(retryOpts), box) : null;
+      const match = firstPass
+        ?? (retried && (!ssdLoaded || ssdSupports(ssdFaces, retried.box)) ? retried : null);
       if (!match) {
         const agreed = pickSsdAgreement(ssdFaces, box);
         if (agreed) { confirmed.push(agreed); continue; }
@@ -145,7 +161,7 @@ export async function runFaceDetection(
     // so drop any face that overlaps or is a near-identical descriptor match of a
     // higher-scoring one already kept.
     confirmed.push(...ssdOnlyFaces(ssdFaces, confirmed));
-    const kept = dedupeFaces(confirmed, W);
+    const kept = dedupeFaces(confirmed);
     kept.sort((a, b) => a.box.x - b.box.x); // stable left-to-right numbering
 
     return {

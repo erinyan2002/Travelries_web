@@ -70,7 +70,7 @@ export function HomeHero({
             {hour === null ? t("Welcome back") : t(greetingFor(hour))}
             {name && <>,<br className="sm:hidden" /> <span className="bg-gradient-to-r from-sky-500 to-blue-600 bg-clip-text text-transparent">{name}</span></>}
           </h1>
-          <p className="text-slate-500 text-sm sm:text-[15px] mt-2 max-w-md">
+          <p className="text-slate-500 text-sm sm:text-[15px] mt-2 max-w-md text-balance">
             {t("Add your travel photos. We'll pin them on your map, find the people in them and turn them into trips.")}
           </p>
 
@@ -104,9 +104,12 @@ export function HomeHero({
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={p.imageUrl} alt="" className="w-full h-[120px] object-cover rounded-sm bg-slate-100" />
-                <p className="absolute bottom-1.5 left-2 right-2 text-[10px] font-semibold text-slate-500 truncate">
-                  {placeLabel(p) ?? p.fileName}
-                </p>
+                {/* Only the top card is labelled: the back cards' labels sat half under it */}
+                {i === stack.length - 1 && (
+                  <p className="absolute bottom-1.5 left-2 right-2 text-[10px] font-semibold text-slate-500 truncate">
+                    {placeLabel(p) ?? p.fileName}
+                  </p>
+                )}
               </motion.div>
             );
           }) : (

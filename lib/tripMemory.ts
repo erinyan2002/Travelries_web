@@ -167,6 +167,9 @@ export function formatTripDates(start: Date, end: Date, lang: "en" | "ko" = "en"
 }
 
 export function formatDistance(km: number): string {
+  // 0 means no movement could be measured (photos without GPS, or all pinned to
+  // one place by hand), not "stayed put": "0 m traveled" read as a bug.
+  if (km === 0) return "—";
   if (km < 1) return `${Math.round(km * 1000)} m`;
   return `${km < 10 ? km.toFixed(1) : Math.round(km)} km`;
 }

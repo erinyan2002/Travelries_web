@@ -83,6 +83,7 @@ describe("formatting", () => {
   });
 
   it("formats distances", () => {
+    expect(formatDistance(0)).toBe("—");
     expect(formatDistance(0.42)).toBe("420 m");
     expect(formatDistance(3.456)).toBe("3.5 km");
     expect(formatDistance(37.4)).toBe("37 km");

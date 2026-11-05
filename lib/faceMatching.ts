@@ -37,10 +37,12 @@ export function descriptorDistance(a: number[], b: number[]): number {
 // face that also fell inside the padded crop).
 export const CROP_MATCH_IOU = 0.3;
 // Final same-face dedupe. The same face seen through two slightly different
-// crops gives descriptors ~0.1-0.3 apart; two different people in one photo are
-// essentially never under 0.4 (face-api's own same-person threshold is 0.6).
+// crops gives descriptors ~0.1-0.3 apart, but so do different people: on 31 test
+// photos, 30+ pairs of different people standing apart were 0.21-0.40 apart. So a
+// close descriptor only merges boxes that also overlap (DEDUPE_DESC_OVERLAP).
 export const DEDUPE_IOU = 0.4;
 export const DEDUPE_DESC_DIST = 0.4;
+export const DEDUPE_DESC_OVERLAP = 0.3;
 // A box this much inside another is the same face (two people's faces never nest).
 export const DEDUPE_CONTAIN = 0.6;
 
@@ -80,39 +82,43 @@ export function pickSsdAgreement<T extends ScoredFace>(ssd: T[], mpBox: Box): T 
   return best;
 }
 
+// The permissive retry pass (score 0.01) also "confirms" non-faces when MediaPipe
+// was fairly sure: on 31 test photos its 3 false boxes (the back of a head, a body,
+// food) had no SSD detection at all, while all 10 real faces it rescued had one
+// (SSD ≥ 0.42). So a retry-only match needs SSD to see a face there too.
+export function ssdSupports(ssd: { box: Box }[], box: Box): boolean {
+  return ssd.some((f) => overlaps(f.box, box));
+}
+
+// An SSD face already this much under a kept box is the same face with an offset
+// box, not a face MediaPipe missed (a group photo got two boxes on one man at
+// 0.48; the closest real neighbour was 0.40).
+export const SSD_ONLY_COVERED = 0.45;
+
 // SSD faces that nothing kept so far covers: faces MediaPipe never localized.
 export function ssdOnlyFaces<T extends ScoredFace>(ssd: T[], kept: { box: Box }[]): T[] {
-  return ssd.filter((f) => f.score >= SSD_ONLY_SCORE && !kept.some((k) => overlaps(f.box, k.box)));
+  return ssd.filter((f) => f.score >= SSD_ONLY_SCORE
+    && !kept.some((k) => overlaps(f.box, k.box) || containment(f.box, k.box) >= SSD_ONLY_COVERED));
 }
 
-// A near-identical descriptor alone only merges two boxes that sit close together
-// (centres within 1.5 face widths) or two LARGE faces (each ≥ 12% of the photo's
-// width, e.g. the same couple in four photo-booth frames). Small faces in a group
-// photo have weak descriptors, and two different people far apart in the row
-// could fall under 0.4 and be merged into one, dropping a person.
-export const DEDUPE_NEAR = 1.5;
-export const LARGE_FACE_SHARE = 0.12;
-
-function near(a: Box, b: Box): boolean {
-  const dx = (a.x + a.width / 2) - (b.x + b.width / 2), dy = (a.y + a.height / 2) - (b.y + b.height / 2);
-  return Math.hypot(dx, dy) <= DEDUPE_NEAR * Math.max(a.width, b.width);
+// A close descriptor used to also merge boxes that didn't overlap at all: two
+// faces side by side, or two large faces anywhere (meant for one couple repeated
+// in photo-booth frames). That deleted real people, e.g. the biggest face in a
+// 6-friend selfie (0.34 from the friend next to her). Keeping a repeated
+// photo-booth face is the safer mistake: the user can untick it before saving.
+function sameFace(a: ScoredFace, b: ScoredFace): boolean {
+  const contain = containment(a.box, b.box);
+  if (boxIoU(a.box, b.box) >= DEDUPE_IOU || contain >= DEDUPE_CONTAIN) return true;
+  return contain >= DEDUPE_DESC_OVERLAP && descriptorDistance(a.descriptor, b.descriptor) < DEDUPE_DESC_DIST;
 }
 
-function sameFace(a: ScoredFace, b: ScoredFace, imageWidth?: number): boolean {
-  if (boxIoU(a.box, b.box) >= DEDUPE_IOU || containment(a.box, b.box) >= DEDUPE_CONTAIN) return true;
-  const large = imageWidth !== undefined
-    && Math.min(a.box.width, b.box.width) >= LARGE_FACE_SHARE * imageWidth;
-  return (large || near(a.box, b.box)) && descriptorDistance(a.descriptor, b.descriptor) < DEDUPE_DESC_DIST;
-}
-
-// Drops any face that overlaps, sits inside, or is a near-identical descriptor
-// match of a face already kept — one person can't appear twice in a photo.
-// Between a nested pair the LARGER box wins (the smaller is usually a partial
-// face); otherwise the higher score wins.
-export function dedupeFaces<T extends ScoredFace>(faces: T[], imageWidth?: number): T[] {
+// Drops any face that overlaps, sits inside, or overlaps with a near-identical
+// descriptor a face already kept. Between a nested pair the LARGER box wins (the
+// smaller is usually a partial face); otherwise the higher score wins.
+export function dedupeFaces<T extends ScoredFace>(faces: T[]): T[] {
   const kept: T[] = [];
   for (const c of [...faces].sort((a, b) => b.score - a.score)) {
-    const i = kept.findIndex((k) => sameFace(c, k, imageWidth));
+    const i = kept.findIndex((k) => sameFace(c, k));
     if (i === -1) kept.push(c);
     else if (containment(c.box, kept[i].box) >= DEDUPE_CONTAIN
              && c.box.width * c.box.height > kept[i].box.width * kept[i].box.height) kept[i] = c;

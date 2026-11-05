@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { boxIoU, descriptorDistance, pickCropMatch, dedupeFaces, containment, nestedDuplicateIndices, pickSsdAgreement, ssdOnlyFaces } from "./faceMatching";
+import { boxIoU, descriptorDistance, pickCropMatch, dedupeFaces, containment, nestedDuplicateIndices, pickSsdAgreement, ssdOnlyFaces, ssdSupports } from "./faceMatching";
 
 const box = (x: number, y: number, w = 100, h = 100) => ({ x, y, width: w, height: h });
 
@@ -42,24 +42,24 @@ describe("dedupeFaces", () => {
     expect(dedupeFaces([b, a])).toEqual([a]);
   });
 
-  it("drops a near-identical descriptor even when boxes barely overlap", () => {
+  it("drops a near-identical descriptor on partly overlapping boxes", () => {
     const a = { box: box(0, 0), score: 0.9, descriptor: d(0.1) };
-    const b = { box: box(90, 90), score: 0.8, descriptor: d(0.1) };
+    const b = { box: box(40, 40), score: 0.8, descriptor: d(0.1) };
     expect(dedupeFaces([a, b])).toHaveLength(1);
   });
 
-  it("keeps two small faces far apart in a group photo, even with close descriptors", () => {
-    // 4000px-wide group photo, faces ~100px: different people at the two ends of the row.
-    const a = { box: box(400, 1200), score: 0.9, descriptor: d(0.1) };
-    const b = { box: box(2600, 1210), score: 0.8, descriptor: d(0.12) };
-    expect(dedupeFaces([a, b], 4000)).toHaveLength(2);
+  it("keeps two friends side by side in a selfie, even with close descriptors", () => {
+    // The 6-friend lakeside selfie: the biggest face was dropped as a "duplicate"
+    // of the friend next to her (descriptors 0.34 apart, boxes barely touching).
+    const a = { box: box(1001, 544, 427, 333), score: 0.99, descriptor: d(0.1) };
+    const b = { box: box(652, 465, 430, 385), score: 0.98, descriptor: d(0.13) };
+    expect(dedupeFaces([a, b])).toHaveLength(2);
   });
 
-  it("still merges one couple repeated in large photo-booth frames", () => {
-    // 1000px-wide strip, faces 200px (20% of the width) in frames far apart.
-    const a = { box: box(100, 100, 200, 240), score: 0.9, descriptor: d(0.1) };
-    const b = { box: box(600, 700, 200, 240), score: 0.8, descriptor: d(0.11) };
-    expect(dedupeFaces([a, b], 1000)).toHaveLength(1);
+  it("keeps two small faces far apart in a group photo, even with close descriptors", () => {
+    const a = { box: box(400, 1200), score: 0.9, descriptor: d(0.1) };
+    const b = { box: box(2600, 1210), score: 0.8, descriptor: d(0.12) };
+    expect(dedupeFaces([a, b])).toHaveLength(2);
   });
 
   it("keeps two different people", () => {
@@ -116,5 +116,16 @@ describe("SSD second opinion", () => {
   it("adds strong-enough SSD faces nothing kept covers", () => {
     const kept = [face(box(0, 268, 121, 224), 0.67)];
     expect(ssdOnlyFaces(ssd, kept).map((f) => f.score)).toEqual([0.47]);
+  });
+
+  it("does not add an SSD face that is half under a kept box (same face, offset box)", () => {
+    const offset = [face(box(100, 100, 100, 100), 0.98)];
+    expect(ssdOnlyFaces(offset, [face(box(150, 100, 100, 100), 0.99)])).toEqual([]);
+    expect(ssdOnlyFaces(offset, [face(box(170, 100, 100, 100), 0.99)])).toHaveLength(1); // 30%: a neighbour
+  });
+
+  it("only backs a retry-only match where SSD saw a face", () => {
+    expect(ssdSupports(ssd, box(0, 300, 130, 200))).toBe(true);
+    expect(ssdSupports(ssd, box(400, 500, 80, 80))).toBe(false); // e.g. the back of a head
   });
 });

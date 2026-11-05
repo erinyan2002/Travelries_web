@@ -132,6 +132,9 @@ export default function HomePage() {
   const [faceAnalysisOn, setFaceAnalysisOn] = useState(true);
   const [modelType,      setModelType]      = useState<"mediapipe" | "ssd" | "tiny">("tiny");
   const [backendStatus,  setBackendStatus]  = useState<"checking" | "online" | "offline">("checking");
+  // Evaluation mode for the poster's detector comparison: ?detector=mediapipe or
+  // ?detector=ssd runs only that detector, in browser mode, and nothing is saved.
+  const [evalDetector,   setEvalDetector]   = useState<"mediapipe-only" | "ssd" | null>(null);
   const [locationQuery,  setLocationQuery]  = useState("");
   const [manualCoords,   setManualCoords]   = useState<{ lat: number; lng: number; name: string } | null>(null);
   const [locationStatus, setLocationStatus] = useState<"idle" | "searching" | "done" | "error">("idle");
@@ -239,10 +242,25 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
+    const d = new URLSearchParams(window.location.search).get("detector");
+    const evalMode = d === "mediapipe" ? "mediapipe-only" : d === "ssd" ? "ssd" : null;
+    if (evalMode) {
+      setEvalDetector(evalMode);
+      setBackendStatus("offline");
+      return;
+    }
     fetch(`${BACKEND_URL}/health`)
       .then((r) => setBackendStatus(r.ok ? "online" : "offline"))
       .catch(() => setBackendStatus("offline"));
   }, []);
+
+  // Browser-mode detection, or only the evaluation detector when ?detector= is set.
+  async function detectFaces(imgEl: HTMLImageElement): Promise<DetectionResult> {
+    if (evalDetector === "ssd" && !faceapi.nets.ssdMobilenetv1.isLoaded) {
+      await faceapi.nets.ssdMobilenetv1.loadFromUri("/models");
+    }
+    return runFaceDetection(imgEl, evalDetector ?? modelType, hasExtraModels);
+  }
 
   async function finalizeFaceUpload(
     file: File,
@@ -435,7 +453,7 @@ export default function HomePage() {
         }
         if (isModelLoaded && faceAnalysisOn) {
           const imgEl = await faceapi.fetchImage(URL.createObjectURL(file));
-          const r = await runFaceDetection(imgEl, modelType, hasExtraModels);
+          const r = await detectFaces(imgEl);
           detectedFaceCount = r.count;
           faceBoxes         = r.boxes;
           faceDescriptors   = r.descriptors;
@@ -585,7 +603,7 @@ export default function HomePage() {
           }
           if (isModelLoaded && faceAnalysisOn) {
             const imgEl = await faceapi.fetchImage(URL.createObjectURL(file));
-            const r = await runFaceDetection(imgEl, modelType, hasExtraModels);
+            const r = await detectFaces(imgEl);
             faceCount       = r.count;
             faceBoxes       = r.boxes;
             faceDescriptors = r.descriptors;
@@ -658,6 +676,7 @@ export default function HomePage() {
   // Batch step 2: save the reviewed photos — only the faces left selected, with
   // any "Who?" tags (index-aligned with boxes, like handleSave).
   async function saveBatch() {
+    if (evalDetector) { alert("측정 모드에서는 저장되지 않습니다. (Evaluation mode: nothing is saved.)"); return; }
     setBatchPhase("saving");
     const items = [...batchItems];
     const { data: { user } } = await getSessionUser();
@@ -754,6 +773,7 @@ export default function HomePage() {
   // Age, gender and expression are not saved: the estimates were often wrong.
   async function handleSave() {
     if (!selectedFile || !photoInfo || !rawFaces || isMapSaved || saving) return;
+    if (evalDetector) { alert("측정 모드에서는 저장되지 않습니다. (Evaluation mode: nothing is saved.)"); return; }
     const lat = photoInfo.lat ?? manualCoords?.lat ?? null;
     const lng = photoInfo.lng ?? manualCoords?.lng ?? null;
     const indices     = Array.from(selectedFaceIndices).sort((a, b) => a - b);
@@ -839,6 +859,12 @@ export default function HomePage() {
   return (
     <main className="min-h-screen px-4 sm:px-6 pt-16 xl:pt-8 pb-24 lg:pb-10">
       <div className="max-w-5xl mx-auto">
+
+        {evalDetector && (
+          <div className="mb-4 rounded-2xl border-2 border-amber-400 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+            측정 모드: {evalDetector === "ssd" ? "SSD" : "MediaPipe"} 단독 검출 · 저장되지 않음 (주소에서 ?detector=… 를 지우면 원래대로)
+          </div>
+        )}
 
         <HomeHero name={userName} hour={hour} stats={dashStats} photos={recentPhotos} />
 
