@@ -2,7 +2,6 @@ import { ImageResponse } from "next/og";
 
 export function renderPwaIcon(s: number) {
   const r = Math.round(s * 0.22);
-  const sw = Math.max(1.5, s * 0.03); // stroke width scales with icon size
 
   return new ImageResponse(
     (
@@ -32,7 +31,7 @@ export function renderPwaIcon(s: number) {
           viewBox="0 0 24 24"
           fill="none"
           stroke="white"
-          stroke-width={sw}
+          stroke-width="1.5"
           stroke-linecap="round"
           stroke-linejoin="round"
           style={{ position: "relative", zIndex: 1 }}
