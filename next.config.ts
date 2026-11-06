@@ -22,6 +22,15 @@ const nextConfig: NextConfig = {
   // unless told this is intended; the webpack hook above only matters for
   // `next dev --webpack`.
   turbopack: {},
+  // Face-detection models and the MediaPipe runtime (~26 MB) rarely change, so a
+  // phone keeps them for 30 days instead of re-checking them on every visit.
+  async headers() {
+    const cache = [{ key: "Cache-Control", value: "public, max-age=2592000, stale-while-revalidate=86400" }];
+    return [
+      { source: "/models/:path*", headers: cache },
+      { source: "/mediapipe-wasm/:path*", headers: cache },
+    ];
+  },
 };
 
 export default nextConfig;

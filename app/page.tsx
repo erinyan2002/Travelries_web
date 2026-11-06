@@ -31,7 +31,7 @@ import { runFaceDetection, DetectionResult } from "@/lib/faceDetection";
 import { isFaceAnalysisEnabled } from "@/lib/faceSettings";
 import { toDisplayableImage } from "@/lib/heic";
 import {
-  NearbyPlace, formatBytes, createThumbnailDataUrl, cropFaceThumbnails,
+  NearbyPlace, formatBytes, createThumbnailDataUrl, cropFaceThumbnails, loadImageForDetection,
   reverseGeocode, forwardGeocode, fetchNearbyPlaces, analyzeWithBackend,
 } from "@/lib/uploadHelpers";
 
@@ -130,7 +130,10 @@ export default function HomePage() {
   const [hasExtraModels, setHasExtraModels] = useState(false);
   // Profile → Face analysis. Off: no face detection runs and no face data is saved.
   const [faceAnalysisOn, setFaceAnalysisOn] = useState(true);
-  const [modelType,      setModelType]      = useState<"mediapipe" | "ssd" | "tiny">("tiny");
+  // Resolves with the detector once its models have loaded (null if none could).
+  // A photo picked while they still download waits on this: checking
+  // isModelLoaded there skipped face detection on a phone's first upload.
+  const modelReadyRef = useRef<Promise<"mediapipe" | "ssd" | "tiny" | null>>(Promise.resolve(null));
   const [backendStatus,  setBackendStatus]  = useState<"checking" | "online" | "offline">("checking");
   // Evaluation mode for the poster's detector comparison: ?detector=mediapipe or
   // ?detector=ssd runs only that detector, in browser mode, and nothing is saved.
@@ -200,6 +203,12 @@ export default function HomePage() {
 
   useEffect(() => {
     const MODEL_URL = "/models";
+    let markReady: (type: "mediapipe" | "ssd" | "tiny" | null) => void = () => {};
+    modelReadyRef.current = new Promise((resolve) => { markReady = resolve; });
+    function ready(type: "mediapipe" | "ssd" | "tiny") {
+      setIsModelLoaded(true);
+      markReady(type);
+    }
 
     function loadExtras() {
       Promise.all([
@@ -214,13 +223,12 @@ export default function HomePage() {
         faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
         faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
       ]).then(() => {
-        setModelType("ssd");
-        setIsModelLoaded(true);
+        ready("ssd");
         loadExtras();
       }).catch(() => {
         faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL)
-          .then(() => { setModelType("tiny"); setIsModelLoaded(true); })
-          .catch((err) => console.error("AI model load failed", err));
+          .then(() => ready("tiny"))
+          .catch((err) => { console.error("AI model load failed", err); markReady(null); });
       });
     }
 
@@ -230,8 +238,7 @@ export default function HomePage() {
       faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
       faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
     ]).then(() => {
-      setModelType("mediapipe");
-      setIsModelLoaded(true);
+      ready("mediapipe");
       loadExtras();
       // SSD: runFaceDetection's second opinion for faces MediaPipe loses (cut off
       // at the frame edge, turned to the side). Optional — used once loaded.
@@ -255,11 +262,14 @@ export default function HomePage() {
   }, []);
 
   // Browser-mode detection, or only the evaluation detector when ?detector= is set.
-  async function detectFaces(imgEl: HTMLImageElement): Promise<DetectionResult> {
+  // `type` comes from modelReadyRef: a handler started before the models loaded
+  // would see a stale modelType from its render.
+  async function detectFaces(file: File, type: "mediapipe" | "ssd" | "tiny"): Promise<DetectionResult> {
     if (evalDetector === "ssd" && !faceapi.nets.ssdMobilenetv1.isLoaded) {
       await faceapi.nets.ssdMobilenetv1.loadFromUri("/models");
     }
-    return runFaceDetection(imgEl, evalDetector ?? modelType, hasExtraModels);
+    const imgEl = await loadImageForDetection(file);
+    return runFaceDetection(imgEl, evalDetector ?? type, hasExtraModels);
   }
 
   async function finalizeFaceUpload(
@@ -447,13 +457,11 @@ export default function HomePage() {
           captureTime = d.toLocaleTimeString();
           captureTimestamp = d.toISOString();
         }
-        if (lat !== null && lng !== null) {
-          const addr = await reverseGeocode(lat, lng);
-          location = addr || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-        }
-        if (isModelLoaded && faceAnalysisOn) {
-          const imgEl = await faceapi.fetchImage(URL.createObjectURL(file));
-          const r = await detectFaces(imgEl);
+        // The address lookup runs while the faces are detected, not before.
+        const addrPromise = lat !== null && lng !== null ? reverseGeocode(lat, lng) : null;
+        const detector = faceAnalysisOn ? await modelReadyRef.current : null;
+        if (detector) {
+          const r = await detectFaces(file, detector);
           detectedFaceCount = r.count;
           faceBoxes         = r.boxes;
           faceDescriptors   = r.descriptors;
@@ -461,6 +469,9 @@ export default function HomePage() {
           faceAges          = r.ages;
           faceGenders       = r.genders;
           faceExpressions   = r.expressions;
+        }
+        if (addrPromise && lat !== null && lng !== null) {
+          location = (await addrPromise) || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
         }
       }
 
@@ -597,17 +608,18 @@ export default function HomePage() {
             captureTime = d.toLocaleTimeString();
             captureTimestamp = d.toISOString();
           }
-          if (lat !== undefined && lng !== undefined) {
-            const addr = await reverseGeocode(lat, lng);
-            location = addr || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-          }
-          if (isModelLoaded && faceAnalysisOn) {
-            const imgEl = await faceapi.fetchImage(URL.createObjectURL(file));
-            const r = await detectFaces(imgEl);
+          // The address lookup runs while the faces are detected, not before.
+          const addrPromise = lat !== undefined && lng !== undefined ? reverseGeocode(lat, lng) : null;
+          const detector = faceAnalysisOn ? await modelReadyRef.current : null;
+          if (detector) {
+            const r = await detectFaces(file, detector);
             faceCount       = r.count;
             faceBoxes       = r.boxes;
             faceDescriptors = r.descriptors;
             faceConfs       = r.confidences;
+          }
+          if (addrPromise && lat !== undefined && lng !== undefined) {
+            location = (await addrPromise) || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
           }
         }
         const infoParts: string[] = [];

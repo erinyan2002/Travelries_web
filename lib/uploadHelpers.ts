@@ -35,6 +35,40 @@ export async function createThumbnailDataUrl(file: File, maxSize: number, qualit
   });
 }
 
+function loadImageUrl(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+// Browser face detection runs on a copy with its long side capped here. At a
+// 12 MP phone photo's full size it meant ~30 MediaPipe tiles plus face-api and
+// SSD passes over every pixel, several seconds per photo on a phone. Boxes are
+// normalized, so they fit the original photo all the same.
+export const DETECT_MAX_SIDE = 2048;
+
+export async function loadImageForDetection(file: File, maxSide = DETECT_MAX_SIDE): Promise<HTMLImageElement> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await loadImageUrl(url);
+    const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+    if (scale === 1) return img;
+    const canvas = document.createElement("canvas");
+    canvas.width  = Math.round(img.naturalWidth  * scale);
+    canvas.height = Math.round(img.naturalHeight * scale);
+    canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+    if (!blob) return img;
+    const smallUrl = URL.createObjectURL(blob);
+    try { return await loadImageUrl(smallUrl); } finally { URL.revokeObjectURL(smallUrl); }
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 // One square, cover-cropped thumbnail per detected face box (normalized 0-1 coords),
 // padded ~20% so the crop isn't a tight box right against the face — used for the
 // "pick who to save" picker when multiple faces are detected in one photo.
