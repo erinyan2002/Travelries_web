@@ -13,6 +13,8 @@ import { MapPhoto } from "@/lib/types";
 import CommentThread from "@/components/CommentThread";
 import ShareToModal from "@/components/ShareToModal";
 import ImageCropper from "@/components/ImageCropper";
+import LikersModal from "@/components/LikersModal";
+import EditCaptionModal from "@/components/EditCaptionModal";
 import { cropToBlob, CropRect } from "@/lib/crop";
 import {
   ensureProfile, searchProfiles, getFollowCounts, getFollowingIds,
@@ -23,7 +25,7 @@ import {
 } from "@/lib/socialUtils";
 import {
   Sparkles, Search, X, Heart, Plus, Loader2, MapPin, CalendarDays, Trash2, Users, UserPlus, UserCheck,
-  MessageCircle, Repeat2, Share2,
+  MessageCircle, Repeat2, Share2, Pencil,
 } from "lucide-react";
 import { useLang } from "@/lib/i18n";
 import { timeAgo } from "@/lib/timeAgo";
@@ -326,6 +328,8 @@ export default function FeedPage() {
   const [openComments, setOpenComments] = useState<Set<string>>(new Set());
 
   const [shareTarget, setShareTarget] = useState<Post | null>(null);
+  const [likersPostId, setLikersPostId] = useState<string | null>(null);
+  const [editTarget, setEditTarget] = useState<Post | null>(null);
 
   const [followList, setFollowList] = useState<{ kind: "following" | "followers"; profiles: Profile[] } | null>(null);
   const [followListLoading, setFollowListLoading] = useState(false);
@@ -512,9 +516,14 @@ export default function FeedPage() {
                   </Link>
                   <p className="text-xs text-slate-400">{timeAgo(post.createdAt, t)}</p>
                   {post.userId === uid && (
-                    <button onClick={() => setConfirmDeleteId(post.id)} className="text-slate-300 hover:text-red-500 transition-colors p-1">
-                      <Trash2 size={14} />
-                    </button>
+                    <>
+                      <button onClick={() => setEditTarget(post)} title={t("Edit post")} className="text-slate-300 hover:text-blue-600 transition-colors p-1">
+                        <Pencil size={14} />
+                      </button>
+                      <button onClick={() => setConfirmDeleteId(post.id)} className="text-slate-300 hover:text-red-500 transition-colors p-1">
+                        <Trash2 size={14} />
+                      </button>
+                    </>
                   )}
                 </div>
                 {post.trip ? (
@@ -527,10 +536,17 @@ export default function FeedPage() {
                 )}
                 <div className="px-4 py-3 space-y-1.5">
                   <div className="flex items-center gap-3">
-                    <button onClick={() => handleLike(post)} className="flex items-center gap-1.5 text-sm font-bold text-slate-600 hover:text-red-500 transition-colors">
-                      <Heart size={18} className={post.likedByMe ? "fill-red-500 text-red-500" : ""} />
-                      {post.likeCount > 0 && post.likeCount}
-                    </button>
+                    <span className="flex items-center gap-1.5">
+                      <button onClick={() => handleLike(post)} className="text-slate-600 hover:text-red-500 transition-colors">
+                        <Heart size={18} className={post.likedByMe ? "fill-red-500 text-red-500" : ""} />
+                      </button>
+                      {post.likeCount > 0 && (
+                        <button onClick={() => setLikersPostId(post.id)} title={t("See who liked this")}
+                          className="text-sm font-bold text-slate-600 hover:underline">
+                          {post.likeCount}
+                        </button>
+                      )}
+                    </span>
                     <button onClick={() => toggleComments(post.id)} className="flex items-center gap-1.5 text-sm font-bold text-slate-600 hover:text-blue-600 transition-colors">
                       <MessageCircle size={18} />
                       {post.commentCount > 0 && post.commentCount}
@@ -595,6 +611,17 @@ export default function FeedPage() {
           followingIds={followingIds}
           onToggleFollow={async (id) => { await handleFollowToggle(id); openFollowList(followList.kind); }}
           onClose={() => setFollowList(null)}
+        />
+      )}
+      {likersPostId && <LikersModal postId={likersPostId} onClose={() => setLikersPostId(null)} />}
+      {editTarget && uid && (
+        <EditCaptionModal
+          uid={uid} postId={editTarget.id} caption={editTarget.caption}
+          onSaved={(caption) => {
+            setPosts((prev) => prev.map((p) => p.id === editTarget.id ? { ...p, caption } : p));
+            setEditTarget(null);
+          }}
+          onClose={() => setEditTarget(null)}
         />
       )}
       <AnimatePresence>

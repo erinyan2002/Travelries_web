@@ -193,6 +193,17 @@ export async function deletePost(uid: string, postId: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+// Needs migration 0017 (an update policy on posts). Without it RLS matches zero
+// rows and reports no error, so the returned row is checked.
+export async function updatePostCaption(uid: string, postId: string, caption: string): Promise<void> {
+  const { data, error } = await supabase.from("posts")
+    .update({ caption: caption.trim() || null })
+    .eq("id", postId).eq("user_id", uid)
+    .select("id");
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) throw new Error("Couldn't update the post.");
+}
+
 // Reposts a post into the current user's own feed — a normal `posts` row owned by
 // `uid` with `repost_of` set, so it's visible to `uid`'s followers via the exact
 // same "own or followed" RLS policy as any other post (no new policy needed).
@@ -334,6 +345,20 @@ async function enrichPosts(uid: string, rows: Record<string, unknown>[]): Promis
       avatarUrl: (profilesByTagged.get(tid)?.avatar_url as string) ?? null,
     })),
   }));
+}
+
+// Who liked a post, newest first. post_likes is readable by anyone who can see
+// the post (same rule as the post itself), and profiles by any signed-in user.
+export async function fetchPostLikers(postId: string): Promise<Profile[]> {
+  const { data, error } = await supabase.from("post_likes")
+    .select("user_id, created_at").eq("post_id", postId).order("created_at", { ascending: false });
+  if (error) {
+    console.error("fetchPostLikers failed:", error);
+    return [];
+  }
+  const ids = (data ?? []).map((r) => r.user_id as string);
+  const byId = new Map((await profilesByIds(ids)).map((p) => [p.id, p]));
+  return ids.map((id) => byId.get(id) ?? { id, name: "", created_at: "" });
 }
 
 // Returns the post's new liked state (true = now liked).

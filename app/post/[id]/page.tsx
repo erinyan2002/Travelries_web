@@ -6,10 +6,12 @@ import Link from "next/link";
 import Avatar from "@/components/Avatar";
 import TripPostCard from "@/components/TripPostCard";
 import CommentThread from "@/components/CommentThread";
+import LikersModal from "@/components/LikersModal";
+import EditCaptionModal from "@/components/EditCaptionModal";
 import { getSessionUser } from "@/lib/supabase";
 import { fetchPostById, toggleLike, deletePost, Post } from "@/lib/socialUtils";
 import {
-  ArrowLeft, Heart, MessageCircle, Trash2, MapPin, CalendarDays,
+  ArrowLeft, Heart, MessageCircle, Trash2, MapPin, CalendarDays, Pencil,
 } from "lucide-react";
 import { useLang } from "@/lib/i18n";
 import { timeAgo } from "@/lib/timeAgo";
@@ -49,6 +51,8 @@ export default function PostDetailPage() {
   const [loading, setLoading] = useState(true);
   const [post, setPost] = useState<Post | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showLikers, setShowLikers] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -102,9 +106,14 @@ export default function PostDetailPage() {
             </Link>
             <p className="text-xs text-slate-400">{timeAgo(post.createdAt, t)}</p>
             {post.userId === uid && (
-              <button onClick={() => setConfirmDelete(true)} className="text-slate-300 hover:text-red-500 transition-colors p-1">
-                <Trash2 size={14} />
-              </button>
+              <>
+                <button onClick={() => setEditing(true)} title={t("Edit post")} className="text-slate-300 hover:text-blue-600 transition-colors p-1">
+                  <Pencil size={14} />
+                </button>
+                <button onClick={() => setConfirmDelete(true)} className="text-slate-300 hover:text-red-500 transition-colors p-1">
+                  <Trash2 size={14} />
+                </button>
+              </>
             )}
           </div>
           {post.trip ? (
@@ -117,10 +126,17 @@ export default function PostDetailPage() {
           )}
           <div className="px-4 py-3 space-y-1.5">
             <div className="flex items-center gap-3">
-              <button onClick={handleLike} className="flex items-center gap-1.5 text-sm font-bold text-slate-600 hover:text-red-500 transition-colors">
-                <Heart size={18} className={post.likedByMe ? "fill-red-500 text-red-500" : ""} />
-                {post.likeCount > 0 && post.likeCount}
-              </button>
+              <span className="flex items-center gap-1.5">
+                <button onClick={handleLike} className="text-slate-600 hover:text-red-500 transition-colors">
+                  <Heart size={18} className={post.likedByMe ? "fill-red-500 text-red-500" : ""} />
+                </button>
+                {post.likeCount > 0 && (
+                  <button onClick={() => setShowLikers(true)} title={t("See who liked this")}
+                    className="text-sm font-bold text-slate-600 hover:underline">
+                    {post.likeCount}
+                  </button>
+                )}
+              </span>
               <span className="flex items-center gap-1.5 text-sm font-bold text-slate-600">
                 <MessageCircle size={18} />
                 {post.commentCount > 0 && post.commentCount}
@@ -158,6 +174,14 @@ export default function PostDetailPage() {
         </div>
       </div>
 
+      {showLikers && <LikersModal postId={post.id} onClose={() => setShowLikers(false)} />}
+      {editing && uid && (
+        <EditCaptionModal
+          uid={uid} postId={post.id} caption={post.caption}
+          onSaved={(caption) => { setPost((prev) => prev && { ...prev, caption }); setEditing(false); }}
+          onClose={() => setEditing(false)}
+        />
+      )}
       {confirmDelete && (
         <DeletePostConfirmModal onConfirm={handleDelete} onCancel={() => setConfirmDelete(false)} />
       )}
