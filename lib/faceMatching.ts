@@ -96,8 +96,14 @@ export function ssdSupports(ssd: { box: Box }[], box: Box): boolean {
 export const SSD_ONLY_COVERED = 0.45;
 
 // SSD faces that nothing kept so far covers: faces MediaPipe never localized.
+// An SSD-only box narrower than half its height isn't a face anyone can see: in a
+// 6-friend selfie SSD put a 0.64 box (53x150 px) on the hair and ear of someone
+// turned away at the frame edge, while its real faces there were 0.65-0.81 wide.
+export const SSD_ONLY_MIN_ASPECT = 0.5;
+
 export function ssdOnlyFaces<T extends ScoredFace>(ssd: T[], kept: { box: Box }[]): T[] {
   return ssd.filter((f) => f.score >= SSD_ONLY_SCORE
+    && f.box.width >= f.box.height * SSD_ONLY_MIN_ASPECT
     && !kept.some((k) => overlaps(f.box, k.box) || containment(f.box, k.box) >= SSD_ONLY_COVERED));
 }
 

@@ -100,7 +100,7 @@ describe("SSD second opinion", () => {
   // Boxes from a real 6-person group photo (908x680 copy).
   const ssd = [
     face(box(0, 268, 121, 224), 0.67),  // selfie face cut off at the left edge
-    face(box(875, 287, 28, 65), 0.47),  // face turned to the side, right edge
+    face(box(875, 287, 28, 65), 0.47),  // hair and ear of someone turned away, right edge
     face(box(264, 298, 64, 74), 0.35),  // too weak to count on its own
   ];
 
@@ -114,8 +114,13 @@ describe("SSD second opinion", () => {
   });
 
   it("adds strong-enough SSD faces nothing kept covers", () => {
-    const kept = [face(box(0, 268, 121, 224), 0.67)];
-    expect(ssdOnlyFaces(ssd, kept).map((f) => f.score)).toEqual([0.47]);
+    const faces = [face(box(0, 268, 121, 224), 0.67), face(box(600, 300, 60, 80), 0.5), face(box(300, 300, 60, 80), 0.4)];
+    expect(ssdOnlyFaces(faces, [faces[0]]).map((f) => f.score)).toEqual([0.5]);
+  });
+
+  it("does not add a sliver SSD box (hair or an ear at the frame edge)", () => {
+    expect(ssdOnlyFaces(ssd, [ssd[0]])).toEqual([]);                                   // 28x65 at the right edge
+    expect(ssdOnlyFaces([face(box(602, 616, 127, 195), 0.64)], [])).toHaveLength(1); // a real face, 0.65 wide
   });
 
   it("does not add an SSD face that is half under a kept box (same face, offset box)", () => {
