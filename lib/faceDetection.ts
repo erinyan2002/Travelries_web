@@ -4,6 +4,8 @@
 import * as faceapi from "face-api.js";
 import { detectFacesMediaPipe } from "./mediapipeDetector";
 import { boxIoU, pickCropMatch, dedupeFaces, pickSsdAgreement, ssdOnlyFaces, ssdSupports } from "./faceMatching";
+import { detectFacesScrfd } from "./scrfdDetector";
+import { filterScrfdFaces } from "./scrfd";
 
 export type DetectionResult = {
   count:       number;
@@ -19,7 +21,7 @@ const RETRY_MIN_MP_SCORE = 0.65;
 
 export async function runFaceDetection(
   imgEl: HTMLImageElement,
-  modelType: "mediapipe" | "ssd" | "tiny" | "mediapipe-only",
+  modelType: "scrfd" | "mediapipe" | "ssd" | "tiny" | "mediapipe-only",
   hasExtra: boolean,
 ): Promise<DetectionResult> {
   const MIN_PX = 20;
@@ -34,6 +36,27 @@ export async function runFaceDetection(
     return {
       count: raw.length, boxes: raw.map(normBox), descriptors: [],
       confidences: raw.map((b) => b.score), ages: [], genders: [], expressions: [],
+    };
+  }
+
+  // Primary: SCRFD finds the faces (it was trained on WIDER FACE, which has
+  // masked, half-hidden and tiny faces), and face-api only computes each face's
+  // 128-dim descriptor, so People keeps matching photos saved before. The old
+  // MediaPipe + face-api confirmation chain below missed most masked faces (face-api
+  // and SSD were trained on unmasked ones) and once kept a box over a torso.
+  if (modelType === "scrfd") {
+    const faces = filterScrfdFaces(
+      (await detectFacesScrfd(imgEl)).map((f) => ({ ...f, box: clampBox(f.box, W, H) }))
+        .filter((f) => f.box.width >= MIN_PX && f.box.height >= MIN_PX),
+    ).sort((a, b) => a.box.x - b.box.x); // stable left-to-right numbering
+    const descriptors: number[][] = [];
+    for (const f of faces) descriptors.push(await describeFace(imgEl, f.box));
+    return {
+      count:       faces.length,
+      boxes:       faces.map((f) => normBox(f.box)),
+      descriptors,
+      confidences: faces.map((f) => f.score),
+      ages: [], genders: [], expressions: [],
     };
   }
 
@@ -233,4 +256,30 @@ export async function runFaceDetection(
     confidences: f.map((d) => d.score),
     ages: [], genders: [], expressions: [],
   };
+}
+
+function clampBox(b: { x: number; y: number; width: number; height: number }, W: number, H: number) {
+  const x = Math.max(0, b.x), y = Math.max(0, b.y);
+  return { x, y, width: Math.min(W, b.x + b.width) - x, height: Math.min(H, b.y + b.height) - y };
+}
+
+// face-api's 128-dim descriptor for a face found by another detector: landmarks on
+// the box crop, then the dlib-style aligned chip, exactly as face-api's own
+// withFaceLandmarks().withFaceDescriptors() does it. If alignment fails, the plain
+// box crop is described instead. Never [], because an empty descriptor marks a
+// removed face (isFaceRemoved).
+async function describeFace(
+  img: HTMLImageElement,
+  b: { x: number; y: number; width: number; height: number },
+): Promise<number[]> {
+  const [crop] = await faceapi.extractFaces(img, [new faceapi.Rect(b.x, b.y, b.width, b.height)]);
+  try {
+    const lm = await faceapi.nets.faceLandmark68Net.detectLandmarks(crop) as faceapi.FaceLandmarks68;
+    const rect = lm.shiftBy<faceapi.FaceLandmarks68>(b.x, b.y).align(null, { useDlibAlignment: true });
+    const [chip] = await faceapi.extractFaces(img, [rect]);
+    return Array.from(await faceapi.nets.faceRecognitionNet.computeFaceDescriptor(chip) as Float32Array);
+  } catch (e) {
+    console.warn("Face alignment failed, describing the unaligned crop:", e);
+    return Array.from(await faceapi.nets.faceRecognitionNet.computeFaceDescriptor(crop) as Float32Array);
+  }
 }

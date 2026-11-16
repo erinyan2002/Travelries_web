@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# Downloads face-api.js model weights (detection fallback chain + recognition)
-# and the MediaPipe face detector (primary detector — see lib/mediapipeDetector.ts).
+# Downloads the SCRFD face detector (primary — see lib/scrfdDetector.ts) and its
+# onnxruntime-web runtime, face-api.js model weights (descriptors + fallback
+# detectors) and the MediaPipe face detector (fallback — lib/mediapipeDetector.ts).
 # Run `npm install` first so node_modules/@mediapipe/tasks-vision exists.
 #
 # Run from the project root:
 #   bash _scripts/download-models.sh
 #
-# Total download: ~34 MB (face-api ~21 MB + MediaPipe models+wasm ~13 MB)
+# Total: ~64 MB (SCRFD 17 MB + onnxruntime wasm 14 MB + face-api ~21 MB
+# + MediaPipe models+wasm ~13 MB)
 
 set -e
 
@@ -95,7 +97,39 @@ cp "$WASM_SRC/vision_wasm_internal.wasm" "$WASM_DEST/"
 echo "  done"
 
 echo ""
-echo "All model files ready. Restart the dev server and the app will"
-echo "automatically use MediaPipe for face detection (with face-api.js"
-echo "for recognition/age/gender/expression), falling back to face-api's"
-echo "own SSD MobileNetV1 or TinyFaceDetector if MediaPipe fails to load."
+echo "SCRFD face detector (primary, lib/scrfdDetector.ts) → $DEST/scrfd"
+echo ""
+
+# det_10g.onnx is InsightFace's buffalo_l detector, the same one the backend uses.
+mkdir -p "$DEST/scrfd"
+SCRFD="$DEST/scrfd/det_10g.onnx"
+if [ -f "$SCRFD" ]; then
+  echo "  det_10g.onnx                   already exists, skipping"
+elif [ -f "$HOME/.insightface/models/buffalo_l/det_10g.onnx" ]; then
+  cp "$HOME/.insightface/models/buffalo_l/det_10g.onnx" "$SCRFD"
+  echo "  det_10g.onnx                   copied from ~/.insightface"
+else
+  TMP_ZIP="$(mktemp -d)/buffalo_l.zip"
+  curl -fsSL "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip" -o "$TMP_ZIP"
+  unzip -p "$TMP_ZIP" det_10g.onnx > "$SCRFD"
+  rm -f "$TMP_ZIP"
+  echo "  det_10g.onnx                   done"
+fi
+
+echo ""
+echo "Copying onnxruntime-web WASM runtime → ./public/ort-wasm"
+echo ""
+
+ORT_SRC="./node_modules/onnxruntime-web/dist"
+if [ ! -d "$ORT_SRC" ]; then
+  echo "  node_modules/onnxruntime-web not found — run 'npm install' first" >&2
+  exit 1
+fi
+mkdir -p ./public/ort-wasm
+cp "$ORT_SRC/ort-wasm-simd-threaded.wasm" "$ORT_SRC/ort-wasm-simd-threaded.mjs" ./public/ort-wasm/
+echo "  done"
+
+echo ""
+echo "All model files ready. Restart the dev server. Faces are found by SCRFD"
+echo "(with face-api.js for the person-matching descriptor); MediaPipe, then"
+echo "face-api's SSD and TinyFaceDetector, are fallbacks if SCRFD can't load."

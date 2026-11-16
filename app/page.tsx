@@ -4,6 +4,7 @@ import { ChangeEvent, Fragment, useState, useEffect, useRef } from "react";
 import * as exifr from "exifr";
 import * as faceapi from "face-api.js";
 import { loadMediaPipeDetector } from "@/lib/mediapipeDetector";
+import { loadScrfd } from "@/lib/scrfdDetector";
 import { flyPaperPlane } from "@/lib/paperPlane";
 import { getSessionUser } from "@/lib/supabase";
 import { MapPhoto, FacePhoto } from "@/lib/types";
@@ -133,7 +134,7 @@ export default function HomePage() {
   // Resolves with the detector once its models have loaded (null if none could).
   // A photo picked while they still download waits on this: checking
   // isModelLoaded there skipped face detection on a phone's first upload.
-  const modelReadyRef = useRef<Promise<"mediapipe" | "ssd" | "tiny" | null>>(Promise.resolve(null));
+  const modelReadyRef = useRef<Promise<"scrfd" | "mediapipe" | "ssd" | "tiny" | null>>(Promise.resolve(null));
   const [backendStatus,  setBackendStatus]  = useState<"checking" | "online" | "offline">("checking");
   // Evaluation mode for the poster's detector comparison: ?detector=mediapipe or
   // ?detector=ssd runs only that detector, in browser mode, and nothing is saved.
@@ -203,9 +204,9 @@ export default function HomePage() {
 
   useEffect(() => {
     const MODEL_URL = "/models";
-    let markReady: (type: "mediapipe" | "ssd" | "tiny" | null) => void = () => {};
+    let markReady: (type: "scrfd" | "mediapipe" | "ssd" | "tiny" | null) => void = () => {};
     modelReadyRef.current = new Promise((resolve) => { markReady = resolve; });
-    function ready(type: "mediapipe" | "ssd" | "tiny") {
+    function ready(type: "scrfd" | "mediapipe" | "ssd" | "tiny") {
       setIsModelLoaded(true);
       markReady(type);
     }
@@ -232,19 +233,34 @@ export default function HomePage() {
       });
     }
 
+    function loadMediaPipeFallback() {
+      Promise.all([
+        loadMediaPipeDetector(),
+        faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+        faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+        faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+      ]).then(() => {
+        ready("mediapipe");
+        loadExtras();
+        // SSD: runFaceDetection's second opinion for faces MediaPipe loses (cut off
+        // at the frame edge, turned to the side). Optional — used once loaded.
+        faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL).catch(() => {});
+      }).catch(() => {
+        loadSsdFallback();
+      });
+    }
+
+    // Primary: SCRFD finds faces; face-api's landmark + recognition nets only make
+    // the descriptor. MediaPipe, Tiny and SSD are downloaded only if SCRFD can't run.
     Promise.all([
-      loadMediaPipeDetector(),
-      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+      loadScrfd(),
       faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
       faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
     ]).then(() => {
-      ready("mediapipe");
-      loadExtras();
-      // SSD: runFaceDetection's second opinion for faces MediaPipe loses (cut off
-      // at the frame edge, turned to the side). Optional — used once loaded.
-      faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL).catch(() => {});
-    }).catch(() => {
-      loadSsdFallback();
+      ready("scrfd");
+    }).catch((err) => {
+      console.warn("SCRFD face detector unavailable, falling back to MediaPipe", err);
+      loadMediaPipeFallback();
     });
   }, []);
 
@@ -264,7 +280,7 @@ export default function HomePage() {
   // Browser-mode detection, or only the evaluation detector when ?detector= is set.
   // `type` comes from modelReadyRef: a handler started before the models loaded
   // would see a stale modelType from its render.
-  async function detectFaces(file: File, type: "mediapipe" | "ssd" | "tiny"): Promise<DetectionResult> {
+  async function detectFaces(file: File, type: "scrfd" | "mediapipe" | "ssd" | "tiny"): Promise<DetectionResult> {
     if (evalDetector === "ssd" && !faceapi.nets.ssdMobilenetv1.isLoaded) {
       await faceapi.nets.ssdMobilenetv1.loadFromUri("/models");
     }

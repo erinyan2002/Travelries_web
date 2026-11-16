@@ -29,6 +29,7 @@ const nextConfig: NextConfig = {
     return [
       { source: "/models/:path*", headers: cache },
       { source: "/mediapipe-wasm/:path*", headers: cache },
+      { source: "/ort-wasm/:path*", headers: cache },
     ];
   },
 };
