@@ -15,6 +15,8 @@ const eslintConfig = defineConfig([
     "backend/**",
     // Vendored MediaPipe WASM runtime, copied verbatim from node_modules — not our code.
     "public/mediapipe-wasm/**",
+    // Vendored onnxruntime-web runtime for SCRFD (lib/scrfdDetector.ts), same reason.
+    "public/ort-wasm/**",
   ]),
 ]);
 

@@ -2,15 +2,23 @@
 // model fallback as backend/utils/gemini_utils.py. Server-only: reads GOOGLE_API_KEY.
 import { createClient } from "@supabase/supabase-js";
 
-// Tried in order; a busy or slow model falls through to the next one.
+// Tried in order; a busy, slow or missing model falls through to the next one.
+// gemini-3.5-flash often answers 503 "high demand", so the lite models behind it
+// carry most requests. (The 2.5 models are closed to new keys: 404.)
 const MODEL_CHAIN: { model: string; thinking?: string }[] = [
   { model: "gemini-3.5-flash", thinking: "MINIMAL" },
   { model: "gemini-3.5-flash-lite" },
   { model: "gemini-3.1-flash-lite" },
+  { model: "gemini-flash-lite-latest" },
 ];
-const PER_CALL_TIMEOUT_MS = 10_000;
-const FALLTHROUGH = new Set([429, 500, 503, 504]);
-const COOLDOWN_MS = 5 * 60_000;
+// A diary sends up to 8 full photos, which a lite model can take 10-20 s to read,
+// so one call may use up to 25 s, within an overall budget under the route's 60 s.
+const PER_CALL_TIMEOUT_MS = 25_000;
+const TOTAL_BUDGET_MS = 52_000;
+const FALLTHROUGH = new Set([404, 429, 500, 502, 503, 504]);
+// Short: a 5-minute cooldown left every request for minutes with only the last
+// model, so one busy spell showed "AI is busy" to everyone.
+const COOLDOWN_MS = 60_000;
 const cooldownUntil = new Map<string, number>(); // per server instance
 
 export function json(body: unknown, status = 200) {
@@ -32,15 +40,19 @@ export async function generateWithFallback(
   key: string,
   request: { systemText?: string; parts: object[]; generationConfig?: Record<string, unknown> },
 ): Promise<GeminiResult> {
-  const now = Date.now();
-  const chain = MODEL_CHAIN.filter((m) => (cooldownUntil.get(m.model) ?? 0) <= now);
+  const start = Date.now();
+  // A pasted env value can carry a trailing newline, which breaks the header.
+  key = key.trim();
+  const ready = MODEL_CHAIN.filter((m) => (cooldownUntil.get(m.model) ?? 0) <= start);
   let lastError = "";
-  for (const { model, thinking } of chain.length > 0 ? chain : MODEL_CHAIN.slice(-1)) {
+  for (const { model, thinking } of ready.length > 0 ? ready : MODEL_CHAIN) {
+    const left = TOTAL_BUDGET_MS - (Date.now() - start);
+    if (left < 3_000) break;
     try {
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-        signal: AbortSignal.timeout(PER_CALL_TIMEOUT_MS),
+        signal: AbortSignal.timeout(Math.min(PER_CALL_TIMEOUT_MS, left)),
         body: JSON.stringify({
           ...(request.systemText && { systemInstruction: { parts: [{ text: request.systemText }] } }),
           contents: [{ role: "user", parts: request.parts }],
@@ -52,7 +64,7 @@ export async function generateWithFallback(
       });
       if (FALLTHROUGH.has(res.status)) {
         cooldownUntil.set(model, Date.now() + COOLDOWN_MS);
-        lastError = `HTTP ${res.status}`;
+        lastError = `${model}: HTTP ${res.status}`;
         continue;
       }
       const data = await res.json();
@@ -64,7 +76,7 @@ export async function generateWithFallback(
     } catch (err) {
       // timeout → next model
       cooldownUntil.set(model, Date.now() + COOLDOWN_MS);
-      lastError = err instanceof Error ? err.message : String(err);
+      lastError = `${model}: ${err instanceof Error ? err.message : String(err)}`;
     }
   }
   console.warn(`[gemini] all models failed: ${lastError}`);
